@@ -44,6 +44,14 @@ export default async function CalendarPage({
         >
           ＋ 予約を追加
         </Link>
+        {session.role === "owner" && (
+          <Link
+            href="/settings/menus"
+            className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
+          >
+            設定
+          </Link>
+        )}
       </AppHeader>
 
       {sp.error && (

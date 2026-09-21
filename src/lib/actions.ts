@@ -25,7 +25,9 @@ export async function login(formData: FormData) {
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");
 
-  const fail = () => redirect("/login?error=メールアドレスまたはパスワードが違います");
+  // 日本語をそのままURLに入れると Location ヘッダーに載せられない
+  const fail = () =>
+    redirect(`/login?error=${encodeURIComponent("メールアドレスまたはパスワードが違います")}`);
 
   if (!email || !password) fail();
 

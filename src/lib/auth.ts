@@ -30,7 +30,10 @@ export async function requireSession(): Promise<SessionData> {
 /** オーナーでなければ追い返す */
 export async function requireOwner(): Promise<SessionData> {
   const session = await requireSession();
-  if (session.role !== "owner") redirect("/calendar?error=この操作はオーナーのみです");
+  if (session.role !== "owner") {
+    // 日本語をそのままURLに入れると Location ヘッダーに載せられない
+    redirect(`/calendar?error=${encodeURIComponent("この操作はオーナーのみです")}`);
+  }
   return session;
 }
 
