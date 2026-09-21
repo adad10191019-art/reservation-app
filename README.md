@@ -320,6 +320,74 @@ LINE_MESSAGING_ACCESS_TOKEN="..."
   それは本番では動かないため、お客様が予約できない。
 - **公式アカウントのチャネルアクセストークンを設定する。** 未設定だと通知が送られない。
 
+## Vercel へデプロイする
+
+GitHub にある内容をそのまま公開する。手元の `.env` は送られないため、
+必要な値は Vercel 側に登録する。
+
+**1. Vercel と GitHub をつなぐ**
+
+[vercel.com](https://vercel.com/signup) で GitHub アカウントを使って登録し、
+`reservation-app` リポジトリを Import する。Next.js として自動で認識されるので、
+ビルドの設定は変更しなくてよい（`postinstall` で `prisma generate` が走る）。
+
+**2. 環境変数を登録する**
+
+Settings → Environment Variables に、手元の `.env` と同じ値を入れる。
+
+| 変数名 | 内容 |
+|---|---|
+| `DATABASE_URL` | Neon のプール経由の接続文字列 |
+| `DIRECT_URL` | Neon の直接接続の文字列 |
+| `AUTH_SECRET` | **手元とは別の値を新しく作る**（下記） |
+| `APP_URL` | 公開後のURL（最初は空でよい。3 で入れる） |
+| `LINE_LOGIN_CHANNEL_ID` | LINEログインのチャネルID |
+| `LINE_LOGIN_CHANNEL_SECRET` | 同 チャネルシークレット |
+| `LINE_MESSAGING_ACCESS_TOKEN` | 公式アカウントのアクセストークン |
+
+`AUTH_SECRET` を手元と使い回さない理由は、手元の値が漏れたときに
+本番のログイン状態まで偽造できてしまうため。次のコマンドで別の値を作る。
+
+```bash
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
+```
+
+**3. 公開URLが決まったら `APP_URL` を入れ直す**
+
+最初のデプロイが終わると `https://<プロジェクト名>.vercel.app` が決まる。
+その値を `APP_URL` に設定し、**再デプロイする**（環境変数は次のビルドから反映されるため）。
+
+`APP_URL` はLINEログインの戻り先と、通知本文に載せるURLに使う。
+ここが実際の公開URLと1文字でも違うと、LINEログインが弾かれる。
+
+**4. LINE 側のコールバックURLを本番に差し替える**
+
+[LINE Developers](https://developers.line.biz/) のLINEログインチャネル →
+「コールバックURL」に、本番のURLを追加する。
+
+```
+https://<プロジェクト名>.vercel.app/book/callback
+```
+
+`http://localhost:3000/book/callback` は**消さずに残す**。
+複数行を登録できるので、手元での開発も並行して続けられる。
+
+**5. 公開後の確認**
+
+- `/login` で店舗側にログインできる
+- `/book/sample-salon` がスマホで開ける
+- お客様としてLINEログインし、予約 → 通知が届く
+- 店舗側にもネット予約の通知が届く
+
+### つまずきやすい点
+
+- **環境変数を足しただけでは反映されない。** Vercel は次のビルドで読み込むため、
+  登録したあとに再デプロイする必要がある
+- **`AUTH_SECRET` を変えると、ログイン中の人は全員ログアウトになる。** 署名の鍵が
+  変わり、それまでの Cookie を検証できなくなるため。運用開始後はむやみに変えない
+- **マイグレーションはデプロイでは走らない。** テーブル構造を変えたときは、
+  手元から `npx prisma migrate deploy` を Neon に向けて実行する
+
 ## 進捗
 
 - [x] テーブル設計・ダミーデータ（分割シフト対応）
