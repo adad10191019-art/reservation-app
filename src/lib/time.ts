@@ -117,3 +117,46 @@ export function generateStarts(
   }
   return out.sort((a, b) => a - b);
 }
+
+// ── 日付文字列（"YYYY-MM-DD"）の操作 ──────────────
+
+/** Date を "YYYY-MM-DD" にする（ローカル時間で） */
+export function toDateString(d: Date): string {
+  return [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, "0"),
+    String(d.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+/** 今日の "YYYY-MM-DD" */
+export function todayString(): string {
+  return toDateString(new Date());
+}
+
+/** "YYYY-MM-DD" に日数を足す */
+export function addDays(date: string, days: number): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (!m) throw new Error(`日付の形式が不正です: ${date}`);
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  d.setDate(d.getDate() + days);
+  return toDateString(d);
+}
+
+/** "YYYY-MM-DD" を受け取り、形式が正しくなければ今日を返す */
+export function sanitizeDate(date: string | undefined): string {
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return todayString();
+  const [y, m, d] = date.split("-").map(Number);
+  const parsed = new Date(y, m - 1, d);
+  // 2026-02-31 のような存在しない日付をはじく
+  if (parsed.getMonth() !== m - 1 || parsed.getDate() !== d) return todayString();
+  return date;
+}
+
+const WEEKDAY_JA = ["日", "月", "火", "水", "木", "金", "土"];
+
+/** "2026-09-21" → "9月21日(月)" */
+export function formatDateLabel(date: string): string {
+  const [, m, d] = date.split("-").map(Number);
+  return `${m}月${d}日(${WEEKDAY_JA[dayOfWeekOf(date)]})`;
+}
