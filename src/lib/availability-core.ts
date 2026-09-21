@@ -79,3 +79,12 @@ export function computeStarts(params: {
   const free = subtract(params.working, params.busy);
   return generateStarts(free, params.requiredMinutes, params.slotMinutes);
 }
+
+/** start〜end が、いずれかの勤務時間帯にすっぽり収まっているか */
+export function isWithinWorking(
+  working: Interval[],
+  start: number,
+  end: number,
+): boolean {
+  return working.some((w) => w.start <= start && end <= w.end);
+}

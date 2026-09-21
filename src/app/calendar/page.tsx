@@ -44,6 +44,12 @@ export default async function CalendarPage({
           <DateLink date={addDays(date, -1)} label="← 前日" />
           <DateLink date={today} label="今日" highlight={date === today} />
           <DateLink date={addDays(date, 1)} label="翌日 →" />
+          <Link
+            href={`/booking?date=${date}`}
+            className="ml-2 rounded-md bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-700"
+          >
+            ＋ 予約を追加
+          </Link>
         </nav>
       </header>
 

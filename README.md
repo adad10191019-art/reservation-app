@@ -36,6 +36,7 @@ npm run db:seed
 | `npm run dev` | 開発サーバーを起動 |
 | `npm test` | テストを実行 |
 | `npm run check` | 実データで空き枠を出して目視確認 |
+| `npm run check:double` | 二重予約が防げているか検証 |
 | `npm run db:studio` | DBの中身をブラウザで確認 |
 | `npm run db:reset` | DBを作り直してダミーデータを入れ直す |
 | `npm run typecheck` | 型チェック |
@@ -70,6 +71,8 @@ src/lib/
   time.ts                    時間帯の計算（重なり・引き算・刻み揃え）
   availability-core.ts       空き枠ロジック（DBを触らない）
   availability.ts            DBから読んで上記へ渡す
+  booking.ts                 予約の登録（重複チェックを含む）
+  actions.ts                 フォームの送信先（Server Action）
   prisma.ts                  DB接続
 scripts/
   check-availability.ts      実データでの目視確認
@@ -80,7 +83,7 @@ scripts/
 - [x] テーブル設計・ダミーデータ
 - [x] 空き枠ロジック＋テスト
 - [x] 予約カレンダー画面（日表示）
-- [ ] 予約登録・編集画面
+- [x] 空き枠検索・予約登録画面（二重予約の防止つき）
 - [ ] 各種設定画面
 - [ ] ログイン・権限
 - [ ] マルチテナントの検証
