@@ -1,8 +1,10 @@
 import Link from "next/link";
+import { AppHeader } from "@/components/app-header";
+import { requireSession } from "@/lib/auth";
 import { createReservation } from "@/lib/actions";
 import { findAvailability } from "@/lib/availability";
 import { prisma } from "@/lib/prisma";
-import { getCurrentTenant } from "@/lib/schedule";
+import { getTenant } from "@/lib/schedule";
 import { formatDateLabel, sanitizeDate, toHm } from "@/lib/time";
 
 export default async function BookingPage({
@@ -17,7 +19,8 @@ export default async function BookingPage({
 }) {
   const sp = await searchParams;
   const date = sanitizeDate(sp.date);
-  const tenant = await getCurrentTenant();
+  const session = await requireSession();
+  const tenant = await getTenant(session.tenantId);
 
   const [menus, staffs, customers] = await Promise.all([
     prisma.menu.findMany({
@@ -35,8 +38,13 @@ export default async function BookingPage({
   ]);
 
   const menu = menus.find((m) => m.id === sp.menuId) ?? menus[0];
-  const staff = staffs.find((s) => s.id === sp.staffId);
   const staffNames = new Map(staffs.map((s) => [s.id, s.name]));
+
+  // スタッフは自分の担当分しか登録できないので、担当を自分に固定する
+  const lockedStaffId = session.role === "staff" ? session.staffId : null;
+  const staff = lockedStaffId
+    ? staffs.find((s) => s.id === lockedStaffId)
+    : staffs.find((s) => s.id === sp.staffId);
 
   const availability = menu
     ? await findAvailability({
@@ -49,18 +57,14 @@ export default async function BookingPage({
 
   return (
     <main className="mx-auto w-full max-w-3xl p-4 sm:p-6">
-      <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight">{tenant.name}</h1>
-          <p className="text-sm text-neutral-500">空き枠検索・予約登録</p>
-        </div>
+      <AppHeader tenantName={tenant.name} subtitle="空き枠検索・予約登録" session={session}>
         <Link
           href={`/calendar?date=${date}`}
           className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
         >
           カレンダーへ
         </Link>
-      </header>
+      </AppHeader>
 
       {sp.error && (
         <p
@@ -103,18 +107,25 @@ export default async function BookingPage({
 
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-neutral-600">担当</span>
-          <select
-            name="staffId"
-            defaultValue={staff?.id ?? ""}
-            className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
-          >
-            <option value="">誰でもいい</option>
-            {staffs.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
+          {lockedStaffId ? (
+            // スタッフのアカウントでは自分に固定
+            <p className="rounded-md border border-neutral-200 bg-neutral-50 px-2 py-1.5 text-sm text-neutral-600">
+              {staff?.name ?? "—"}（自分）
+            </p>
+          ) : (
+            <select
+              name="staffId"
+              defaultValue={staff?.id ?? ""}
+              className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+            >
+              <option value="">誰でもいい</option>
+              {staffs.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          )}
         </label>
 
         <div className="sm:col-span-4">

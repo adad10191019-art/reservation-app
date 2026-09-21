@@ -1,6 +1,16 @@
+/**
+ * 動作確認用のダミーデータ。
+ *
+ * ログインに使えるアカウント（パスワードはすべて password123）
+ *   owner@example.com   … オーナー（全員の予約を操作できる）
+ *   sato@example.com    … スタッフ 佐藤（自分の担当分のみ）
+ *   suzuki@example.com  … スタッフ 鈴木
+ *   tanaka@example.com  … スタッフ 田中
+ */
 import "dotenv/config";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import { PrismaClient } from "../src/generated/prisma/client";
+import { hashPassword } from "../src/lib/password";
 
 const adapter = new PrismaBetterSqlite3({
   url: process.env.DATABASE_URL ?? "file:./dev.db",
@@ -61,6 +71,35 @@ async function main() {
   await prisma.staff.create({
     data: { tenantId: otherTenant.id, name: "他店スタッフ" },
   });
+
+  // ── ログインするアカウント ────────
+  const passwordHash = await hashPassword("password123");
+
+  await prisma.user.create({
+    data: {
+      tenantId: tenant.id,
+      email: "owner@example.com",
+      passwordHash,
+      role: "owner",
+      staffId: null,
+    },
+  });
+
+  for (const [email, staff] of [
+    ["sato@example.com", sato],
+    ["suzuki@example.com", suzuki],
+    ["tanaka@example.com", tanaka],
+  ] as const) {
+    await prisma.user.create({
+      data: {
+        tenantId: tenant.id,
+        email,
+        passwordHash,
+        role: "staff",
+        staffId: staff.id,
+      },
+    });
+  }
 
   // ── メニュー ──────────────────────
   const cut = await prisma.menu.create({
@@ -264,6 +303,7 @@ async function main() {
   console.log(`  営業時間    : ${await prisma.businessHour.count()}`);
   console.log(`  例外日      : ${await prisma.dateOverride.count()}`);
   console.log(`  顧客        : ${await prisma.customer.count()}`);
+  console.log(`  アカウント  : ${await prisma.user.count()}`);
   console.log(`  予約        : ${await prisma.reservation.count()}`);
 }
 

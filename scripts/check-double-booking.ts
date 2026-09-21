@@ -8,6 +8,7 @@
 import "dotenv/config";
 import { findAvailability } from "../src/lib/availability";
 import { bookReservation } from "../src/lib/booking";
+import type { Actor } from "../src/lib/permissions";
 import { prisma } from "../src/lib/prisma";
 import { toHm } from "../src/lib/time";
 
@@ -52,7 +53,11 @@ async function main() {
   const staff = await prisma.staff.findUnique({ where: { id: staffId } });
   console.log(`対象: ${date} ${toHm(startMinutes)} / ${staff?.name} / ${menu.name}\n`);
 
+  // 検証ではオーナーとして操作する
+  const owner: Actor = { role: "owner", staffId: null };
+
   const base = {
+    actor: owner,
     tenantId: tenant.id,
     date,
     menuId: menu.id,

@@ -1,5 +1,7 @@
 import Link from "next/link";
-import { getCurrentTenant, getDaySchedule } from "@/lib/schedule";
+import { AppHeader } from "@/components/app-header";
+import { requireSession } from "@/lib/auth";
+import { getDaySchedule, getTenant } from "@/lib/schedule";
 import {
   addDays,
   formatDateLabel,
@@ -16,12 +18,13 @@ export default async function CalendarPage({
   searchParams,
 }: {
   // Next.js 16 では searchParams は Promise
-  searchParams: Promise<{ date?: string }>;
+  searchParams: Promise<{ date?: string; error?: string }>;
 }) {
-  const { date: rawDate } = await searchParams;
-  const date = sanitizeDate(rawDate);
+  const sp = await searchParams;
+  const date = sanitizeDate(sp.date);
 
-  const tenant = await getCurrentTenant();
+  const session = await requireSession();
+  const tenant = await getTenant(session.tenantId);
   const schedule = await getDaySchedule({ tenantId: tenant.id, date });
 
   const { viewStart, viewEnd, columns } = schedule;
@@ -34,26 +37,32 @@ export default async function CalendarPage({
 
   return (
     <main className="mx-auto w-full max-w-6xl p-4 sm:p-6">
-      <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight">{tenant.name}</h1>
-          <p className="text-sm text-neutral-500">予約カレンダー</p>
-        </div>
+      <AppHeader tenantName={tenant.name} subtitle="予約カレンダー" session={session}>
+        <Link
+          href={`/booking?date=${date}`}
+          className="rounded-md bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-700"
+        >
+          ＋ 予約を追加
+        </Link>
+      </AppHeader>
 
+      {sp.error && (
+        <p
+          role="alert"
+          className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+        >
+          {sp.error}
+        </p>
+      )}
+
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold">{formatDateLabel(date)}</h2>
         <nav className="flex items-center gap-1">
           <DateLink date={addDays(date, -1)} label="← 前日" />
           <DateLink date={today} label="今日" highlight={date === today} />
           <DateLink date={addDays(date, 1)} label="翌日 →" />
-          <Link
-            href={`/booking?date=${date}`}
-            className="ml-2 rounded-md bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-700"
-          >
-            ＋ 予約を追加
-          </Link>
         </nav>
-      </header>
-
-      <h2 className="mb-3 text-lg font-semibold">{formatDateLabel(date)}</h2>
+      </div>
 
       <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
         {/* スタッフ名の行 */}

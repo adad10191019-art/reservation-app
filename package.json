@@ -15,7 +15,8 @@
     "test:watch": "vitest",
     "check": "tsx scripts/check-availability.ts",
     "postinstall": "prisma generate",
-    "check:double": "tsx scripts/check-double-booking.ts"
+    "check:double": "tsx scripts/check-double-booking.ts",
+    "check:perm": "tsx scripts/check-permissions.ts"
   },
   "dependencies": {
     "@prisma/adapter-better-sqlite3": "^7.10.0",

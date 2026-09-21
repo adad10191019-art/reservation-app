@@ -10,6 +10,7 @@
  */
 import { prisma } from "./prisma";
 import { isWithinWorking, resolveWorkingIntervals } from "./availability-core";
+import { type Actor, canManageStaffReservation, denyMessage } from "./permissions";
 import { dayOfWeekOf } from "./time";
 
 /** トランザクションの中で使えるクライアント */
@@ -91,6 +92,7 @@ async function ensureSlotUsable(
 // ── 新規登録 ──────────────────────────────
 
 export type BookingInput = {
+  actor: Actor;
   tenantId: string;
   date: string; // "YYYY-MM-DD"
   menuId: string;
@@ -105,7 +107,12 @@ export type BookingInput = {
 export async function bookReservation(
   input: BookingInput,
 ): Promise<Result<{ reservationId: string }>> {
-  const { tenantId, date, menuId, staffId, startMinutes } = input;
+  const { actor, tenantId, date, menuId, staffId, startMinutes } = input;
+
+  // スタッフは自分の担当分しか登録できない
+  if (!canManageStaffReservation(actor, staffId)) {
+    return { ok: false, message: denyMessage(actor) };
+  }
 
   if (!input.customerId && !input.newCustomer?.name) {
     return { ok: false, message: "顧客を選ぶか、新しい顧客の名前を入力してください" };
@@ -179,6 +186,7 @@ export async function bookReservation(
 // ── 日時・担当の変更 ──────────────────────
 
 export type RescheduleInput = {
+  actor: Actor;
   tenantId: string;
   reservationId: string;
   date: string;
@@ -187,7 +195,12 @@ export type RescheduleInput = {
 };
 
 export async function rescheduleReservation(input: RescheduleInput): Promise<Result> {
-  const { tenantId, reservationId, date, staffId, startMinutes } = input;
+  const { actor, tenantId, reservationId, date, staffId, startMinutes } = input;
+
+  // 変更先の担当が自分であること（他人へ付け替えられないように）
+  if (!canManageStaffReservation(actor, staffId)) {
+    return { ok: false, message: denyMessage(actor) };
+  }
 
   const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
   if (!tenant) return { ok: false, message: "店舗が見つかりません" };
@@ -202,6 +215,12 @@ export async function rescheduleReservation(input: RescheduleInput): Promise<Res
         where: { id: reservationId, tenantId },
       });
       if (!reservation) throw new Error("予約が見つかりません");
+
+      // 変更前の担当も自分であること（他人の予約を奪えないように）
+      if (!canManageStaffReservation(actor, reservation.staffId)) {
+        throw new Error(denyMessage(actor));
+      }
+
       if (reservation.status !== "booked") {
         throw new Error("この予約は変更できません（すでに完了またはキャンセル済み）");
       }
@@ -235,11 +254,12 @@ export async function rescheduleReservation(input: RescheduleInput): Promise<Res
 // ── 状態の変更 ────────────────────────────
 
 export async function setReservationStatus(input: {
+  actor: Actor;
   tenantId: string;
   reservationId: string;
   status: ReservationStatus;
 }): Promise<Result> {
-  const { tenantId, reservationId, status } = input;
+  const { actor, tenantId, reservationId, status } = input;
 
   if (!RESERVATION_STATUSES.includes(status)) {
     return { ok: false, message: "状態の指定が正しくありません" };
@@ -251,6 +271,10 @@ export async function setReservationStatus(input: {
         where: { id: reservationId, tenantId },
       });
       if (!reservation) throw new Error("予約が見つかりません");
+
+      if (!canManageStaffReservation(actor, reservation.staffId)) {
+        throw new Error(denyMessage(actor));
+      }
 
       // キャンセル済みを「予約済み」に戻すときは、その間に別の予約が
       // 入っていないか確かめる。ここを抜くと復帰で二重予約になる。

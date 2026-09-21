@@ -34,13 +34,10 @@ export type DaySchedule = {
 const DEFAULT_VIEW_START = 9 * 60;
 const DEFAULT_VIEW_END = 20 * 60;
 
-/**
- * 認証を入れるまでの暫定。最初の店舗を使う。
- * TODO: ログインしたユーザーの所属店舗を使うように置き換える。
- */
-export async function getCurrentTenant() {
-  const tenant = await prisma.tenant.findFirst({ orderBy: { createdAt: "asc" } });
-  if (!tenant) throw new Error("店舗がありません。npm run db:seed を実行してください");
+/** ログインしている人の所属店舗を取り出す */
+export async function getTenant(tenantId: string) {
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+  if (!tenant) throw new Error("店舗が見つかりません");
   return tenant;
 }
 

@@ -2,24 +2,63 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { endSession, requireSession, startSession } from "./auth";
 import {
   type ReservationStatus,
   bookReservation,
   rescheduleReservation,
   setReservationStatus,
 } from "./booking";
+import { verifyPassword } from "./password";
 import { prisma } from "./prisma";
+import { buildSession, type Role } from "./session";
 import { sanitizeDate } from "./time";
-
-/** 認証を入れるまでの暫定。最初の店舗を使う。 */
-async function currentTenantId(): Promise<string | null> {
-  const tenant = await prisma.tenant.findFirst({ orderBy: { createdAt: "asc" } });
-  return tenant?.id ?? null;
-}
 
 function refresh() {
   revalidatePath("/calendar");
   revalidatePath("/booking");
+}
+
+// ── ログイン・ログアウト ──────────────────
+
+export async function login(formData: FormData) {
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const password = String(formData.get("password") ?? "");
+
+  const fail = () => redirect("/login?error=メールアドレスまたはパスワードが違います");
+
+  if (!email || !password) fail();
+
+  // メールアドレスは店舗ごとに一意なので、同じアドレスが別店舗に
+  // 存在しうる。ここではパスワードまで一致した最初のアカウントを使う。
+  const candidates = await prisma.user.findMany({
+    where: { email },
+    include: { staff: true, tenant: true },
+  });
+
+  for (const user of candidates) {
+    if (await verifyPassword(password, user.passwordHash)) {
+      await startSession(
+        buildSession({
+          userId: user.id,
+          tenantId: user.tenantId,
+          role: user.role as Role,
+          staffId: user.staffId,
+          name: user.staff?.name ?? user.email,
+        }),
+      );
+      redirect("/calendar");
+    }
+  }
+
+  // 「アドレスが無い」と「パスワードが違う」を区別しない。
+  // 区別すると、どのアドレスが登録済みかを外から調べられてしまう。
+  fail();
+}
+
+export async function logout() {
+  await endSession();
+  redirect("/login");
 }
 
 // ── 新規登録 ──────────────────────────────
@@ -42,6 +81,8 @@ function backToBooking(params: {
  * 値の取り出しとページ遷移だけを担当し、判断は bookReservation に任せる。
  */
 export async function createReservation(formData: FormData) {
+  const session = await requireSession();
+
   const date = sanitizeDate(String(formData.get("date") ?? ""));
   const menuId = String(formData.get("menuId") ?? "");
   const filterStaffId = String(formData.get("filterStaffId") ?? "");
@@ -60,11 +101,9 @@ export async function createReservation(formData: FormData) {
     backToBooking({ ...back, message: "時間の指定が正しくありません" });
   }
 
-  const tenantId = await currentTenantId();
-  if (!tenantId) backToBooking({ ...back, message: "店舗が見つかりません" });
-
   const result = await bookReservation({
-    tenantId,
+    actor: session,
+    tenantId: session.tenantId,
     date,
     menuId,
     staffId,
@@ -84,13 +123,17 @@ export async function createReservation(formData: FormData) {
 // ── 状態の変更 ────────────────────────────
 
 export async function changeReservationStatus(formData: FormData) {
+  const session = await requireSession();
+
   const reservationId = String(formData.get("reservationId") ?? "");
   const status = String(formData.get("status") ?? "") as ReservationStatus;
 
-  const tenantId = await currentTenantId();
-  if (!tenantId) redirect(`/reservations/${reservationId}?error=店舗が見つかりません`);
-
-  const result = await setReservationStatus({ tenantId, reservationId, status });
+  const result = await setReservationStatus({
+    actor: session,
+    tenantId: session.tenantId,
+    reservationId,
+    status,
+  });
 
   refresh();
   if (!result.ok) {
@@ -102,6 +145,8 @@ export async function changeReservationStatus(formData: FormData) {
 // ── 日時・担当の変更 ──────────────────────
 
 export async function moveReservation(formData: FormData) {
+  const session = await requireSession();
+
   const reservationId = String(formData.get("reservationId") ?? "");
   const date = sanitizeDate(String(formData.get("date") ?? ""));
   const slot = String(formData.get("slot") ?? ""); // "開始分|スタッフID"
@@ -120,11 +165,9 @@ export async function moveReservation(formData: FormData) {
     backTo("時間の指定が正しくありません");
   }
 
-  const tenantId = await currentTenantId();
-  if (!tenantId) backTo("店舗が見つかりません");
-
   const result = await rescheduleReservation({
-    tenantId,
+    actor: session,
+    tenantId: session.tenantId,
     reservationId,
     date,
     staffId,

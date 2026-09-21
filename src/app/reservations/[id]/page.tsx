@@ -1,10 +1,13 @@
 import Link from "next/link";
+import { AppHeader } from "@/components/app-header";
+import { requireSession } from "@/lib/auth";
 import { notFound } from "next/navigation";
 import { changeReservationStatus, moveReservation } from "@/lib/actions";
 import { findAvailability } from "@/lib/availability";
 import { STATUS_LABEL, type ReservationStatus } from "@/lib/booking";
+import { canManageStaffReservation, denyMessage } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { getCurrentTenant } from "@/lib/schedule";
+import { getTenant } from "@/lib/schedule";
 import { formatDateLabel, sanitizeDate, toHm } from "@/lib/time";
 
 const STATUS_STYLE: Record<ReservationStatus, string> = {
@@ -24,7 +27,8 @@ export default async function ReservationDetailPage({
 }) {
   const { id } = await params;
   const sp = await searchParams;
-  const tenant = await getCurrentTenant();
+  const session = await requireSession();
+  const tenant = await getTenant(session.tenantId);
 
   // tenantId を必ず条件に入れる
   const reservation = await prisma.reservation.findFirst({
@@ -53,20 +57,25 @@ export default async function ReservationDetailPage({
     (await prisma.staff.findMany({ where: { tenantId: tenant.id } })).map((s) => [s.id, s.name]),
   );
 
+  // スタッフは自分の担当分しか操作できない
+  const canManage = canManageStaffReservation(session, reservation.staffId);
+  // 付け替え先も自分に限る（オーナーは制限なし）
+  const selectableSlots = (availability?.merged ?? []).filter((slot) =>
+    session.role === "owner"
+      ? true
+      : !!session.staffId && slot.staffIds.includes(session.staffId),
+  );
+
   return (
     <main className="mx-auto w-full max-w-2xl p-4 sm:p-6">
-      <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight">予約の詳細</h1>
-          <p className="text-sm text-neutral-500">{tenant.name}</p>
-        </div>
+      <AppHeader tenantName={tenant.name} subtitle="予約の詳細" session={session}>
         <Link
           href={`/calendar?date=${reservation.date}`}
           className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
         >
           カレンダーへ
         </Link>
-      </header>
+      </AppHeader>
 
       {sp.error && (
         <p
@@ -129,7 +138,14 @@ export default async function ReservationDetailPage({
         </p>
       </section>
 
+      {!canManage && (
+        <p className="mb-5 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600">
+          {denyMessage(session)}。内容の閲覧のみできます。
+        </p>
+      )}
+
       {/* 状態の変更 */}
+      {canManage && (
       <section className="mb-5 rounded-lg border border-neutral-200 bg-white p-4">
         <h2 className="mb-3 font-semibold">状態を変える</h2>
         <form action={changeReservationStatus} className="flex flex-wrap gap-2">
@@ -152,9 +168,10 @@ export default async function ReservationDetailPage({
           </p>
         )}
       </section>
+      )}
 
       {/* 日時・担当の変更 */}
-      {isBooked && (
+      {canManage && isBooked && (
         <section className="rounded-lg border border-neutral-200 bg-white p-4">
           <h2 className="mb-3 font-semibold">日時・担当を変える</h2>
 
@@ -178,7 +195,7 @@ export default async function ReservationDetailPage({
             </button>
           </form>
 
-          {!availability || availability.merged.length === 0 ? (
+          {selectableSlots.length === 0 ? (
             <p className="rounded-md bg-neutral-50 px-3 py-6 text-center text-sm text-neutral-500">
               {formatDateLabel(targetDate)} に空きはありません。
             </p>
@@ -189,10 +206,10 @@ export default async function ReservationDetailPage({
 
               <fieldset>
                 <legend className="mb-2 text-sm font-medium">
-                  {formatDateLabel(targetDate)} の空き（{availability.merged.length}枠）
+                  {formatDateLabel(targetDate)} の空き（{selectableSlots.length}枠）
                 </legend>
                 <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
-                  {availability.merged.map((slot) => {
+                  {selectableSlots.map((slot) => {
                     // 今の担当が対応できるならそのまま、無理なら先頭のスタッフ
                     const assignedStaffId = slot.staffIds.includes(reservation.staffId)
                       ? reservation.staffId

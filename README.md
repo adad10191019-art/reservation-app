@@ -25,9 +25,31 @@
 
 ```bash
 npm install
+cp .env.example .env
+```
+
+`.env` の `AUTH_SECRET` に長いランダム文字列を入れる。次のコマンドで作れる。
+
+```bash
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
+```
+
+```bash
 npx prisma migrate dev
 npm run db:seed
+npm run dev
 ```
+
+### 動作確認用のアカウント
+
+パスワードはすべて `password123`。
+
+| メールアドレス | 権限 | できること |
+|---|---|---|
+| `owner@example.com` | オーナー | 全員の予約を操作できる |
+| `sato@example.com` | スタッフ（佐藤） | 自分の担当分のみ操作できる |
+| `suzuki@example.com` | スタッフ（鈴木） | 同上 |
+| `tanaka@example.com` | スタッフ（田中） | 同上 |
 
 ## コマンド
 
@@ -37,6 +59,7 @@ npm run db:seed
 | `npm test` | テストを実行 |
 | `npm run check` | 実データで空き枠を出して目視確認 |
 | `npm run check:double` | 二重予約が防げているか検証 |
+| `npm run check:perm` | 権限がサーバー側で効いているか検証 |
 | `npm run db:studio` | DBの中身をブラウザで確認 |
 | `npm run db:reset` | DBを作り直してダミーデータを入れ直す（全データが消えます） |
 | `npm run typecheck` | 型チェック |
@@ -61,6 +84,19 @@ npm run db:seed
 **空き枠のロジックはDBから切り離す**
 `availability-core.ts` はDBを一切触らない純粋な計算だけを持つ。`availability.ts` がDBから値を読んでそこへ渡す。テストがDBなしで実行でき、不具合の切り分けも容易になる。
 
+**権限は画面ではなく処理側で判定する**
+ボタンを隠すのは見せ方の話でしかない。フォームは直接送れるため、`booking.ts` の
+登録・変更・状態変更のすべてが `permissions.ts` の判定を通る。`check:perm` がこれを検証している。
+
+**パスワードは Node 標準の scrypt で保存する**
+外部ライブラリを足さずに済み、公開先を選ばない。毎回違うソルトを混ぜるので、
+同じパスワードでも保存される値は毎回変わる。照合は `timingSafeEqual` で行い、
+処理時間の差から内容を推測されないようにしている。
+
+**ログイン状態は署名付き Cookie で持つ**
+中身をそのまま入れると書き換えられるため、サーバーの秘密鍵（`AUTH_SECRET`）で署名し、
+毎回検証する。署名の作成・検証はDBもCookieも触らない純粋な処理なので、そのままテストできる。
+
 ## 構成
 
 ```
@@ -74,9 +110,16 @@ src/lib/
   booking.ts                 予約の登録・変更・状態変更（重複チェックを含む）
   actions.ts                 フォームの送信先（Server Action）
   prisma.ts                  DB接続
+  password.ts                パスワードの保存・照合
+  session.ts                 ログイン状態の署名・検証
+  auth.ts                    Cookie の読み書きと画面の保護
+  permissions.ts             誰が何をしてよいかの判定
+src/components/
+  app-header.tsx             店舗名・ログイン中の人・ログアウト
 scripts/
   check-availability.ts      実データでの目視確認
   check-double-booking.ts    二重予約が防げているかの検証
+  check-permissions.ts       権限がサーバー側で効いているかの検証
 docs/
   postgres-schema.sql        PostgreSQL 版スキーマ（生成・参照用）
 ```
@@ -120,15 +163,17 @@ npm run db:seed
 
 ### 公開先での設定
 
-- 環境変数に `DATABASE_URL` を設定する
+- 環境変数に `DATABASE_URL` と `AUTH_SECRET` を設定する
 - ビルドコマンドは `npm run build`（`postinstall` で `prisma generate` が走る）
 - `.env` と `*.db` はリポジトリに含まれない（`.gitignore` 済み）
+- `AUTH_SECRET` は公開先ごとに別の値にする。漏れるとログイン状態を偽造できる
 
 ### 公開前に必要なこと
 
-- **ログイン機能がない。** 今は最初の店舗を自動で使う暫定実装なので、
-  URLを知っていれば誰でも予約を操作できる。一般公開の前に認証が必須。
+- **ダミーデータのアカウントを消す。** `seed.ts` のアカウントはパスワードが公開されている。
+  実データで運用するなら、必ず作り直す。
 - 予約を取る側（お客様向け）の画面はまだない。現状は店舗側の管理画面のみ。
+- アカウントを追加する画面がない。今は `seed.ts` でしか作れない。
 
 ## 進捗
 
@@ -138,7 +183,7 @@ npm run db:seed
 - [x] 空き枠検索・予約登録画面（二重予約の防止つき）
 - [x] 予約の詳細・日時変更・キャンセル
 - [ ] 各種設定画面
-- [ ] ログイン・権限
+- [x] ログイン・権限
 - [ ] マルチテナントの検証
 - [x] PostgreSQL 対応・デプロイ準備
 - [ ] デプロイ（公開先の用意）
