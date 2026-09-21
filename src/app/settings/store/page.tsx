@@ -34,6 +34,27 @@ export default async function StoreSettingsPage({
 
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-neutral-600">
+              お客様向けURLの短い名前
+            </span>
+            <div className="flex flex-wrap items-center gap-1 text-sm">
+              <span className="text-neutral-500">/book/</span>
+              <input
+                type="text"
+                name="slug"
+                defaultValue={tenant.slug ?? ""}
+                placeholder="sample-salon"
+                pattern="[a-zA-Z0-9-]*"
+                maxLength={40}
+                className="w-56 rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+              />
+            </div>
+            <span className="mt-1 block text-xs text-neutral-500">
+              半角の英小文字・数字・ハイフン。空欄にすると店舗IDのURLに戻ります。
+            </span>
+          </label>
+
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-neutral-600">
               予約枠の刻み
             </span>
             <select
@@ -56,6 +77,17 @@ export default async function StoreSettingsPage({
             保存する
           </button>
         </form>
+      </section>
+
+      <section className="rounded-lg border border-neutral-200 bg-white p-4">
+        <h3 className="mb-2 font-medium">お客様向けの予約ページ</h3>
+        <p className="mb-2 break-all rounded-md bg-neutral-50 px-3 py-2 font-mono text-sm">
+          /book/{tenant.slug ?? tenant.id}
+        </p>
+        <p className="text-xs leading-relaxed text-neutral-500">
+          このURLをお客様に案内します。短い名前を付けても、
+          <strong>それまでに配った店舗IDのURLは使えたまま</strong>です。
+        </p>
       </section>
 
       <section className="rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-sm leading-relaxed text-neutral-600">

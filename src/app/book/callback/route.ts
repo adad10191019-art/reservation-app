@@ -12,12 +12,11 @@ import { LINE_LOGIN_COOKIE } from "@/lib/constants";
 import { upsertLineCustomer } from "@/lib/customer-store";
 import { fetchLineProfile } from "@/lib/line";
 import { prisma } from "@/lib/prisma";
+import { handleOf, tenantHandle } from "@/lib/tenant";
 
-function errorRedirect(request: Request, tenantId: string | null, message: string) {
-  const url = new URL(
-    tenantId ? `/book/${tenantId}` : "/",
-    process.env.APP_URL ?? request.url,
-  );
+async function errorRedirect(request: Request, tenantId: string | null, message: string) {
+  const path = tenantId ? `/book/${await handleOf(tenantId)}` : "/";
+  const url = new URL(path, process.env.APP_URL ?? request.url);
   url.searchParams.set("error", message);
   return NextResponse.redirect(url);
 }
@@ -42,18 +41,18 @@ export async function GET(request: Request) {
 
   // 合言葉が合わなければ、こちらが始めた手続きではない
   if (!code || !state || !pending.nonce || state !== pending.nonce) {
-    return errorRedirect(request, tenantId, "手続きをやり直してください");
+    return await errorRedirect(request, tenantId, "手続きをやり直してください");
   }
-  if (!tenantId) return errorRedirect(request, null, "店舗が分かりませんでした");
+  if (!tenantId) return await errorRedirect(request, null, "店舗が分かりませんでした");
 
   const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
-  if (!tenant) return errorRedirect(request, null, "店舗が見つかりません");
+  if (!tenant) return await errorRedirect(request, null, "店舗が見つかりません");
 
   let profile;
   try {
     profile = await fetchLineProfile(code);
   } catch (e) {
-    return errorRedirect(
+    return await errorRedirect(
       request,
       tenantId,
       e instanceof Error ? e.message : "LINEとのやり取りに失敗しました",
@@ -73,7 +72,7 @@ export async function GET(request: Request) {
   });
 
   const destination = new URL(
-    pending.next || `/book/${tenantId}`,
+    pending.next || `/book/${tenantHandle(tenant)}`,
     process.env.APP_URL ?? request.url,
   );
   const response = NextResponse.redirect(destination);

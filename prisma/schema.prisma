@@ -19,8 +19,11 @@ datasource db {
 
 // ── 店舗 ───────────────────────────────
 model Tenant {
-  id          String @id @default(uuid())
-  name        String
+  id   String  @id @default(uuid())
+  name String
+  /// お客様向けURLに使う短い名前。未設定なら店舗IDを使う
+  slug String? @unique
+
   timezone    String @default("Asia/Tokyo")
   slotMinutes Int    @default(15) // 予約枠の刻み（分）
 

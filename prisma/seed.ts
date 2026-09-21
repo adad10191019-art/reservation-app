@@ -48,12 +48,12 @@ async function main() {
 
   // ── 店舗 ──────────────────────────
   const tenant = await prisma.tenant.create({
-    data: { name: "サンプルヘアサロン", slotMinutes: 15 },
+    data: { name: "サンプルヘアサロン", slug: "sample-salon", slotMinutes: 15 },
   });
 
   // 他店舗のデータが混ざらないことを確認するための2店舗目
   const otherTenant = await prisma.tenant.create({
-    data: { name: "別店舗（分離確認用）" },
+    data: { name: "別店舗（分離確認用）", slug: "other-shop" },
   });
 
   // ── スタッフ ──────────────────────

@@ -5,21 +5,23 @@ import { randomBytes } from "node:crypto";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { bookAsCustomer, cancelOwnReservation } from "./booking";
+import { LINE_LOGIN_COOKIE } from "./constants";
 import {
   buildCustomerSession,
   endCustomerSession,
   startCustomerSession,
 } from "./customer-session";
-import { buildAuthorizeUrl, isDevFallbackAllowed, isLineConfigured } from "./line";
-import { LINE_LOGIN_COOKIE } from "./constants";
 import { getActiveCustomer, upsertLineCustomer } from "./customer-store";
+import { buildAuthorizeUrl, isDevFallbackAllowed, isLineConfigured } from "./line";
 import { prisma } from "./prisma";
+import { handleOf, tenantHandle } from "./tenant";
 import { sanitizeDate } from "./time";
 
-function bookPath(tenantId: string, query?: Record<string, string>): string {
+/** お客様向けURLを組み立てる。handle は短い名前（無ければ店舗ID） */
+function bookPath(handle: string, query?: Record<string, string>): string {
   const q = new URLSearchParams(query ?? {});
   const suffix = q.toString();
-  return `/book/${tenantId}${suffix ? `?${suffix}` : ""}`;
+  return `/book/${handle}${suffix ? `?${suffix}` : ""}`;
 }
 
 // ── ログイン ──────────────────────────────
@@ -36,9 +38,10 @@ export async function startLineLogin(formData: FormData) {
 
   const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
   if (!tenant) redirect("/");
+  const handle = tenantHandle(tenant);
 
   if (!isLineConfigured()) {
-    redirect(bookPath(tenantId, { error: "LINEログインの設定がまだです" }));
+    redirect(bookPath(handle, { error: "LINEログインの設定がまだです" }));
   }
 
   const nonce = randomBytes(16).toString("base64url");
@@ -67,7 +70,9 @@ export async function devLogin(formData: FormData) {
 
   const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
   if (!tenant) redirect("/");
-  if (!name) redirect(bookPath(tenantId, { error: "お名前を入力してください" }));
+  const handle = tenantHandle(tenant);
+
+  if (!name) redirect(bookPath(handle, { error: "お名前を入力してください" }));
 
   // 実際のLINEの利用者IDと混ざらないよう、印を付けておく
   const customer = await upsertLineCustomer({
@@ -79,13 +84,13 @@ export async function devLogin(formData: FormData) {
   await startCustomerSession(
     buildCustomerSession({ customerId: customer.id, tenantId, name: customer.name }),
   );
-  redirect(next || bookPath(tenantId));
+  redirect(next || bookPath(handle));
 }
 
 export async function customerLogout(formData: FormData) {
   const tenantId = String(formData.get("tenantId") ?? "");
   await endCustomerSession();
-  redirect(bookPath(tenantId));
+  redirect(bookPath(await handleOf(tenantId)));
 }
 
 // ── 予約する ──────────────────────────────
@@ -96,8 +101,9 @@ export async function createCustomerReservation(formData: FormData) {
   const menuId = String(formData.get("menuId") ?? "");
   const slot = String(formData.get("slot") ?? ""); // "開始分|スタッフID"
 
+  const handle = await handleOf(tenantId);
   const back: (message: string) => never = (message) =>
-    redirect(bookPath(tenantId, { date, menuId, error: message }));
+    redirect(bookPath(handle, { date, menuId, error: message }));
 
   const session = await getActiveCustomer(tenantId);
   if (!session) back("ログインし直してください");
@@ -119,16 +125,18 @@ export async function createCustomerReservation(formData: FormData) {
   if (!result.ok) back(result.message);
 
   revalidatePath("/calendar");
-  redirect(`/book/${tenantId}/mine?done=1`);
+  redirect(`${bookPath(handle)}/mine?done=1`);
 }
 
 export async function cancelCustomerReservation(formData: FormData) {
   const tenantId = String(formData.get("tenantId") ?? "");
   const reservationId = String(formData.get("reservationId") ?? "");
 
+  const handle = await handleOf(tenantId);
+
   const session = await getActiveCustomer(tenantId);
   if (!session) {
-    redirect(bookPath(tenantId, { error: "ログインし直してください" }));
+    redirect(bookPath(handle, { error: "ログインし直してください" }));
   }
 
   const result = await cancelOwnReservation({
@@ -139,7 +147,7 @@ export async function cancelCustomerReservation(formData: FormData) {
 
   revalidatePath("/calendar");
   if (!result.ok) {
-    redirect(`/book/${tenantId}/mine?error=${encodeURIComponent(result.message)}`);
+    redirect(`${bookPath(handle)}/mine?error=${encodeURIComponent(result.message)}`);
   }
-  redirect(`/book/${tenantId}/mine?canceled=1`);
+  redirect(`${bookPath(handle)}/mine?canceled=1`);
 }

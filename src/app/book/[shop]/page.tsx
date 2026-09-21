@@ -11,20 +11,25 @@ import {
 import { getActiveCustomer } from "@/lib/customer-store";
 import { isDevFallbackAllowed, isLineConfigured } from "@/lib/line";
 import { prisma } from "@/lib/prisma";
+import { findTenantByHandle, tenantHandle } from "@/lib/tenant";
 import { addDays, formatDateLabel, sanitizeDate, toHm, todayString } from "@/lib/time";
 
 export default async function PublicBookingPage({
   params,
   searchParams,
 }: {
-  params: Promise<{ tenantId: string }>;
+  params: Promise<{ shop: string }>;
   searchParams: Promise<{ date?: string; menuId?: string; error?: string }>;
 }) {
-  const { tenantId } = await params;
+  const { shop } = await params;
   const sp = await searchParams;
 
-  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+  const tenant = await findTenantByHandle(shop);
   if (!tenant) notFound();
+
+  // URLに載せる値（短い名前があればそちら）
+  const handle = tenantHandle(tenant);
+  const tenantId = tenant.id;
 
   const date = sanitizeDate(sp.date);
   const loggedIn = await getActiveCustomer(tenantId);
@@ -73,7 +78,7 @@ export default async function PublicBookingPage({
         {loggedIn ? (
           <div className="flex items-center gap-2">
             <Link
-              href={`/book/${tenantId}/mine`}
+              href={`/book/${handle}/mine`}
               className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
             >
               予約の確認
@@ -220,7 +225,7 @@ export default async function PublicBookingPage({
                 ))}
               </div>
 
-              <LoginBox tenantId={tenantId} date={date} menuId={menu.id} />
+              <LoginBox tenantId={tenantId} handle={handle} date={date} menuId={menu.id} />
             </>
           )}
         </section>
@@ -239,14 +244,16 @@ export default async function PublicBookingPage({
 
 function LoginBox({
   tenantId,
+  handle,
   date,
   menuId,
 }: {
   tenantId: string;
+  handle: string;
   date: string;
   menuId: string;
 }) {
-  const next = `/book/${tenantId}?date=${date}&menuId=${menuId}`;
+  const next = `/book/${handle}?date=${date}&menuId=${menuId}`;
 
   if (isLineConfigured()) {
     return (

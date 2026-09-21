@@ -156,6 +156,8 @@ src/lib/
   constants.ts               画面とサーバーの両方で使う定数
   settings-actions.ts        設定の保存（オーナー限定）
   booking-window.ts          受付期間と締め切りの判定（DBを触らない）
+  slug.ts                    お客様向けURLの短い名前の検査
+  tenant.ts                  短い名前／店舗IDから店舗を引く
   customer-session.ts        お客様のログイン状態（店舗側とは別のCookie）
   customer-store.ts          お客様の登録・照合
   customer-actions.ts        お客様向けのフォームの送信先
@@ -166,8 +168,8 @@ src/components/
 src/app/settings/
   menus/ staff/ hours/ days/ accounts/ store/   設定画面（オーナー限定）
 src/app/book/
-  [tenantId]/                お客様向けの予約画面（ログイン不要で閲覧できる）
-  [tenantId]/mine/           ご自分の予約の確認・キャンセル
+  [shop]/                    お客様向けの予約画面（ログイン不要で閲覧できる）
+  [shop]/mine/               ご自分の予約の確認・キャンセル
   callback/                  LINEログインの戻り先
 scripts/
   check-availability.ts      実データでの目視確認
@@ -224,8 +226,11 @@ npm run db:seed
 
 ## お客様向けの予約画面
 
-`/book/<店舗ID>` がお客様向けの入口。ログインなしで空き時間を見られ、
-予約するときだけ LINE ログインを求める。新規登録は不要。
+`/book/<短い名前>` がお客様向けの入口（例：`/book/sample-salon`）。
+短い名前は 設定 → 店舗 で付けられる。未設定なら `/book/<店舗ID>` を使う。
+**短い名前を後から付けても、それまでに配った店舗IDのURLは使えたまま**。
+
+ログインなしで空き時間を見られ、予約するときだけ LINE ログインを求める。新規登録は不要。
 
 ### LINEログインの設定
 
@@ -256,7 +261,9 @@ LINE_LOGIN_CHANNEL_SECRET="..."
 
 - **ダミーデータのアカウントを消す。** `seed.ts` のアカウントはパスワードが公開されている。
   実データで運用するなら、必ず作り直す。
-- 予約を取る側（お客様向け）の画面はまだない。現状は店舗側の管理画面のみ。
+- **LINEログインの認証情報を設定する。** 未設定のままだと開発用の仮ログインになるが、
+  それは本番では動かないため、お客様が予約できない。
+- 予約完了やリマインドの通知はまだない（LINEのメッセージ送信は未実装）。
 
 ## 進捗
 
@@ -274,4 +281,5 @@ LINE_LOGIN_CHANNEL_SECRET="..."
 - [x] PostgreSQL 対応・デプロイ準備
 - [ ] デプロイ（公開先の用意）
 - [x] お客様向けの予約画面（LINEログイン）
+- [x] お客様向けURLの短い名前（/book/sample-salon）
 - [ ] LINE連携（予約通知・リマインド）

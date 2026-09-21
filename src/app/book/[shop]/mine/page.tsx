@@ -4,23 +4,27 @@ import { STATUS_LABEL, type ReservationStatus } from "@/lib/booking";
 import { cancelCustomerReservation } from "@/lib/customer-actions";
 import { getActiveCustomer } from "@/lib/customer-store";
 import { prisma } from "@/lib/prisma";
+import { findTenantByHandle, tenantHandle } from "@/lib/tenant";
 import { formatDateLabel, toHm, todayString } from "@/lib/time";
 
 export default async function MyReservationsPage({
   params,
   searchParams,
 }: {
-  params: Promise<{ tenantId: string }>;
+  params: Promise<{ shop: string }>;
   searchParams: Promise<{ done?: string; canceled?: string; error?: string }>;
 }) {
-  const { tenantId } = await params;
+  const { shop } = await params;
   const sp = await searchParams;
 
-  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+  const tenant = await findTenantByHandle(shop);
   if (!tenant) notFound();
 
+  const handle = tenantHandle(tenant);
+  const tenantId = tenant.id;
+
   const session = await getActiveCustomer(tenantId);
-  if (!session) redirect(`/book/${tenantId}`);
+  if (!session) redirect(`/book/${handle}`);
 
   const today = todayString();
   const reservations = await prisma.reservation.findMany({
@@ -43,7 +47,7 @@ export default async function MyReservationsPage({
           </p>
         </div>
         <Link
-          href={`/book/${tenantId}`}
+          href={`/book/${handle}`}
           className="rounded-md bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-700"
         >
           新しく予約する

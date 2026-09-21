@@ -7,6 +7,7 @@ import { SLOT_CHOICES } from "./constants";
 import { hashPassword } from "./password";
 import { prisma } from "./prisma";
 import { parseRanges } from "./ranges";
+import { validateSlug } from "./slug";
 import type { Role } from "./session";
 
 /** 設定を変えたら、予約まわりの画面も作り直させる */
@@ -275,15 +276,31 @@ export async function saveStore(formData: FormData) {
 
   const name = String(formData.get("name") ?? "").trim();
   const slotMinutes = toInt(formData.get("slotMinutes"));
+  const slugInput = String(formData.get("slug") ?? "").trim();
 
   if (!name) back(path, "店舗名を入力してください");
   if (slotMinutes === null || !SLOT_CHOICES.includes(slotMinutes as never)) {
     back(path, "予約枠の刻みの指定が正しくありません");
   }
 
+  // 空欄なら未設定に戻す（お客様向けURLは店舗IDのものになる）
+  let slug: string | null = null;
+  if (slugInput !== "") {
+    const checked = validateSlug(slugInput);
+    if (!checked.ok) back(path, checked.message);
+    slug = checked.slug;
+
+    // 他の店舗が使っていないか。店舗をまたいで一意である必要がある
+    const taken = await prisma.tenant.findFirst({
+      where: { slug, NOT: { id: session.tenantId } },
+      select: { id: true },
+    });
+    if (taken) back(path, "その短い名前は、ほかの店舗が使っています");
+  }
+
   await prisma.tenant.update({
     where: { id: session.tenantId },
-    data: { name, slotMinutes },
+    data: { name, slotMinutes, slug },
   });
 
   refreshAll();
