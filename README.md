@@ -76,7 +76,59 @@ src/lib/
   prisma.ts                  DB接続
 scripts/
   check-availability.ts      実データでの目視確認
+  check-double-booking.ts    二重予約が防げているかの検証
+docs/
+  postgres-schema.sql        PostgreSQL 版スキーマ（生成・参照用）
 ```
+
+## PostgreSQL へ切り替える（公開するとき）
+
+手元の開発は SQLite で動く。公開先（Vercel などのサーバーレス環境）はファイルが残らないため、
+PostgreSQL に切り替える必要がある。スキーマは PostgreSQL でもそのまま作れることを確認済み
+（`docs/postgres-schema.sql` が、DBに接続せずに生成した確認結果）。
+
+**1. PostgreSQL を用意する**
+
+Neon・Supabase・Vercel Postgres などの無料枠でよい。接続文字列を控える。
+
+**2. 設定を2か所変える**
+
+```prisma
+// prisma/schema.prisma
+datasource db {
+  provider = "postgresql"   // "sqlite" から変更
+}
+```
+
+```bash
+# .env
+DATABASE_URL="postgresql://ユーザー名:パスワード@ホスト:5432/データベース名?sslmode=require"
+```
+
+接続の切り替えにコード修正は要らない。`src/lib/prisma.ts` が `DATABASE_URL` の
+書き出し（`file:` か `postgres://` か）を見て、使うドライバを自動で選ぶ。
+
+**3. マイグレーションを作り直す**
+
+既存の `prisma/migrations/` は SQLite 向けのSQLなので、PostgreSQL には流せない。
+
+```bash
+rm -rf prisma/migrations
+npx prisma migrate dev --name init
+npm run db:seed
+```
+
+### 公開先での設定
+
+- 環境変数に `DATABASE_URL` を設定する
+- ビルドコマンドは `npm run build`（`postinstall` で `prisma generate` が走る）
+- `.env` と `*.db` はリポジトリに含まれない（`.gitignore` 済み）
+
+### 公開前に必要なこと
+
+- **ログイン機能がない。** 今は最初の店舗を自動で使う暫定実装なので、
+  URLを知っていれば誰でも予約を操作できる。一般公開の前に認証が必須。
+- 予約を取る側（お客様向け）の画面はまだない。現状は店舗側の管理画面のみ。
 
 ## 進捗
 
@@ -88,5 +140,6 @@ scripts/
 - [ ] 各種設定画面
 - [ ] ログイン・権限
 - [ ] マルチテナントの検証
-- [ ] デプロイ
+- [x] PostgreSQL 対応・デプロイ準備
+- [ ] デプロイ（公開先の用意）
 - [ ] LINE連携（予約通知・リマインド）
