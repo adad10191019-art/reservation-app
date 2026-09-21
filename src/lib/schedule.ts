@@ -16,11 +16,21 @@ export type ScheduledReservation = {
   price: number;
 };
 
+export type ScheduledBlock = {
+  id: string;
+  startMinutes: number;
+  endMinutes: number;
+  reason: string;
+  /** 店舗全体のブロックか */
+  wholeShop: boolean;
+};
+
 export type StaffColumn = {
   staffId: string;
   staffName: string;
   working: Interval[];
   reservations: ScheduledReservation[];
+  blocks: ScheduledBlock[];
 };
 
 export type DaySchedule = {
@@ -54,7 +64,7 @@ export async function getDaySchedule(params: {
   });
   const staffIds = staffs.map((s) => s.id);
 
-  const [businessHours, dateOverrides, reservations] = await Promise.all([
+  const [businessHours, dateOverrides, reservations, blocks] = await Promise.all([
     prisma.businessHour.findMany({
       where: { tenantId, dayOfWeek, OR: [{ staffId: null }, { staffId: { in: staffIds } }] },
     }),
@@ -64,6 +74,10 @@ export async function getDaySchedule(params: {
     prisma.reservation.findMany({
       where: { tenantId, date, staffId: { in: staffIds }, status: "booked" },
       include: { customer: true },
+      orderBy: { startMinutes: "asc" },
+    }),
+    prisma.block.findMany({
+      where: { tenantId, date, OR: [{ staffId: null }, { staffId: { in: staffIds } }] },
       orderBy: { startMinutes: "asc" },
     }),
   ]);
@@ -84,12 +98,23 @@ export async function getDaySchedule(params: {
         durationMinutes: r.durationSnapshot,
         price: r.priceSnapshot,
       })),
+    // 店舗全体のブロックは全スタッフの列に出す
+    blocks: blocks
+      .filter((b) => b.staffId === null || b.staffId === staff.id)
+      .map((b) => ({
+        id: b.id,
+        startMinutes: b.startMinutes,
+        endMinutes: b.endMinutes,
+        reason: b.reason,
+        wholeShop: b.staffId === null,
+      })),
   }));
 
   // 勤務時間と予約が全部収まるように表示範囲を決める
   const points = columns.flatMap((c) => [
     ...c.working.flatMap((w) => [w.start, w.end]),
     ...c.reservations.flatMap((r) => [r.startMinutes, r.endMinutes]),
+    ...c.blocks.flatMap((b) => [b.startMinutes, b.endMinutes]),
   ]);
 
   const viewStart =

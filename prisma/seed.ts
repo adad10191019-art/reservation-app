@@ -36,6 +36,7 @@ function hm(text: string): number {
 async function main() {
   // 何度でも流せるように、毎回まっさらにする
   await prisma.reservation.deleteMany();
+  await prisma.block.deleteMany();
   await prisma.dateOverride.deleteMany();
   await prisma.businessHour.deleteMany();
   await prisma.staffMenu.deleteMany();
@@ -235,6 +236,19 @@ async function main() {
     ],
   });
 
+  // ── ブロック枠（予約以外で時間を塞ぐ）──
+  // 2日後の 14:00-15:00 は全スタッフが会議で埋まる
+  await prisma.block.create({
+    data: {
+      tenantId: tenant.id,
+      staffId: null,
+      date: dateStr(2),
+      startMinutes: hm("14:00"),
+      endMinutes: hm("15:00"),
+      reason: "スタッフ会議",
+    },
+  });
+
   // ── 顧客 ──────────────────────────
   const [yamada, ito, kobayashi] = await Promise.all([
     prisma.customer.create({
@@ -305,6 +319,7 @@ async function main() {
   console.log(`  顧客        : ${await prisma.customer.count()}`);
   console.log(`  アカウント  : ${await prisma.user.count()}`);
   console.log(`  予約        : ${await prisma.reservation.count()}`);
+  console.log(`  ブロック枠  : ${await prisma.block.count()}`);
 }
 
 main()

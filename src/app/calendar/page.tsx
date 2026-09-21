@@ -130,6 +130,22 @@ export default async function CalendarPage({
                   />
                 ))}
 
+                {col.blocks.map((b) => (
+                  <div
+                    key={b.id}
+                    className="absolute inset-x-1 overflow-hidden rounded border border-dashed border-amber-400 bg-amber-50 px-1.5 py-1 text-xs leading-tight text-amber-900"
+                    style={{
+                      top: top(b.startMinutes),
+                      height: (b.endMinutes - b.startMinutes) * PX_PER_MIN - 2,
+                    }}
+                  >
+                    <div className="truncate font-medium">{b.reason}</div>
+                    <div className="tabular-nums text-amber-700">
+                      {toHm(b.startMinutes)}–{toHm(b.endMinutes)}
+                    </div>
+                  </div>
+                ))}
+
                 {col.reservations.map((r) => (
                   <Link
                     key={r.id}

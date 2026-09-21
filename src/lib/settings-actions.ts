@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireOwner } from "./auth";
+import { SLOT_CHOICES } from "./constants";
 import { hashPassword } from "./password";
 import { prisma } from "./prisma";
 import { parseRanges } from "./ranges";
@@ -121,7 +122,7 @@ export async function saveBusinessHours(formData: FormData) {
   const staffId = target === "shop" ? null : target;
   const path = `/settings/hours?target=${encodeURIComponent(target)}`;
 
-  const fail = (message: string): never =>
+  const fail: (message: string) => never = (message) =>
     redirect(`${path}&error=${encodeURIComponent(message)}`);
 
   if (staffId) {
@@ -208,7 +209,9 @@ export async function createAccount(formData: FormData) {
       email,
       passwordHash: await hashPassword(password),
       role,
-      staffId: role === "staff" ? staffId : null,
+      // オーナーでもスタッフに紐づけてよい。
+      // 「普段はスタッフだが、代理でオーナー権限を持つ」場合に必要。
+      staffId: staffId || null,
     },
   });
 
@@ -264,4 +267,223 @@ export async function resetAccountPassword(formData: FormData) {
 
   refreshAll();
   back(path);
+}
+
+// ── 店舗の基本設定 ────────────────────────
+
+export async function saveStore(formData: FormData) {
+  const session = await requireOwner();
+  const path = "/settings/store";
+
+  const name = String(formData.get("name") ?? "").trim();
+  const slotMinutes = toInt(formData.get("slotMinutes"));
+
+  if (!name) back(path, "店舗名を入力してください");
+  if (slotMinutes === null || !SLOT_CHOICES.includes(slotMinutes as never)) {
+    back(path, "予約枠の刻みの指定が正しくありません");
+  }
+
+  await prisma.tenant.update({
+    where: { id: session.tenantId },
+    data: { name, slotMinutes },
+  });
+
+  refreshAll();
+  back(path);
+}
+
+// ── 権限の切り替え ────────────────────────
+
+export async function changeAccountRole(formData: FormData) {
+  const session = await requireOwner();
+  const path = "/settings/accounts";
+
+  const id = String(formData.get("id") ?? "");
+  const role = String(formData.get("role") ?? "") as Role;
+
+  if (role !== "owner" && role !== "staff") back(path, "権限の指定が正しくありません");
+
+  const target = await prisma.user.findFirst({
+    where: { id, tenantId: session.tenantId },
+  });
+  if (!target) back(path, "アカウントが見つかりません");
+  if (target.role === role) back(path, "すでにその権限です");
+
+  // スタッフに下げるなら、担当スタッフに紐づいている必要がある
+  if (role === "staff" && !target.staffId) {
+    back(path, "担当スタッフに紐づいていないアカウントは、スタッフ権限にできません");
+  }
+
+  // オーナーが誰もいなくなると、設定を変えられなくなる
+  if (target.role === "owner" && role === "staff") {
+    const owners = await prisma.user.count({
+      where: { tenantId: session.tenantId, role: "owner" },
+    });
+    if (owners <= 1) back(path, "オーナーのアカウントは最低1つ必要です");
+  }
+
+  await prisma.user.update({ where: { id }, data: { role } });
+
+  refreshAll();
+  back(path);
+}
+
+// ── 日付ごとの例外とブロック枠 ────────────
+
+function daysPath(date: string): string {
+  return `/settings/days?date=${encodeURIComponent(date)}`;
+}
+
+/**
+ * その日の勤務時間を、店舗全体とスタッフそれぞれについて保存する。
+ *
+ * 入力欄が空で「休み」にもチェックがなければ、例外を消して
+ * 曜日ごとの基本パターンに戻す。
+ */
+export async function saveDateOverrides(formData: FormData) {
+  const session = await requireOwner();
+  const date = String(formData.get("date") ?? "");
+  const path = daysPath(date);
+
+  const fail: (message: string) => never = (message) =>
+    redirect(`${path}&error=${encodeURIComponent(message)}`);
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) fail("日付の形式が正しくありません");
+
+  const staffs = await prisma.staff.findMany({
+    where: { tenantId: session.tenantId, isActive: true },
+    select: { id: true, name: true },
+  });
+
+  // 対象は「店舗全体」と各スタッフ
+  const targets: { staffId: string | null; label: string }[] = [
+    { staffId: null, label: "店舗全体" },
+    ...staffs.map((s) => ({ staffId: s.id, label: s.name })),
+  ];
+
+  type Row = {
+    staffId: string | null;
+    isClosed: boolean;
+    startMinutes: number | null;
+    endMinutes: number | null;
+  };
+  const rows: Row[] = [];
+
+  // 1つでも形式が違えば、何も保存しない
+  for (const target of targets) {
+    const key = target.staffId ?? "shop";
+    const isClosed = formData.get(`closed_${key}`) === "on";
+    const text = String(formData.get(`ranges_${key}`) ?? "");
+
+    if (isClosed) {
+      rows.push({ staffId: target.staffId, isClosed: true, startMinutes: null, endMinutes: null });
+      continue;
+    }
+
+    const result = parseRanges(text);
+    if (!result.ok) fail(`${target.label}: ${result.message}`);
+    else {
+      for (const interval of result.intervals) {
+        rows.push({
+          staffId: target.staffId,
+          isClosed: false,
+          startMinutes: interval.start,
+          endMinutes: interval.end,
+        });
+      }
+    }
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.dateOverride.deleteMany({ where: { tenantId: session.tenantId, date } });
+    if (rows.length > 0) {
+      await tx.dateOverride.createMany({
+        data: rows.map((r) => ({ ...r, tenantId: session.tenantId, date })),
+      });
+    }
+  });
+
+  refreshAll();
+  redirect(`${path}&done=1`);
+}
+
+export async function createBlock(formData: FormData) {
+  const session = await requireOwner();
+  const date = String(formData.get("date") ?? "");
+  const path = daysPath(date);
+
+  const fail: (message: string) => never = (message) =>
+    redirect(`${path}&error=${encodeURIComponent(message)}`);
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) fail("日付の形式が正しくありません");
+
+  const staffId = String(formData.get("staffId") ?? "");
+  const reason = String(formData.get("reason") ?? "").trim();
+  const startText = String(formData.get("start") ?? "");
+  const endText = String(formData.get("end") ?? "");
+
+  if (!reason) fail("理由を入力してください");
+
+  const result = parseRanges(`${startText}-${endText}`);
+  if (!result.ok) fail(result.message);
+  if (result.intervals.length !== 1) fail("時間の指定が正しくありません");
+
+  const interval = result.intervals[0];
+
+  if (staffId) {
+    const staff = await prisma.staff.findFirst({
+      where: { id: staffId, tenantId: session.tenantId },
+    });
+    if (!staff) fail("スタッフが見つかりません");
+  }
+
+  // すでに入っている予約と重なる場合は知らせる（登録自体は認める）
+  const overlapping = await prisma.reservation.count({
+    where: {
+      tenantId: session.tenantId,
+      date,
+      status: "booked",
+      ...(staffId ? { staffId } : {}),
+      startMinutes: { lt: interval.end },
+      endMinutes: { gt: interval.start },
+    },
+  });
+
+  await prisma.block.create({
+    data: {
+      tenantId: session.tenantId,
+      staffId: staffId || null,
+      date,
+      startMinutes: interval.start,
+      endMinutes: interval.end,
+      reason,
+    },
+  });
+
+  refreshAll();
+  if (overlapping > 0) {
+    redirect(
+      `${path}&error=${encodeURIComponent(
+        `登録しましたが、この時間にはすでに予約が${overlapping}件あります。カレンダーで確認してください`,
+      )}`,
+    );
+  }
+  redirect(`${path}&done=1`);
+}
+
+export async function deleteBlock(formData: FormData) {
+  const session = await requireOwner();
+  const date = String(formData.get("date") ?? "");
+  const id = String(formData.get("id") ?? "");
+  const path = daysPath(date);
+
+  const target = await prisma.block.findFirst({
+    where: { id, tenantId: session.tenantId },
+  });
+  if (!target) redirect(`${path}&error=${encodeURIComponent("見つかりません")}`);
+
+  await prisma.block.delete({ where: { id } });
+
+  refreshAll();
+  redirect(`${path}&done=1`);
 }

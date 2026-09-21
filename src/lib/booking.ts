@@ -87,6 +87,18 @@ async function ensureSlotUsable(
     },
   });
   if (conflict) throw new Error("この枠は、ちょうど今ほかの予約で埋まりました");
+
+  // 予約以外で塞がっている時間（会議・清掃など）とも重なっていないか
+  const block = await tx.block.findFirst({
+    where: {
+      tenantId,
+      date,
+      OR: [{ staffId: null }, { staffId }],
+      startMinutes: { lt: endMinutes },
+      endMinutes: { gt: startMinutes },
+    },
+  });
+  if (block) throw new Error(`その時間は「${block.reason}」で塞がっています`);
 }
 
 // ── 新規登録 ──────────────────────────────

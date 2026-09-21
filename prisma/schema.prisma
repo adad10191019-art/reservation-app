@@ -34,6 +34,7 @@ model Tenant {
   dateOverrides DateOverride[]
   customers     Customer[]
   reservations  Reservation[]
+  blocks        Block[]
 }
 
 // ── ログインする人 ─────────────────────
@@ -70,6 +71,7 @@ model Staff {
   businessHours BusinessHour[]
   dateOverrides DateOverride[]
   reservations  Reservation[]
+  blocks        Block[]
 
   @@index([tenantId])
 }
@@ -140,6 +142,27 @@ model DateOverride {
 
   @@index([tenantId, date])
   @@index([staffId])
+}
+
+// ── ブロック枠（予約以外で時間を塞ぐ） ──
+// 会議・清掃・研修など、予約ではないが枠を埋めたい予定。
+// ダミーの予約で代用すると売上集計に混ざるため、別のテーブルにする。
+model Block {
+  id           String   @id @default(uuid())
+  tenantId     String
+  staffId      String? // null なら店舗全体（全スタッフを塞ぐ）
+  date         String // "YYYY-MM-DD"
+  startMinutes Int
+  endMinutes   Int
+  reason       String // 会議、清掃、研修 など
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  staff  Staff? @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, date])
+  @@index([staffId, date])
 }
 
 // ── 顧客 ───────────────────────────────

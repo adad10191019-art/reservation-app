@@ -73,7 +73,7 @@ export async function findAvailability(params: {
 
   const staffIds = staffs.map((s) => s.id);
 
-  const [businessHours, dateOverrides, reservations] = await Promise.all([
+  const [businessHours, dateOverrides, reservations, blocks] = await Promise.all([
     prisma.businessHour.findMany({
       where: {
         tenantId,
@@ -97,6 +97,14 @@ export async function findAvailability(params: {
         ...(excludeReservationId ? { id: { not: excludeReservationId } } : {}),
       },
     }),
+    // 予約以外で塞がっている時間（会議・清掃など）
+    prisma.block.findMany({
+      where: {
+        tenantId,
+        date,
+        OR: [{ staffId: null }, { staffId: { in: staffIds } }],
+      },
+    }),
   ]);
 
   const perStaff: StaffAvailability[] = staffs.map((staff) => {
@@ -105,9 +113,12 @@ export async function findAvailability(params: {
       businessHours,
       dateOverrides,
     });
-    const busy = reservations
-      .filter((r) => r.staffId === staff.id)
-      .map((r) => ({ start: r.startMinutes, end: r.endMinutes }));
+    // 予約と、予約以外のブロック枠の両方が枠を塞ぐ。
+    // staffId が null のブロックは全スタッフに掛かる。
+    const busy = [
+      ...reservations.filter((r) => r.staffId === staff.id),
+      ...blocks.filter((b) => b.staffId === null || b.staffId === staff.id),
+    ].map((x) => ({ start: x.startMinutes, end: x.endMinutes }));
 
     return {
       staffId: staff.id,

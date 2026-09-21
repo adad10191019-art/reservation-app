@@ -2,6 +2,7 @@ import { Banner } from "@/components/banner";
 import { requireOwner } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
+  changeAccountRole,
   createAccount,
   deleteAccount,
   resetAccountPassword,
@@ -112,6 +113,11 @@ export default async function AccountSettingsPage({
           </div>
         </form>
 
+        <p className="mt-3 text-xs leading-relaxed text-neutral-500">
+          オーナー権限でも担当スタッフに紐づけられます。
+          「普段はスタッフだが、代理でオーナーを務める」場合に使ってください。
+        </p>
+
         {selectableStaffs.length === 0 && staffs.length > 0 && (
           <p className="mt-3 text-xs text-neutral-500">
             すべてのスタッフにアカウントが作られています。
@@ -151,6 +157,23 @@ export default async function AccountSettingsPage({
                 </div>
 
                 <div className="flex flex-wrap items-end gap-2">
+                  {/* 権限の切り替え。オーナー不在を避けるため、最後の1人は下げられない */}
+                  <form action={changeAccountRole}>
+                    <input type="hidden" name="id" value={user.id} />
+                    <input
+                      type="hidden"
+                      name="role"
+                      value={user.role === "owner" ? "staff" : "owner"}
+                    />
+                    <button
+                      type="submit"
+                      disabled={user.role === "staff" && !user.staffId}
+                      className="rounded-md border border-violet-300 px-3 py-1.5 text-sm text-violet-800 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {user.role === "owner" ? "スタッフに戻す" : "オーナーにする"}
+                    </button>
+                  </form>
+
                   <form action={resetAccountPassword} className="flex items-end gap-2">
                     <input type="hidden" name="id" value={user.id} />
                     <label className="block">
@@ -198,6 +221,8 @@ export default async function AccountSettingsPage({
         また、オーナーのアカウントは最低1つ必要です。
         <br />
         スタッフ権限のアカウントは、担当するスタッフと1対1で紐づきます。
+        <br />
+        オーナーが1人しかいない場合、そのアカウントをスタッフに戻すことはできません。
       </p>
     </div>
   );
