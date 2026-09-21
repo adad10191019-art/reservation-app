@@ -63,6 +63,7 @@ npm run dev
 | `npm run check:tenant` | 他店舗のデータが混ざらないか検証 |
 | `npm run db:studio` | DBの中身をブラウザで確認 |
 | `npm run db:reset` | DBを作り直してダミーデータを入れ直す（全データが消えます） |
+| `npm run check:line` | LINEの設定が読めているか確認（送信はしない） |
 | `npm run remind` | 前日リマインドを送る（日付の指定も可） |
 | `npm run typecheck` | 型チェック |
 
@@ -181,6 +182,7 @@ scripts/
   check-permissions.ts       権限がサーバー側で効いているかの検証
   check-tenant-isolation.ts  他店舗のデータが混ざらないかの検証
   send-reminders.ts          前日リマインドの送信
+  check-line.ts              LINEの設定と接続の確認
 docs/
   postgres-schema.sql        PostgreSQL 版スキーマ（生成・参照用）
 ```

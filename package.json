@@ -18,7 +18,8 @@
     "check:double": "tsx scripts/check-double-booking.ts",
     "check:perm": "tsx scripts/check-permissions.ts",
     "check:tenant": "tsx scripts/check-tenant-isolation.ts",
-    "remind": "tsx scripts/send-reminders.ts"
+    "remind": "tsx scripts/send-reminders.ts",
+    "check:line": "tsx scripts/check-line.ts"
   },
   "dependencies": {
     "@prisma/adapter-better-sqlite3": "^7.10.0",
