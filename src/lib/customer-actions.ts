@@ -13,6 +13,7 @@ import {
 } from "./customer-session";
 import { getActiveCustomer, upsertLineCustomer } from "./customer-store";
 import { buildAuthorizeUrl, isDevFallbackAllowed, isLineConfigured } from "./line";
+import { notifyReservationCanceled, notifyReservationCreated } from "./notify";
 import { prisma } from "./prisma";
 import { handleOf, tenantHandle } from "./tenant";
 import { sanitizeDate } from "./time";
@@ -124,6 +125,9 @@ export async function createCustomerReservation(formData: FormData) {
 
   if (!result.ok) back(result.message);
 
+  // 通知は送れなくても予約は成立させる
+  await notifyReservationCreated(result.reservationId);
+
   revalidatePath("/calendar");
   redirect(`${bookPath(handle)}/mine?done=1`);
 }
@@ -144,6 +148,8 @@ export async function cancelCustomerReservation(formData: FormData) {
     customerId: session.customerId,
     reservationId,
   });
+
+  if (result.ok) await notifyReservationCanceled(reservationId);
 
   revalidatePath("/calendar");
   if (!result.ok) {

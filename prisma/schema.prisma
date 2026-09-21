@@ -210,11 +210,13 @@ model Reservation {
   durationSnapshot Int
   priceSnapshot    Int
 
-  status     String    @default("booked") // "booked" | "done" | "canceled" | "no_show"
-  canceledAt DateTime?
-  note       String?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  status         String    @default("booked") // "booked" | "done" | "canceled" | "no_show"
+  canceledAt     DateTime?
+  /// 前日リマインドを送った日時。二重送信を防ぐために使う
+  reminderSentAt DateTime?
+  note           String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   tenant   Tenant   @relation(fields: [tenantId], references: [id])
   staff    Staff    @relation(fields: [staffId], references: [id])

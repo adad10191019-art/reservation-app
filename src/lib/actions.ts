@@ -10,6 +10,7 @@ import {
   setReservationStatus,
 } from "./booking";
 import { verifyPassword } from "./password";
+import { notifyReservationCanceled, notifyReservationCreated } from "./notify";
 import { prisma } from "./prisma";
 import { buildSession, type Role } from "./session";
 import { sanitizeDate } from "./time";
@@ -118,6 +119,9 @@ export async function createReservation(formData: FormData) {
 
   if (!result.ok) backToBooking({ ...back, message: result.message });
 
+  // LINEに紐づいているお客様には通知する（紐づいていなければ何もしない）
+  await notifyReservationCreated(result.reservationId);
+
   refresh();
   redirect(`/calendar?date=${date}`);
 }
@@ -136,6 +140,8 @@ export async function changeReservationStatus(formData: FormData) {
     reservationId,
     status,
   });
+
+  if (result.ok && status === "canceled") await notifyReservationCanceled(reservationId);
 
   refresh();
   if (!result.ok) {
