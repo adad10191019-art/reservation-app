@@ -1,5 +1,7 @@
 "use server";
 
+import { cookies } from "next/headers";
+import { randomBytes } from "node:crypto";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { endSession, requireSession, startSession } from "./auth";
@@ -9,6 +11,8 @@ import {
   rescheduleReservation,
   setReservationStatus,
 } from "./booking";
+import { LINE_LOGIN_COOKIE } from "./constants";
+import { buildAuthorizeUrl, isLineConfigured } from "./line";
 import { verifyPassword } from "./password";
 import { notifyReservationCanceled, notifyReservationCreated } from "./notify";
 import { prisma } from "./prisma";
@@ -185,4 +189,55 @@ export async function moveReservation(formData: FormData) {
   refresh();
   if (!result.ok) backTo(result.message);
   redirect(`/reservations/${reservationId}?done=1`);
+}
+
+// ── 通知を受け取るLINEの紐づけ ────────────
+
+/**
+ * お店の人が、自分のLINEで通知を受け取れるようにする。
+ *
+ * お客様と同じLINEログインの仕組みを使う。
+ * 戻ってきたときに「誰の紐づけか」が分かるよう、Cookie に用途と本人を入れておく。
+ */
+export async function startStaffLineLink() {
+  const session = await requireSession();
+  const path = "/notify";
+
+  if (!isLineConfigured()) {
+    redirect(`${path}?error=${encodeURIComponent("LINEログインの設定がまだです")}`);
+  }
+
+  const nonce = randomBytes(16).toString("base64url");
+  const store = await cookies();
+  store.set(
+    LINE_LOGIN_COOKIE,
+    JSON.stringify({
+      nonce,
+      tenantId: session.tenantId,
+      next: path,
+      purpose: "staff",
+      userId: session.userId,
+    }),
+    {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 600,
+    },
+  );
+
+  redirect(buildAuthorizeUrl({ state: nonce }));
+}
+
+export async function unlinkStaffLine() {
+  const session = await requireSession();
+
+  await prisma.user.updateMany({
+    where: { id: session.userId, tenantId: session.tenantId },
+    data: { lineUserId: null },
+  });
+
+  revalidatePath("/notify");
+  redirect("/notify?done=1");
 }

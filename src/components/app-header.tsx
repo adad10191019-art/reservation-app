@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { logout } from "@/lib/actions";
 import type { SessionData } from "@/lib/session";
 
@@ -36,6 +37,13 @@ export function AppHeader({
             {session.role === "owner" ? "オーナー" : "スタッフ"}
           </span>
         </span>
+
+        <Link
+          href="/notify"
+          className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50"
+        >
+          通知設定
+        </Link>
 
         <form action={logout}>
           <button

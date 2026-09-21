@@ -166,12 +166,14 @@ src/lib/
   line.ts                    LINEログイン
   line-messaging.ts          LINE公式アカウントからの送信
   notify-text.ts             通知の文面（DBもネットワークも触らない）
-  notify.ts                  予約に関する通知の組み立てと送信
+  notify.ts                  予約に関する通知の組み立てと送信（お客様・店舗側）
 src/components/
   app-header.tsx             店舗名・ログイン中の人・ログアウト
   banner.tsx                 保存結果の表示
 src/app/settings/
   menus/ staff/ hours/ days/ accounts/ store/   設定画面（オーナー限定）
+src/app/
+  notify/                    通知を受け取るLINEの紐づけ（ログインした人全員）
 src/app/book/
   [shop]/                    お客様向けの予約画面（ログイン不要で閲覧できる）
   [shop]/mine/               ご自分の予約の確認・キャンセル
@@ -264,6 +266,16 @@ LINE公式アカウントから、次の3つを自動で送る。
 | キャンセルされたとき | キャンセルした予約の内容 |
 | 前日（`npm run remind`） | 翌日の予約のお知らせ |
 
+店舗側にも届く。
+
+| きっかけ | 送る相手 |
+|---|---|
+| ネット予約が入ったとき | オーナー全員＋担当スタッフ |
+| お客様がキャンセルしたとき | 同上 |
+
+店舗側の画面から入れた予約では送らない（自分で入力したものなので）。
+受け取るには `/notify` で自分のLINEを紐づける。
+
 `.env` に公式アカウントのチャネルアクセストークンを設定する。
 
 ```bash
@@ -319,3 +331,4 @@ LINE_MESSAGING_ACCESS_TOKEN="..."
 - [x] お客様向けの予約画面（LINEログイン）
 - [x] お客様向けURLの短い名前（/book/sample-salon）
 - [x] LINE通知（予約完了・キャンセル・前日リマインド）
+- [x] 店舗側への通知（ネット予約・キャンセル）

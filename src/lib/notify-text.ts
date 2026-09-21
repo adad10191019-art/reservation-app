@@ -69,3 +69,25 @@ export function reservationCanceledText(r: ReservationSummary): string {
     ...baseLines(r),
   ].join("\n");
 }
+
+// ── 店舗側への通知 ────────────────────────
+
+/** ネット予約が入ったことをお店に知らせる */
+export function staffNewReservationText(r: ReservationSummary): string {
+  return [
+    "【ネット予約が入りました】",
+    "",
+    ...baseLines(r),
+    `お客様：${r.customerName} 様`,
+  ].join("\n");
+}
+
+/** お客様がキャンセルしたことをお店に知らせる */
+export function staffCanceledText(r: ReservationSummary): string {
+  return [
+    "【お客様がキャンセルしました】",
+    "",
+    ...baseLines(r),
+    `お客様：${r.customerName} 様`,
+  ].join("\n");
+}

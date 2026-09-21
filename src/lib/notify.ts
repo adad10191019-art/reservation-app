@@ -10,6 +10,8 @@ import {
   reservationCanceledText,
   reservationCreatedText,
   reservationReminderText,
+  staffCanceledText,
+  staffNewReservationText,
 } from "./notify-text";
 import { prisma } from "./prisma";
 import { tenantHandle } from "./tenant";
@@ -125,4 +127,62 @@ export async function sendRemindersFor(date: string): Promise<ReminderOutcome[]>
   }
 
   return outcomes;
+}
+
+// ── 店舗側への通知 ────────────────────────
+
+/**
+ * お店の人に知らせる。
+ *
+ * 送る相手は、その店舗でLINEを紐づけている
+ *   ・オーナー全員
+ *   ・その予約の担当スタッフ本人
+ * カレンダーを見に行かなくても、予約が入ったことに気づけるようにする。
+ */
+async function notifyStaff(
+  reservationId: string,
+  build: (summary: ReservationSummary) => string,
+): Promise<{ sent: number; skipped: number }> {
+  const reservation = await prisma.reservation.findUnique({
+    where: { id: reservationId },
+    include: { tenant: true, staff: true, customer: true },
+  });
+  if (!reservation) return { sent: 0, skipped: 0 };
+
+  const recipients = await prisma.user.findMany({
+    where: {
+      tenantId: reservation.tenantId,
+      lineUserId: { not: null },
+      OR: [{ role: "owner" }, { staffId: reservation.staffId }],
+    },
+  });
+
+  const summary: ReservationSummary = {
+    shopName: reservation.tenant.name,
+    customerName: reservation.customer.name,
+    staffName: reservation.staff.name,
+    menuName: reservation.menuNameSnapshot,
+    date: reservation.date,
+    startMinutes: reservation.startMinutes,
+    price: reservation.priceSnapshot,
+    // 店舗側の画面はログインが要るため、URLは載せない
+  };
+  const text = build(summary);
+
+  let sent = 0;
+  let skipped = 0;
+  for (const user of recipients) {
+    const result = await pushTextMessage({ to: user.lineUserId as string, text });
+    if (result.ok && result.sent) sent++;
+    else skipped++;
+  }
+  return { sent, skipped };
+}
+
+export function notifyStaffNewReservation(reservationId: string) {
+  return notifyStaff(reservationId, staffNewReservationText);
+}
+
+export function notifyStaffCanceled(reservationId: string) {
+  return notifyStaff(reservationId, staffCanceledText);
 }

@@ -52,6 +52,8 @@ model User {
   passwordHash String
   role         String // "owner" | "staff"
   staffId      String?  @unique
+  /// 通知の受け取りに使うLINE利用者ID。未設定なら通知を受け取らない
+  lineUserId   String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -59,6 +61,7 @@ model User {
   staff  Staff? @relation(fields: [staffId], references: [id])
 
   @@unique([tenantId, email])
+  @@unique([tenantId, lineUserId])
   @@index([tenantId])
 }
 

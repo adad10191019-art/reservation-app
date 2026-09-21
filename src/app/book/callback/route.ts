@@ -8,6 +8,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { buildCustomerSession, encodeCustomerSession, CUSTOMER_COOKIE, CUSTOMER_MAX_AGE_SECONDS } from "@/lib/customer-session";
+import { getVerifiedSession } from "@/lib/auth";
 import { LINE_LOGIN_COOKIE } from "@/lib/constants";
 import { upsertLineCustomer } from "@/lib/customer-store";
 import { fetchLineProfile } from "@/lib/line";
@@ -30,7 +31,14 @@ export async function GET(request: Request) {
   const raw = store.get(LINE_LOGIN_COOKIE)?.value;
   store.delete(LINE_LOGIN_COOKIE);
 
-  let pending: { nonce?: string; tenantId?: string; next?: string } = {};
+  let pending: {
+    nonce?: string;
+    tenantId?: string;
+    next?: string;
+    /** "staff" ならお店の人の通知先の紐づけ。既定はお客様のログイン */
+    purpose?: string;
+    userId?: string;
+  } = {};
   try {
     pending = raw ? JSON.parse(raw) : {};
   } catch {
@@ -57,6 +65,40 @@ export async function GET(request: Request) {
       tenantId,
       e instanceof Error ? e.message : "LINEとのやり取りに失敗しました",
     );
+  }
+
+  // お店の人が「通知を受け取るLINE」を紐づける場合
+  if (pending.purpose === "staff") {
+    const session = await getVerifiedSession();
+    if (!session || session.tenantId !== tenantId || session.userId !== pending.userId) {
+      return await errorRedirect(request, tenantId, "ログインし直してから、もう一度お試しください");
+    }
+
+    // 同じ店舗で同じLINEを二重に紐づけない（ほかのアカウントが使っていないか）
+    const taken = await prisma.user.findFirst({
+      where: { tenantId, lineUserId: profile.userId, NOT: { id: session.userId } },
+      select: { id: true },
+    });
+
+    const destination = new URL(
+      pending.next || "/notify",
+      process.env.APP_URL ?? request.url,
+    );
+    if (taken) {
+      destination.searchParams.set(
+        "error",
+        "そのLINEアカウントは、すでに別のアカウントに紐づいています",
+      );
+      return NextResponse.redirect(destination);
+    }
+
+    await prisma.user.updateMany({
+      where: { id: session.userId, tenantId },
+      data: { lineUserId: profile.userId },
+    });
+
+    destination.searchParams.set("done", "1");
+    return NextResponse.redirect(destination);
   }
 
   const customer = await upsertLineCustomer({
