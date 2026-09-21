@@ -2,12 +2,30 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { bookReservation } from "./booking";
+import {
+  type ReservationStatus,
+  bookReservation,
+  rescheduleReservation,
+  setReservationStatus,
+} from "./booking";
 import { prisma } from "./prisma";
 import { sanitizeDate } from "./time";
 
+/** 認証を入れるまでの暫定。最初の店舗を使う。 */
+async function currentTenantId(): Promise<string | null> {
+  const tenant = await prisma.tenant.findFirst({ orderBy: { createdAt: "asc" } });
+  return tenant?.id ?? null;
+}
+
+function refresh() {
+  revalidatePath("/calendar");
+  revalidatePath("/booking");
+}
+
+// ── 新規登録 ──────────────────────────────
+
 /** 失敗時は /booking に理由を載せて戻す */
-function backWithError(params: {
+function backToBooking(params: {
   date: string;
   menuId: string;
   staffId?: string;
@@ -34,20 +52,19 @@ export async function createReservation(formData: FormData) {
 
   const back = { date, menuId, staffId: filterStaffId || undefined };
 
-  if (!slot) backWithError({ ...back, message: "時間を選んでください" });
+  if (!slot) backToBooking({ ...back, message: "時間を選んでください" });
 
   const [startText, staffId] = slot.split("|");
   const startMinutes = Number(startText);
   if (!Number.isInteger(startMinutes) || !staffId) {
-    backWithError({ ...back, message: "時間の指定が正しくありません" });
+    backToBooking({ ...back, message: "時間の指定が正しくありません" });
   }
 
-  // 認証を入れるまでの暫定。最初の店舗を使う。
-  const tenant = await prisma.tenant.findFirst({ orderBy: { createdAt: "asc" } });
-  if (!tenant) backWithError({ ...back, message: "店舗が見つかりません" });
+  const tenantId = await currentTenantId();
+  if (!tenantId) backToBooking({ ...back, message: "店舗が見つかりません" });
 
   const result = await bookReservation({
-    tenantId: tenant.id,
+    tenantId,
     date,
     menuId,
     staffId,
@@ -58,9 +75,63 @@ export async function createReservation(formData: FormData) {
       : undefined,
   });
 
-  if (!result.ok) backWithError({ ...back, message: result.message });
+  if (!result.ok) backToBooking({ ...back, message: result.message });
 
-  revalidatePath("/calendar");
-  revalidatePath("/booking");
+  refresh();
   redirect(`/calendar?date=${date}`);
+}
+
+// ── 状態の変更 ────────────────────────────
+
+export async function changeReservationStatus(formData: FormData) {
+  const reservationId = String(formData.get("reservationId") ?? "");
+  const status = String(formData.get("status") ?? "") as ReservationStatus;
+
+  const tenantId = await currentTenantId();
+  if (!tenantId) redirect(`/reservations/${reservationId}?error=店舗が見つかりません`);
+
+  const result = await setReservationStatus({ tenantId, reservationId, status });
+
+  refresh();
+  if (!result.ok) {
+    redirect(`/reservations/${reservationId}?error=${encodeURIComponent(result.message)}`);
+  }
+  redirect(`/reservations/${reservationId}?done=1`);
+}
+
+// ── 日時・担当の変更 ──────────────────────
+
+export async function moveReservation(formData: FormData) {
+  const reservationId = String(formData.get("reservationId") ?? "");
+  const date = sanitizeDate(String(formData.get("date") ?? ""));
+  const slot = String(formData.get("slot") ?? ""); // "開始分|スタッフID"
+
+  // 型注釈を付けておくと、呼んだ先で「ここから下は実行されない」と扱われる
+  const backTo: (message: string) => never = (message) =>
+    redirect(
+      `/reservations/${reservationId}?date=${date}&error=${encodeURIComponent(message)}`,
+    );
+
+  if (!slot) backTo("変更先の時間を選んでください");
+
+  const [startText, staffId] = slot.split("|");
+  const startMinutes = Number(startText);
+  if (!Number.isInteger(startMinutes) || !staffId) {
+    backTo("時間の指定が正しくありません");
+  }
+
+  const tenantId = await currentTenantId();
+  if (!tenantId) backTo("店舗が見つかりません");
+
+  const result = await rescheduleReservation({
+    tenantId,
+    reservationId,
+    date,
+    staffId,
+    startMinutes,
+  });
+
+  refresh();
+  if (!result.ok) backTo(result.message);
+  redirect(`/reservations/${reservationId}?done=1`);
 }

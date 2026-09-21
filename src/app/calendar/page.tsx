@@ -114,9 +114,10 @@ export default async function CalendarPage({
                 ))}
 
                 {col.reservations.map((r) => (
-                  <article
+                  <Link
                     key={r.id}
-                    className="absolute inset-x-1 overflow-hidden rounded border border-sky-300 bg-sky-100 px-1.5 py-1 text-xs leading-tight shadow-sm"
+                    href={`/reservations/${r.id}`}
+                    className="absolute inset-x-1 block overflow-hidden rounded border border-sky-300 bg-sky-100 px-1.5 py-1 text-xs leading-tight shadow-sm transition-colors hover:border-sky-400 hover:bg-sky-200"
                     style={{
                       top: top(r.startMinutes),
                       height: (r.endMinutes - r.startMinutes) * PX_PER_MIN - 2,
@@ -127,7 +128,7 @@ export default async function CalendarPage({
                     <div className="tabular-nums text-sky-600">
                       {toHm(r.startMinutes)}–{toHm(r.endMinutes)}
                     </div>
-                  </article>
+                  </Link>
                 ))}
               </div>
             );

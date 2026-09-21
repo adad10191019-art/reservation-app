@@ -36,8 +36,13 @@ export async function findAvailability(params: {
   date: string; // "YYYY-MM-DD"
   menuId: string;
   staffId?: string;
+  /**
+   * 枠を塞ぐ対象から外す予約。
+   * 既存の予約を変更するとき、その予約自身で埋まって見えないようにするために使う。
+   */
+  excludeReservationId?: string;
 }): Promise<AvailabilityResult> {
-  const { tenantId, date, menuId, staffId } = params;
+  const { tenantId, date, menuId, staffId, excludeReservationId } = params;
   const dayOfWeek = dayOfWeekOf(date);
 
   const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
@@ -89,6 +94,7 @@ export async function findAvailability(params: {
         date,
         staffId: { in: staffIds },
         status: "booked", // キャンセル済みは枠を塞がない
+        ...(excludeReservationId ? { id: { not: excludeReservationId } } : {}),
       },
     }),
   ]);
