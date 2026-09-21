@@ -1,0 +1,196 @@
+// 予約管理システム スキーマ
+//
+// 設計方針（設計メモより）
+//  - 時刻は「0時からの経過分」の整数で持つ（10:00 = 600）
+//  - 日付は "YYYY-MM-DD" の文字列で持つ（タイムゾーン由来のズレを避けるため）
+//  - 全テーブルに tenantId を持たせる（マルチテナント）
+//  - 予約は消さず status を変える（論理削除）
+//  - SQLite は enum 非対応のため、列挙は String + コメントで表現する
+//    （PostgreSQL へ移行する際もそのまま動く）
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ── 店舗 ───────────────────────────────
+model Tenant {
+  id          String   @id @default(uuid())
+  name        String
+  timezone    String   @default("Asia/Tokyo")
+  slotMinutes Int      @default(15) // 予約枠の刻み（分）
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users         User[]
+  staffs        Staff[]
+  menus         Menu[]
+  staffMenus    StaffMenu[]
+  businessHours BusinessHour[]
+  dateOverrides DateOverride[]
+  customers     Customer[]
+  reservations  Reservation[]
+}
+
+// ── ログインする人 ─────────────────────
+model User {
+  id           String   @id @default(uuid())
+  tenantId     String
+  email        String
+  passwordHash String
+  role         String // "owner" | "staff"
+  staffId      String?  @unique
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  staff  Staff? @relation(fields: [staffId], references: [id])
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+}
+
+// ── スタッフ ───────────────────────────
+model Staff {
+  id           String   @id @default(uuid())
+  tenantId     String
+  name         String
+  isActive     Boolean  @default(true) // 退職しても過去の予約を残すため削除しない
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id])
+  user          User?
+  staffMenus    StaffMenu[]
+  businessHours BusinessHour[]
+  dateOverrides DateOverride[]
+  reservations  Reservation[]
+
+  @@index([tenantId])
+}
+
+// ── メニュー ───────────────────────────
+model Menu {
+  id              String   @id @default(uuid())
+  tenantId        String
+  name            String
+  durationMinutes Int // 所要時間
+  bufferMinutes   Int      @default(0) // 片付け時間
+  price           Int      @default(0)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id])
+  staffMenus   StaffMenu[]
+  reservations Reservation[]
+
+  @@index([tenantId])
+}
+
+// ── 誰がどのメニューをできるか ─────────
+model StaffMenu {
+  tenantId String
+  staffId  String
+  menuId   String
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  staff  Staff  @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  menu   Menu   @relation(fields: [menuId], references: [id], onDelete: Cascade)
+
+  @@id([staffId, menuId])
+  @@index([tenantId])
+  @@index([menuId])
+}
+
+// ── 営業時間の基本パターン ─────────────
+model BusinessHour {
+  id           String  @id @default(uuid())
+  tenantId     String
+  staffId      String? // null なら店舗全体の営業時間
+  dayOfWeek    Int // 0=日曜 〜 6=土曜
+  startMinutes Int // 10:00 → 600
+  endMinutes   Int // 19:00 → 1140
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  staff  Staff? @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  // 昼休憩は 10:00-13:00 / 14:00-19:00 の2行で表現する
+  @@index([tenantId, dayOfWeek])
+  @@index([staffId])
+}
+
+// ── 日付ごとの例外 ─────────────────────
+model DateOverride {
+  id           String  @id @default(uuid())
+  tenantId     String
+  staffId      String? // null なら店舗全体
+  date         String // "YYYY-MM-DD"
+  isClosed     Boolean @default(false) // true なら終日休み
+  startMinutes Int?
+  endMinutes   Int?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  staff  Staff? @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, date])
+  @@index([staffId])
+}
+
+// ── 顧客 ───────────────────────────────
+model Customer {
+  id         String   @id @default(uuid())
+  tenantId   String
+  name       String
+  phone      String?
+  email      String?
+  lineUserId String? // LINE連携は最後の工程。枠だけ先に用意
+  note       String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id])
+  reservations Reservation[]
+
+  @@index([tenantId])
+}
+
+// ── 予約（中心） ───────────────────────
+model Reservation {
+  id         String @id @default(uuid())
+  tenantId   String
+  staffId    String
+  customerId String
+  menuId     String
+
+  date         String // "YYYY-MM-DD"
+  startMinutes Int
+  endMinutes   Int // buffer を含んだ「枠を塞ぐ時間」
+
+  // 予約時点の値をコピーして保存する。
+  // 参照だけにすると、後でメニューを変更したときに過去の予約まで変わってしまう。
+  menuNameSnapshot String
+  durationSnapshot Int
+  priceSnapshot    Int
+
+  status     String    @default("booked") // "booked" | "done" | "canceled" | "no_show"
+  canceledAt DateTime?
+  note       String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+  staff    Staff    @relation(fields: [staffId], references: [id])
+  customer Customer @relation(fields: [customerId], references: [id])
+  menu     Menu     @relation(fields: [menuId], references: [id])
+
+  // 空き枠検索で最も多く使う組み合わせ
+  @@index([tenantId, date, staffId])
+  @@index([tenantId, customerId])
+  @@index([staffId, date])
+}
