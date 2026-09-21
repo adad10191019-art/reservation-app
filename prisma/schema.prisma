@@ -5,8 +5,7 @@
 //  - 日付は "YYYY-MM-DD" の文字列で持つ（タイムゾーン由来のズレを避けるため）
 //  - 全テーブルに tenantId を持たせる（マルチテナント）
 //  - 予約は消さず status を変える（論理削除）
-//  - SQLite は enum 非対応のため、列挙は String + コメントで表現する
-//    （PostgreSQL へ移行する際もそのまま動く）
+//  - 列挙は String + コメントで表現する（SQLite でも PostgreSQL でも動く）
 
 generator client {
   provider = "prisma-client"
@@ -14,7 +13,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 // ── 店舗 ───────────────────────────────

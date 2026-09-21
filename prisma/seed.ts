@@ -8,14 +8,8 @@
  *   tanaka@example.com  … スタッフ 田中
  */
 import "dotenv/config";
-import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
-import { PrismaClient } from "../src/generated/prisma/client";
 import { hashPassword } from "../src/lib/password";
-
-const adapter = new PrismaBetterSqlite3({
-  url: process.env.DATABASE_URL ?? "file:./dev.db",
-});
-const prisma = new PrismaClient({ adapter });
+import { prisma } from "../src/lib/prisma";
 
 /** "YYYY-MM-DD" を作る（今日からの日数差で指定） */
 function dateStr(offsetDays: number): string {

@@ -24,6 +24,50 @@ export type Result<T = undefined> =
   | ({ ok: true } & (T extends undefined ? object : T))
   | { ok: false; message: string };
 
+/**
+ * 予約の書き込みに使う取引の設定。
+ *
+ * 「空いているか確かめてから入れる」という流れは、
+ * 確認と書き込みの間に他の人が割り込めると破れる。
+ *
+ * SQLite は書き込みを1つずつしか行わないため、たまたま防げていた。
+ * PostgreSQL は同時に処理するので、同じ枠を確認した複数の取引が
+ * そろって「空いている」と判断し、全部書き込めてしまう。
+ *
+ * Serializable は「同時に走ったが、順番に実行したのと同じ結果になるか」を
+ * データベースが監視し、矛盾する組み合わせを中断させる。
+ */
+const SERIALIZABLE = { isolationLevel: "Serializable" } as const;
+
+/** 取引が競合して中断されたときのエラーか */
+function isWriteConflict(e: unknown): boolean {
+  if (!e || typeof e !== "object") return false;
+  const code = (e as { code?: string }).code;
+  // P2034: Prisma が返す競合/デッドロック、40001: PostgreSQL の直列化失敗
+  return code === "P2034" || code === "40001";
+}
+
+/**
+ * 競合で中断されたら数回だけやり直す。
+ *
+ * 中断は「本当に埋まっていた」場合だけでなく、
+ * データベースが安全側に倒して中断させた場合にも起きる。
+ * やり直せば、本当に埋まっていれば重複チェックが理由を返し、
+ * そうでなければ成功する。
+ */
+async function withRetry<T>(run: () => Promise<T>, attempts = 3): Promise<T> {
+  let lastError: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await run();
+    } catch (e) {
+      if (!isWriteConflict(e)) throw e;
+      lastError = e;
+    }
+  }
+  throw lastError;
+}
+
 /** 予約として使える状態 */
 export const RESERVATION_STATUSES = ["booked", "done", "canceled", "no_show"] as const;
 export type ReservationStatus = (typeof RESERVATION_STATUSES)[number];
@@ -145,7 +189,8 @@ export async function bookReservation(
   const endMinutes = startMinutes + menu.durationMinutes + menu.bufferMinutes;
 
   try {
-    const reservationId = await prisma.$transaction(async (tx) => {
+    const reservationId = await withRetry(() =>
+      prisma.$transaction(async (tx) => {
       await ensureSlotUsable(tx, {
         tenantId,
         date,
@@ -187,11 +232,15 @@ export async function bookReservation(
         },
       });
 
-      return reservation.id;
-    });
+        return reservation.id;
+      }, SERIALIZABLE),
+    );
 
     return { ok: true, reservationId };
   } catch (e) {
+    if (isWriteConflict(e)) {
+      return { ok: false, message: "この枠は、ちょうど今ほかの予約で埋まりました" };
+    }
     return { ok: false, message: e instanceof Error ? e.message : "登録に失敗しました" };
   }
 }
@@ -223,7 +272,8 @@ export async function rescheduleReservation(input: RescheduleInput): Promise<Res
   }
 
   try {
-    await prisma.$transaction(async (tx) => {
+    await withRetry(() =>
+      prisma.$transaction(async (tx) => {
       const reservation = await tx.reservation.findFirst({
         where: { id: reservationId, tenantId },
       });
@@ -257,10 +307,14 @@ export async function rescheduleReservation(input: RescheduleInput): Promise<Res
         where: { id: reservationId, tenantId },
         data: { date, staffId, startMinutes, endMinutes },
       });
-    });
+      }, SERIALIZABLE),
+    );
 
     return { ok: true };
   } catch (e) {
+    if (isWriteConflict(e)) {
+      return { ok: false, message: "この枠は、ちょうど今ほかの予約で埋まりました" };
+    }
     return { ok: false, message: e instanceof Error ? e.message : "変更に失敗しました" };
   }
 }
@@ -280,7 +334,8 @@ export async function setReservationStatus(input: {
   }
 
   try {
-    await prisma.$transaction(async (tx) => {
+    await withRetry(() =>
+      prisma.$transaction(async (tx) => {
       const reservation = await tx.reservation.findFirst({
         where: { id: reservationId, tenantId },
       });
@@ -312,10 +367,14 @@ export async function setReservationStatus(input: {
           canceledAt: status === "canceled" || status === "no_show" ? new Date() : null,
         },
       });
-    });
+      }, SERIALIZABLE),
+    );
 
     return { ok: true };
   } catch (e) {
+    if (isWriteConflict(e)) {
+      return { ok: false, message: "この枠は、ちょうど今ほかの予約で埋まりました" };
+    }
     return { ok: false, message: e instanceof Error ? e.message : "変更に失敗しました" };
   }
 }
@@ -366,7 +425,8 @@ export async function bookAsCustomer(input: {
   const endMinutes = startMinutes + menu.durationMinutes + menu.bufferMinutes;
 
   try {
-    const reservationId = await prisma.$transaction(async (tx) => {
+    const reservationId = await withRetry(() =>
+      prisma.$transaction(async (tx) => {
       const customer = await tx.customer.findFirst({
         where: { id: customerId, tenantId },
       });
@@ -396,11 +456,15 @@ export async function bookAsCustomer(input: {
           status: "booked",
         },
       });
-      return reservation.id;
-    });
+        return reservation.id;
+      }, SERIALIZABLE),
+    );
 
     return { ok: true, reservationId };
   } catch (e) {
+    if (isWriteConflict(e)) {
+      return { ok: false, message: "この枠は、ちょうど今ほかの予約で埋まりました" };
+    }
     return { ok: false, message: e instanceof Error ? e.message : "登録に失敗しました" };
   }
 }

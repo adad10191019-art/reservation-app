@@ -9,6 +9,7 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    url: process.env["DATABASE_URL"],
+    // 構造の変更は直接接続で行う（プール経由だと不具合が出ることがある）
+    url: process.env["DIRECT_URL"] ?? process.env["DATABASE_URL"],
   },
 });
