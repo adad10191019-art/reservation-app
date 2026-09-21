@@ -69,7 +69,9 @@ async function main() {
     }),
   ]);
 
-  await prisma.staff.create({
+  // 2店舗目にも一通りのデータを入れる。
+  // 「他店舗のデータが見えない」ことを検証するために、中身が必要。
+  const otherStaff = await prisma.staff.create({
     data: { tenantId: otherTenant.id, name: "他店スタッフ" },
   });
 
@@ -248,6 +250,58 @@ async function main() {
       reason: "スタッフ会議",
     },
   });
+
+  // ── 2店舗目のデータ（分離確認用）────
+  {
+    const otherMenu = await prisma.menu.create({
+      data: {
+        tenantId: otherTenant.id,
+        name: "他店メニュー",
+        durationMinutes: 60,
+        bufferMinutes: 0,
+        price: 5000,
+      },
+    });
+    await prisma.staffMenu.create({
+      data: { tenantId: otherTenant.id, staffId: otherStaff.id, menuId: otherMenu.id },
+    });
+    await prisma.businessHour.createMany({
+      data: [0, 1, 2, 3, 4, 5, 6].map((dow) => ({
+        tenantId: otherTenant.id,
+        staffId: null,
+        dayOfWeek: dow,
+        startMinutes: hm("09:00"),
+        endMinutes: hm("18:00"),
+      })),
+    });
+    const otherCustomer = await prisma.customer.create({
+      data: { tenantId: otherTenant.id, name: "他店の顧客" },
+    });
+    await prisma.reservation.create({
+      data: {
+        tenantId: otherTenant.id,
+        staffId: otherStaff.id,
+        customerId: otherCustomer.id,
+        menuId: otherMenu.id,
+        date: dateStr(1),
+        startMinutes: hm("09:00"),
+        endMinutes: hm("10:00"),
+        menuNameSnapshot: otherMenu.name,
+        durationSnapshot: otherMenu.durationMinutes,
+        priceSnapshot: otherMenu.price,
+        status: "booked",
+      },
+    });
+    await prisma.user.create({
+      data: {
+        tenantId: otherTenant.id,
+        email: "owner-b@example.com",
+        passwordHash,
+        role: "owner",
+        staffId: null,
+      },
+    });
+  }
 
   // ── 顧客 ──────────────────────────
   const [yamada, ito, kobayashi] = await Promise.all([

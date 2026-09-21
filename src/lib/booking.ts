@@ -251,8 +251,9 @@ export async function rescheduleReservation(input: RescheduleInput): Promise<Res
         excludeReservationId: reservationId,
       });
 
-      await tx.reservation.update({
-        where: { id: reservationId },
+      // tenantId を where に残したまま更新する（条件の書き忘れを防ぐ）
+      await tx.reservation.updateMany({
+        where: { id: reservationId, tenantId },
         data: { date, staffId, startMinutes, endMinutes },
       });
     });
@@ -303,8 +304,8 @@ export async function setReservationStatus(input: {
       }
 
       // 予約は消さず、状態を変えて残す（キャンセル履歴は分析にも使う）
-      await tx.reservation.update({
-        where: { id: reservationId },
+      await tx.reservation.updateMany({
+        where: { id: reservationId, tenantId },
         data: {
           status,
           canceledAt: status === "canceled" || status === "no_show" ? new Date() : null,

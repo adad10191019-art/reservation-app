@@ -50,12 +50,14 @@ export async function saveMenu(formData: FormData) {
   const data = { name, durationMinutes, bufferMinutes, price, isActive };
 
   if (id) {
-    // tenantId を必ず条件に入れる（他店舗のデータを書き換えないため）
-    const existing = await prisma.menu.findFirst({
+    // tenantId を where に入れたまま更新する。
+    // 「存在を確かめてから id で更新」だと、条件の書き忘れに気づけないうえ、
+    // 確認と更新の間に別のものへすり替わる余地も残る。
+    const updated = await prisma.menu.updateMany({
       where: { id, tenantId: session.tenantId },
+      data,
     });
-    if (!existing) back(path, "メニューが見つかりません");
-    await prisma.menu.update({ where: { id }, data });
+    if (updated.count === 0) back(path, "メニューが見つかりません");
   } else {
     await prisma.menu.create({ data: { ...data, tenantId: session.tenantId } });
   }
@@ -88,11 +90,11 @@ export async function saveStaff(formData: FormData) {
   let staffId = id;
 
   if (id) {
-    const existing = await prisma.staff.findFirst({
+    const updated = await prisma.staff.updateMany({
       where: { id, tenantId: session.tenantId },
+      data: { name, displayOrder, isActive },
     });
-    if (!existing) back(path, "スタッフが見つかりません");
-    await prisma.staff.update({ where: { id }, data: { name, displayOrder, isActive } });
+    if (updated.count === 0) back(path, "スタッフが見つかりません");
   } else {
     const created = await prisma.staff.create({
       data: { name, displayOrder, isActive, tenantId: session.tenantId },
@@ -240,7 +242,7 @@ export async function deleteAccount(formData: FormData) {
     if (owners <= 1) back(path, "オーナーのアカウントは最低1つ必要です");
   }
 
-  await prisma.user.delete({ where: { id } });
+  await prisma.user.deleteMany({ where: { id, tenantId: session.tenantId } });
 
   refreshAll();
   back(path);
@@ -255,15 +257,11 @@ export async function resetAccountPassword(formData: FormData) {
 
   if (password.length < 8) back(path, "パスワードは8文字以上にしてください");
 
-  const target = await prisma.user.findFirst({
+  const updated = await prisma.user.updateMany({
     where: { id, tenantId: session.tenantId },
-  });
-  if (!target) back(path, "アカウントが見つかりません");
-
-  await prisma.user.update({
-    where: { id },
     data: { passwordHash: await hashPassword(password) },
   });
+  if (updated.count === 0) back(path, "アカウントが見つかりません");
 
   refreshAll();
   back(path);
@@ -322,7 +320,10 @@ export async function changeAccountRole(formData: FormData) {
     if (owners <= 1) back(path, "オーナーのアカウントは最低1つ必要です");
   }
 
-  await prisma.user.update({ where: { id }, data: { role } });
+  await prisma.user.updateMany({
+    where: { id, tenantId: session.tenantId },
+    data: { role },
+  });
 
   refreshAll();
   back(path);
@@ -477,12 +478,12 @@ export async function deleteBlock(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   const path = daysPath(date);
 
-  const target = await prisma.block.findFirst({
+  const deleted = await prisma.block.deleteMany({
     where: { id, tenantId: session.tenantId },
   });
-  if (!target) redirect(`${path}&error=${encodeURIComponent("見つかりません")}`);
-
-  await prisma.block.delete({ where: { id } });
+  if (deleted.count === 0) {
+    redirect(path + "&error=" + encodeURIComponent("見つかりません"));
+  }
 
   refreshAll();
   redirect(`${path}&done=1`);

@@ -60,6 +60,7 @@ npm run dev
 | `npm run check` | 実データで空き枠を出して目視確認 |
 | `npm run check:double` | 二重予約が防げているか検証 |
 | `npm run check:perm` | 権限がサーバー側で効いているか検証 |
+| `npm run check:tenant` | 他店舗のデータが混ざらないか検証 |
 | `npm run db:studio` | DBの中身をブラウザで確認 |
 | `npm run db:reset` | DBを作り直してダミーデータを入れ直す（全データが消えます） |
 | `npm run typecheck` | 型チェック |
@@ -80,6 +81,12 @@ npm run dev
 
 **全テーブルに `tenantId` を持たせる（マルチテナント）**
 1つのシステムを複数の店舗が共有し、データは完全に分離する。検索条件に必ず `tenantId` を入れる。
+
+**更新・削除も `tenantId` を条件に残したまま行う**
+「`tenantId` 付きで存在を確かめてから `id` で更新」ではなく、`updateMany` / `deleteMany` に
+`tenantId` を入れて一度で済ませ、件数が0なら失敗として扱う。
+二段階だと条件の書き忘れに気づけず、確認と更新の間に別のものへすり替わる余地も残る。
+`check:tenant` が、店舗をまたいだ読み書きが通らないことを実データで検証している。
 
 **空き枠のロジックはDBから切り離す**
 `availability-core.ts` はDBを一切触らない純粋な計算だけを持つ。`availability.ts` がDBから値を読んでそこへ渡す。テストがDBなしで実行でき、不具合の切り分けも容易になる。
@@ -144,6 +151,7 @@ scripts/
   check-availability.ts      実データでの目視確認
   check-double-booking.ts    二重予約が防げているかの検証
   check-permissions.ts       権限がサーバー側で効いているかの検証
+  check-tenant-isolation.ts  他店舗のデータが混ざらないかの検証
 docs/
   postgres-schema.sql        PostgreSQL 版スキーマ（生成・参照用）
 ```
@@ -210,7 +218,7 @@ npm run db:seed
 - [x] 予約枠の刻みの変更（5〜60分）
 - [x] 権限の切り替え（代理オーナー）
 - [x] ログイン・権限
-- [ ] マルチテナントの検証
+- [x] マルチテナントの検証
 - [x] PostgreSQL 対応・デプロイ準備
 - [ ] デプロイ（公開先の用意）
 - [ ] LINE連携（予約通知・リマインド）
