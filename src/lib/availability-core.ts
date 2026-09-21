@@ -24,12 +24,34 @@ export type DateOverrideRow = {
 };
 
 /**
+ * 例外日の行を、勤務できる時間帯の一覧に変える。
+ *
+ * 同じ日に複数行あってもよい。
+ * 「その日は 10:00-13:00 と 16:00-20:00」のような分割シフトは、2行で表す。
+ *
+ * @returns null なら終日休み
+ */
+function overridesToIntervals(rows: DateOverrideRow[]): Interval[] | null {
+  if (rows.length === 0) return [];
+  // 1行でも終日休みがあれば、その日は休み
+  if (rows.some((o) => o.isClosed)) return null;
+
+  const intervals = rows
+    .filter((o) => o.startMinutes !== null && o.endMinutes !== null)
+    .map((o) => ({ start: o.startMinutes as number, end: o.endMinutes as number }));
+
+  return normalize(intervals);
+}
+
+/**
  * その日そのスタッフが勤務できる時間帯を求める。
  *
  * 適用順
  *   1. スタッフ個別の営業時間があればそれを使い、なければ店舗全体の営業時間を使う
  *   2. スタッフ個別の例外日があれば、その日の勤務時間を置き換える（終日休みなら空）
  *   3. 店舗全体の例外日は全スタッフに掛かる（終日休みなら空、短縮営業なら重なりを取る）
+ *
+ * 例外日は1日に複数行を持てるので、分割シフトも表現できる。
  */
 export function resolveWorkingIntervals(params: {
   staffId: string;
@@ -46,25 +68,17 @@ export function resolveWorkingIntervals(params: {
     source.map((h) => ({ start: h.startMinutes, end: h.endMinutes })),
   );
 
-  const staffOverride = dateOverrides.find((o) => o.staffId === staffId);
-  if (staffOverride) {
-    if (staffOverride.isClosed) return [];
-    if (staffOverride.startMinutes !== null && staffOverride.endMinutes !== null) {
-      working = normalize([
-        { start: staffOverride.startMinutes, end: staffOverride.endMinutes },
-      ]);
-    }
-  }
+  // スタッフ個別の例外（あればその日の勤務時間を置き換える）
+  const staffIntervals = overridesToIntervals(
+    dateOverrides.filter((o) => o.staffId === staffId),
+  );
+  if (staffIntervals === null) return [];
+  if (staffIntervals.length > 0) working = staffIntervals;
 
-  const shopOverride = dateOverrides.find((o) => o.staffId === null);
-  if (shopOverride) {
-    if (shopOverride.isClosed) return [];
-    if (shopOverride.startMinutes !== null && shopOverride.endMinutes !== null) {
-      working = intersect(working, [
-        { start: shopOverride.startMinutes, end: shopOverride.endMinutes },
-      ]);
-    }
-  }
+  // 店舗全体の例外（全スタッフに掛かる）
+  const shopIntervals = overridesToIntervals(dateOverrides.filter((o) => o.staffId === null));
+  if (shopIntervals === null) return [];
+  if (shopIntervals.length > 0) working = intersect(working, shopIntervals);
 
   return working;
 }

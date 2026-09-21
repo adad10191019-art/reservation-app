@@ -167,3 +167,119 @@ describe("開始できる時刻", () => {
     ).toEqual([]);
   });
 });
+
+describe("分割シフト（例外日を複数行で表す）", () => {
+  it("スタッフの分割シフトが両方とも反映される", () => {
+    // その日だけ 10:00-13:00 と 16:00-20:00 に入る
+    const working = resolveWorkingIntervals({
+      staffId: SATO,
+      businessHours: SHOP_HOURS,
+      dateOverrides: [
+        {
+          staffId: SATO,
+          isClosed: false,
+          startMinutes: hm("10:00"),
+          endMinutes: hm("13:00"),
+        },
+        {
+          staffId: SATO,
+          isClosed: false,
+          startMinutes: hm("16:00"),
+          endMinutes: hm("20:00"),
+        },
+      ],
+    });
+    expect(working).toEqual([
+      { start: hm("10:00"), end: hm("13:00") },
+      { start: hm("16:00"), end: hm("20:00") },
+    ]);
+  });
+
+  it("分割シフトの切れ目をまたぐ予約は出ない", () => {
+    const working = resolveWorkingIntervals({
+      staffId: SATO,
+      businessHours: SHOP_HOURS,
+      dateOverrides: [
+        {
+          staffId: SATO,
+          isClosed: false,
+          startMinutes: hm("10:00"),
+          endMinutes: hm("13:00"),
+        },
+        {
+          staffId: SATO,
+          isClosed: false,
+          startMinutes: hm("16:00"),
+          endMinutes: hm("20:00"),
+        },
+      ],
+    });
+    const starts = computeStarts({
+      working,
+      busy: [],
+      requiredMinutes: 70,
+      slotMinutes: 15,
+    });
+    expect(starts).toContain(hm("11:45")); // 午前の最終
+    expect(starts).not.toContain(hm("12:00")); // 13:00 を越えるので出ない
+    expect(starts).not.toContain(hm("14:00")); // 勤務外
+    expect(starts).toContain(hm("16:00")); // 夜の最初
+    expect(starts.at(-1)).toBe(hm("18:45")); // 18:45 + 70分 = 19:55
+  });
+
+  it("店舗全体の分割営業も全スタッフに掛かる", () => {
+    // 店舗が 10:00-12:00 と 15:00-18:00 のみ営業する日
+    const working = resolveWorkingIntervals({
+      staffId: TANAKA,
+      businessHours: [...SHOP_HOURS, ...TANAKA_HOURS], // 田中は 10:00-16:00 通し
+      dateOverrides: [
+        {
+          staffId: null,
+          isClosed: false,
+          startMinutes: hm("10:00"),
+          endMinutes: hm("12:00"),
+        },
+        {
+          staffId: null,
+          isClosed: false,
+          startMinutes: hm("15:00"),
+          endMinutes: hm("18:00"),
+        },
+      ],
+    });
+    // 田中の勤務（10:00-16:00）と店舗の営業（10-12, 15-18）の重なり
+    expect(working).toEqual([
+      { start: hm("10:00"), end: hm("12:00") },
+      { start: hm("15:00"), end: hm("16:00") },
+    ]);
+  });
+
+  it("複数行のうち1行でも終日休みなら、その日は休み", () => {
+    const working = resolveWorkingIntervals({
+      staffId: SATO,
+      businessHours: SHOP_HOURS,
+      dateOverrides: [
+        {
+          staffId: SATO,
+          isClosed: false,
+          startMinutes: hm("10:00"),
+          endMinutes: hm("13:00"),
+        },
+        { staffId: SATO, isClosed: true, startMinutes: null, endMinutes: null },
+      ],
+    });
+    expect(working).toEqual([]);
+  });
+
+  it("例外日がなければ、これまでどおり曜日パターンが使われる", () => {
+    const working = resolveWorkingIntervals({
+      staffId: SATO,
+      businessHours: SHOP_HOURS,
+      dateOverrides: NO_OVERRIDE,
+    });
+    expect(working).toEqual([
+      { start: hm("10:00"), end: hm("13:00") },
+      { start: hm("14:00"), end: hm("19:00") },
+    ]);
+  });
+});

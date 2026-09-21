@@ -173,6 +173,28 @@ async function main() {
       endMinutes: hm("15:00"),
     },
   });
+  // 6日後の田中は分割シフト（10:00-12:00 と 16:00-19:00）。
+  // 同じ日に2行入れることで、間の時間を勤務外にできる。
+  await prisma.dateOverride.createMany({
+    data: [
+      {
+        tenantId: tenant.id,
+        staffId: tanaka.id,
+        date: dateStr(6),
+        isClosed: false,
+        startMinutes: hm("10:00"),
+        endMinutes: hm("12:00"),
+      },
+      {
+        tenantId: tenant.id,
+        staffId: tanaka.id,
+        date: dateStr(6),
+        isClosed: false,
+        startMinutes: hm("16:00"),
+        endMinutes: hm("19:00"),
+      },
+    ],
+  });
 
   // ── 顧客 ──────────────────────────
   const [yamada, ito, kobayashi] = await Promise.all([
