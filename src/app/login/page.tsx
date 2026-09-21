@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { login } from "@/lib/actions";
-import { getSession } from "@/lib/auth";
+import { getVerifiedSession } from "@/lib/auth";
 
 export default async function LoginPage({
   searchParams,
@@ -10,7 +10,7 @@ export default async function LoginPage({
   const sp = await searchParams;
 
   // すでにログインしていれば素通しする
-  if (await getSession()) redirect("/calendar");
+  if (await getVerifiedSession()) redirect("/calendar");
 
   return (
     <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center p-6">

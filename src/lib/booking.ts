@@ -11,6 +11,7 @@
 import { prisma } from "./prisma";
 import { isWithinWorking, resolveWorkingIntervals } from "./availability-core";
 import { type Actor, canManageStaffReservation, denyMessage } from "./permissions";
+import { checkBookingWindow } from "./booking-window";
 import { dayOfWeekOf } from "./time";
 
 /** トランザクションの中で使えるクライアント */
@@ -317,4 +318,132 @@ export async function setReservationStatus(input: {
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : "変更に失敗しました" };
   }
+}
+
+// ── お客様が自分で取る予約 ────────────────
+
+/**
+ * お客様向けの予約登録。
+ *
+ * 店舗側の経路と違い、
+ *   ・担当スタッフの権限判定は行わない（お客様は誰でも指名できる）
+ *   ・代わりに受付期間と締め切りを必ず確かめる
+ *   ・顧客は「ログイン中の本人」に固定する（他人の名前では取れない）
+ */
+export async function bookAsCustomer(input: {
+  tenantId: string;
+  customerId: string;
+  date: string;
+  menuId: string;
+  staffId: string;
+  startMinutes: number;
+  now?: Date;
+}): Promise<Result<{ reservationId: string }>> {
+  const { tenantId, customerId, date, menuId, staffId, startMinutes } = input;
+
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+  if (!tenant) return { ok: false, message: "店舗が見つかりません" };
+
+  if (startMinutes % tenant.slotMinutes !== 0) {
+    return { ok: false, message: "開始時刻が予約枠の刻みに合っていません" };
+  }
+
+  // 受付期間と締め切り。画面で絞っていても、送信時にもう一度確かめる
+  const window = checkBookingWindow({
+    date,
+    startMinutes,
+    windowDays: tenant.bookingWindowDays,
+    leadMinutes: tenant.bookingLeadMinutes,
+    now: input.now,
+  });
+  if (!window.ok) return { ok: false, message: window.message };
+
+  const menu = await prisma.menu.findFirst({
+    where: { id: menuId, tenantId, isActive: true },
+  });
+  if (!menu) return { ok: false, message: "メニューが見つかりません" };
+
+  const endMinutes = startMinutes + menu.durationMinutes + menu.bufferMinutes;
+
+  try {
+    const reservationId = await prisma.$transaction(async (tx) => {
+      const customer = await tx.customer.findFirst({
+        where: { id: customerId, tenantId },
+      });
+      if (!customer) throw new Error("お客様の情報が見つかりません");
+
+      await ensureSlotUsable(tx, {
+        tenantId,
+        date,
+        staffId,
+        menuId,
+        startMinutes,
+        endMinutes,
+      });
+
+      const reservation = await tx.reservation.create({
+        data: {
+          tenantId,
+          staffId,
+          customerId,
+          menuId,
+          date,
+          startMinutes,
+          endMinutes,
+          menuNameSnapshot: menu.name,
+          durationSnapshot: menu.durationMinutes,
+          priceSnapshot: menu.price,
+          status: "booked",
+        },
+      });
+      return reservation.id;
+    });
+
+    return { ok: true, reservationId };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : "登録に失敗しました" };
+  }
+}
+
+/**
+ * お客様自身によるキャンセル。
+ * 自分の予約だけ、かつ締め切り前だけ。
+ */
+export async function cancelOwnReservation(input: {
+  tenantId: string;
+  customerId: string;
+  reservationId: string;
+  now?: Date;
+}): Promise<Result> {
+  const { tenantId, customerId, reservationId } = input;
+
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+  if (!tenant) return { ok: false, message: "店舗が見つかりません" };
+
+  const reservation = await prisma.reservation.findFirst({
+    where: { id: reservationId, tenantId, customerId },
+  });
+  if (!reservation) return { ok: false, message: "予約が見つかりません" };
+  if (reservation.status !== "booked") {
+    return { ok: false, message: "この予約はキャンセルできません" };
+  }
+
+  // 直前のキャンセルは受けない（店舗側からは引き続き可能）
+  const window = checkBookingWindow({
+    date: reservation.date,
+    startMinutes: reservation.startMinutes,
+    windowDays: 3650, // 期間の上限はキャンセルには関係ない
+    leadMinutes: tenant.bookingLeadMinutes,
+    now: input.now,
+  });
+  if (!window.ok) {
+    return { ok: false, message: "お時間が近いため、お電話でご連絡ください" };
+  }
+
+  await prisma.reservation.updateMany({
+    where: { id: reservationId, tenantId, customerId },
+    data: { status: "canceled", canceledAt: new Date() },
+  });
+
+  return { ok: true };
 }

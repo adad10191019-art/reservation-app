@@ -19,12 +19,16 @@ datasource db {
 
 // ── 店舗 ───────────────────────────────
 model Tenant {
-  id          String   @id @default(uuid())
+  id          String @id @default(uuid())
   name        String
-  timezone    String   @default("Asia/Tokyo")
-  slotMinutes Int      @default(15) // 予約枠の刻み（分）
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  timezone    String @default("Asia/Tokyo")
+  slotMinutes Int    @default(15) // 予約枠の刻み（分）
+
+  // お客様向けの予約受付の条件
+  bookingWindowDays  Int      @default(30) // 何日先まで予約を受けるか
+  bookingLeadMinutes Int      @default(120) // 開始の何分前まで受けるか
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   users         User[]
   staffs        Staff[]
@@ -172,7 +176,7 @@ model Customer {
   name       String
   phone      String?
   email      String?
-  lineUserId String? // LINE連携は最後の工程。枠だけ先に用意
+  lineUserId String? // LINEログインで得られる利用者ID
   note       String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -180,6 +184,8 @@ model Customer {
   tenant       Tenant        @relation(fields: [tenantId], references: [id])
   reservations Reservation[]
 
+  // 同じ人が同じ店舗で二重に作られないようにする
+  @@unique([tenantId, lineUserId])
   @@index([tenantId])
 }
 

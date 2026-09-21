@@ -122,6 +122,19 @@ npm run dev
 中身をそのまま入れると書き換えられるため、サーバーの秘密鍵（`AUTH_SECRET`）で署名し、
 毎回検証する。署名の作成・検証はDBもCookieも触らない純粋な処理なので、そのままテストできる。
 
+**Cookie は「誰であるか」にだけ使い、「何ができるか」は毎回DBを見る**
+権限を Cookie の中身から読むと、権限を下げてもログイン中の人には反映されない。
+毎回アカウントを読み直すことで、変更がすぐ効き、削除されたアカウントも弾ける。
+なお画面の描画中は Cookie を書き換えられないため、無効なときは消さずに「未ログイン」として扱う。
+
+**お客様のログインは店舗側と別の Cookie にする**
+同じ Cookie を使い回すと、片方のログインでもう片方の画面に入れてしまう。
+署名の鍵も用途を混ぜて分けている。
+
+**お客様向けの経路にだけ受付期間と締め切りを掛ける**
+店舗側は当日の直前でも予約を入れる必要があるため、この制限は
+`bookAsCustomer` の側にだけ置く。判定は `booking-window.ts` の純粋な処理。
+
 ## 構成
 
 ```
@@ -142,11 +155,20 @@ src/lib/
   ranges.ts                  "10:00-13:00, 14:00-19:00" の読み書き
   constants.ts               画面とサーバーの両方で使う定数
   settings-actions.ts        設定の保存（オーナー限定）
+  booking-window.ts          受付期間と締め切りの判定（DBを触らない）
+  customer-session.ts        お客様のログイン状態（店舗側とは別のCookie）
+  customer-store.ts          お客様の登録・照合
+  customer-actions.ts        お客様向けのフォームの送信先
+  line.ts                    LINEログイン
 src/components/
   app-header.tsx             店舗名・ログイン中の人・ログアウト
   banner.tsx                 保存結果の表示
 src/app/settings/
   menus/ staff/ hours/ days/ accounts/ store/   設定画面（オーナー限定）
+src/app/book/
+  [tenantId]/                お客様向けの予約画面（ログイン不要で閲覧できる）
+  [tenantId]/mine/           ご自分の予約の確認・キャンセル
+  callback/                  LINEログインの戻り先
 scripts/
   check-availability.ts      実データでの目視確認
   check-double-booking.ts    二重予約が防げているかの検証
@@ -200,6 +222,36 @@ npm run db:seed
 - `.env` と `*.db` はリポジトリに含まれない（`.gitignore` 済み）
 - `AUTH_SECRET` は公開先ごとに別の値にする。漏れるとログイン状態を偽造できる
 
+## お客様向けの予約画面
+
+`/book/<店舗ID>` がお客様向けの入口。ログインなしで空き時間を見られ、
+予約するときだけ LINE ログインを求める。新規登録は不要。
+
+### LINEログインの設定
+
+1. [LINE Developers](https://developers.line.biz/) で「LINEログイン」チャネルを作る
+2. コールバックURLに `<APP_URL>/book/callback` を登録する
+3. `.env` に次を設定する（**このファイルはリポジトリに含まれない**）
+
+```bash
+APP_URL="http://localhost:3000"
+LINE_LOGIN_CHANNEL_ID="..."
+LINE_LOGIN_CHANNEL_SECRET="..."
+```
+
+設定されていない間は**開発用の仮ログイン**に切り替わり、名前を入れるだけで
+一連の流れを試せる。仮ログインは `NODE_ENV=production` では動かない。
+
+### 受付の条件
+
+設定 → 店舗 で変えられる。
+
+- 何日先まで受けるか（既定30日）
+- 開始の何分前まで受けるか（既定120分）
+
+締め切りを過ぎた時間は一覧に出さず、送信されても `bookAsCustomer` が拒否する。
+キャンセルも同じ締め切りを使う（店舗側からは引き続き操作できる）。
+
 ### 公開前に必要なこと
 
 - **ダミーデータのアカウントを消す。** `seed.ts` のアカウントはパスワードが公開されている。
@@ -221,4 +273,5 @@ npm run db:seed
 - [x] マルチテナントの検証
 - [x] PostgreSQL 対応・デプロイ準備
 - [ ] デプロイ（公開先の用意）
+- [x] お客様向けの予約画面（LINEログイン）
 - [ ] LINE連携（予約通知・リマインド）

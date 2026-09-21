@@ -5,9 +5,11 @@
  */
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { prisma } from "./prisma";
 import {
   SESSION_COOKIE,
   SESSION_MAX_AGE_SECONDS,
+  type Role,
   type SessionData,
   decodeSession,
   encodeSession,
@@ -20,9 +22,38 @@ export async function getSession(): Promise<SessionData | null> {
   return decodeSession(store.get(SESSION_COOKIE)?.value);
 }
 
+/**
+ * Cookie を読み、そのアカウントが今も実在するかDBで確かめる。
+ *
+ * Cookie は「誰であるか」の証明にだけ使い、「何ができるか」は毎回DBを見る。
+ *   ・権限を変えた結果が、ログインし直さなくてもすぐ効く
+ *   ・削除されたアカウントや、無くなった店舗のログインを弾ける
+ *
+ * 画面の描画中には Cookie を書き換えられないため、
+ * ここでは消さずに「未ログイン」として返すだけにする。
+ * 古い Cookie は、次にログインしたときに上書きされる。
+ */
+export async function getVerifiedSession(): Promise<SessionData | null> {
+  const session = await getSession();
+  if (!session) return null;
+
+  const user = await prisma.user.findFirst({
+    where: { id: session.userId, tenantId: session.tenantId },
+    include: { staff: true },
+  });
+  if (!user) return null;
+
+  return {
+    ...session,
+    role: user.role as Role,
+    staffId: user.staffId,
+    name: user.staff?.name ?? user.email,
+  };
+}
+
 /** ログインしていなければログイン画面へ送る */
 export async function requireSession(): Promise<SessionData> {
-  const session = await getSession();
+  const session = await getVerifiedSession();
   if (!session) redirect("/login");
   return session;
 }
