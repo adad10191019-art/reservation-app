@@ -28,13 +28,19 @@ export default async function ReservationDetailPage({
   const { id } = await params;
   const sp = await searchParams;
   const session = await requireSession();
-  const tenant = await getTenant(session.tenantId);
 
-  // tenantId を必ず条件に入れる
-  const reservation = await prisma.reservation.findFirst({
-    where: { id, tenantId: tenant.id },
-    include: { customer: true, staff: true },
-  });
+  // 互いに依存しないDB読み取りは同時に投げる。
+  // 1件ずつ待つと、DBとの往復（Neonは特に）がそのまま合計時間になって
+  // 詳細画面を開くたびに待たされる原因になる。
+  const [tenant, reservation, staffList] = await Promise.all([
+    getTenant(session.tenantId),
+    prisma.reservation.findFirst({
+      // tenantId を必ず条件に入れる
+      where: { id, tenantId: session.tenantId },
+      include: { customer: true, staff: true },
+    }),
+    prisma.staff.findMany({ where: { tenantId: session.tenantId } }),
+  ]);
   if (!reservation) notFound();
 
   const status = reservation.status as ReservationStatus;
@@ -53,9 +59,7 @@ export default async function ReservationDetailPage({
       })
     : null;
 
-  const staffNames = new Map(
-    (await prisma.staff.findMany({ where: { tenantId: tenant.id } })).map((s) => [s.id, s.name]),
-  );
+  const staffNames = new Map(staffList.map((s) => [s.id, s.name]));
 
   // スタッフは自分の担当分しか操作できない
   const canManage = canManageStaffReservation(session, reservation.staffId);

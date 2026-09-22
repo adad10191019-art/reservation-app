@@ -11,8 +11,9 @@ import {
   todayString,
 } from "@/lib/time";
 
-/** 1分あたりの高さ（px）。1時間 = 72px */
-const PX_PER_MIN = 1.2;
+/** 1分あたりの高さ（px）。1時間 = 84px。
+ * 1.2 だと短い予約（15〜30分）で時間の行が見切れていたため広げた。 */
+const PX_PER_MIN = 1.4;
 
 export default async function CalendarPage({
   searchParams,
@@ -150,17 +151,20 @@ export default async function CalendarPage({
                   <Link
                     key={r.id}
                     href={`/reservations/${r.id}`}
-                    className="absolute inset-x-1 block overflow-hidden rounded border border-sky-300 bg-sky-100 px-1.5 py-1 text-xs leading-tight shadow-sm transition-colors hover:border-sky-400 hover:bg-sky-200"
+                    title={`${toHm(r.startMinutes)}–${toHm(r.endMinutes)} ${r.menuName} ${r.customerName}様`}
+                    className="absolute inset-x-1 block overflow-hidden rounded border border-sky-300 bg-sky-100 px-1.5 py-1 text-xs leading-none shadow-sm transition-colors hover:border-sky-400 hover:bg-sky-200"
                     style={{
                       top: top(r.startMinutes),
                       height: (r.endMinutes - r.startMinutes) * PX_PER_MIN - 2,
                     }}
                   >
-                    <div className="font-medium text-sky-900">{r.menuName}</div>
-                    <div className="truncate text-sky-700">{r.customerName} 様</div>
-                    <div className="tabular-nums text-sky-600">
+                    {/* 枠が短いと全部は入らない。一番見たい時刻を2行目に置き、
+                        入り切らない分は下（顧客名→メニュー名の順）から見切れさせる */}
+                    <div className="truncate font-medium text-sky-900">{r.menuName}</div>
+                    <div className="mt-0.5 tabular-nums text-sky-800">
                       {toHm(r.startMinutes)}–{toHm(r.endMinutes)}
                     </div>
+                    <div className="mt-0.5 truncate text-sky-700">{r.customerName} 様</div>
                   </Link>
                 ))}
               </div>

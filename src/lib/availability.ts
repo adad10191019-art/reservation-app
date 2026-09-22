@@ -45,24 +45,27 @@ export async function findAvailability(params: {
   const { tenantId, date, menuId, staffId, excludeReservationId } = params;
   const dayOfWeek = dayOfWeekOf(date);
 
-  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+  // どれもお互いの結果を必要としないので、まとめて投げる。
+  // 1件ずつ待つとDBとの往復がそのまま合計時間になり、空き枠の検索や
+  // 予約詳細を開くたびに待たされる原因になる。
+  const [tenant, menu, staffMenus] = await Promise.all([
+    prisma.tenant.findUnique({ where: { id: tenantId } }),
+    // tenantId を必ず条件に入れる。入れ忘れると他店舗のデータが混ざる。
+    prisma.menu.findFirst({ where: { id: menuId, tenantId } }),
+    prisma.staffMenu.findMany({
+      where: {
+        tenantId,
+        menuId,
+        staff: { isActive: true, ...(staffId ? { id: staffId } : {}) },
+      },
+      include: { staff: true },
+    }),
+  ]);
   if (!tenant) throw new Error("店舗が見つかりません");
-
-  // tenantId を必ず条件に入れる。入れ忘れると他店舗のデータが混ざる。
-  const menu = await prisma.menu.findFirst({ where: { id: menuId, tenantId } });
   if (!menu) throw new Error("メニューが見つかりません");
 
   const requiredMinutes = menu.durationMinutes + menu.bufferMinutes;
   const slotMinutes = tenant.slotMinutes;
-
-  const staffMenus = await prisma.staffMenu.findMany({
-    where: {
-      tenantId,
-      menuId,
-      staff: { isActive: true, ...(staffId ? { id: staffId } : {}) },
-    },
-    include: { staff: true },
-  });
   const staffs = staffMenus
     .map((sm) => sm.staff)
     .sort((a, b) => a.displayOrder - b.displayOrder || a.name.localeCompare(b.name));
