@@ -181,6 +181,8 @@ src/app/settings/
   menus/ staff/ hours/ days/ accounts/ store/   設定画面（オーナー限定）
 src/app/
   notify/                    通知を受け取るLINEの紐づけ（ログインした人全員）
+  customers/                 顧客一覧・詳細（来店履歴つき）
+  calendar/week/             予約カレンダーの週表示
 src/app/book/
   [shop]/                    お客様向けの予約画面（ログイン不要で閲覧できる）
   [shop]/mine/               ご自分の予約の確認・キャンセル
@@ -419,5 +421,5 @@ https://<プロジェクト名>.vercel.app/book/callback
 - [x] LINE連携を店舗（Tenant）ごとに持てるように変更（複数の公式LINEを使い分けられる）
 - [ ] Vercelアカウントの二要素認証（本番データを預かるため、手が空いたときに設定する）
 - [ ] LINE公式アカウント（Messaging API チャネル）の名前をテスト名「竹」から店舗名へ変更
-- [ ] 顧客一覧・詳細（来店履歴つき）の画面
+- [x] 顧客一覧・詳細（来店履歴つき）の画面
 - [x] カレンダーの週表示
