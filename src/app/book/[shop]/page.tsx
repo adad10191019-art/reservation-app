@@ -11,6 +11,7 @@ import {
 import { getActiveCustomer } from "@/lib/customer-store";
 import { isDevFallbackAllowed, isLineConfigured } from "@/lib/line";
 import { prisma } from "@/lib/prisma";
+import { SubmitButton } from "@/components/submit-button";
 import { findTenantByHandle, tenantHandle } from "@/lib/tenant";
 import { addDays, formatDateLabel, sanitizeDate, toHm, todayString } from "@/lib/time";
 
@@ -177,7 +178,7 @@ export default async function PublicBookingPage({
                   {slots.map((slot) => (
                     <label
                       key={slot.startMinutes}
-                      className="cursor-pointer rounded-md border border-neutral-300 px-2 py-2.5 text-center text-sm hover:bg-neutral-50 has-checked:border-sky-500 has-checked:bg-sky-50 has-checked:text-sky-900"
+                      className="cursor-pointer rounded-md border-2 border-neutral-300 px-2 py-2.5 text-center text-sm transition-colors hover:bg-neutral-50 has-checked:border-sky-600 has-checked:bg-sky-100 has-checked:text-sky-900 has-checked:ring-2 has-checked:ring-sky-300"
                     >
                       <input
                         type="radio"
@@ -196,12 +197,12 @@ export default async function PublicBookingPage({
                 </div>
               </fieldset>
 
-              <button
-                type="submit"
-                className="w-full rounded-md bg-sky-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-sky-700"
+              <SubmitButton
+                pendingText="予約しています…"
+                className="w-full rounded-md bg-sky-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-sky-700"
               >
                 この時間で予約する
-              </button>
+              </SubmitButton>
 
               <p className="text-xs text-neutral-500">
                 {loggedIn.name} 様として予約します。
