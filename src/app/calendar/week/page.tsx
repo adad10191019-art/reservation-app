@@ -36,6 +36,12 @@ export default async function CalendarWeekPage({
           日表示へ
         </Link>
         <Link
+          href="/customers"
+          className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
+        >
+          顧客一覧
+        </Link>
+        <Link
           href={`/booking?date=${anchor}`}
           className="rounded-md bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-700"
         >

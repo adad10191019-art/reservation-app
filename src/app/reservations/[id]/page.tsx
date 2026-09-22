@@ -118,7 +118,9 @@ export default async function ReservationDetailPage({
 
           <dt className="text-neutral-500">お客様</dt>
           <dd>
-            {reservation.customer.name} 様
+            <Link href={`/customers/${reservation.customer.id}`} className="text-sky-700 hover:underline">
+              {reservation.customer.name} 様
+            </Link>
             {reservation.customer.phone && (
               <span className="ml-2 text-neutral-500">{reservation.customer.phone}</span>
             )}
