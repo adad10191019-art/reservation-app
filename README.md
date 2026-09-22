@@ -402,8 +402,12 @@ https://<プロジェクト名>.vercel.app/book/callback
 - [x] ログイン・権限
 - [x] マルチテナントの検証
 - [x] PostgreSQL 対応・デプロイ準備
-- [ ] デプロイ（公開先の用意）
+- [x] デプロイ（Vercel。公開URL: https://reservation-app-beta-rosy.vercel.app）
 - [x] お客様向けの予約画面（LINEログイン）
 - [x] お客様向けURLの短い名前（/book/sample-salon）
 - [x] LINE通知（予約完了・キャンセル・前日リマインド）
 - [x] 店舗側への通知（ネット予約・キャンセル）
+- [ ] Vercelアカウントの二要素認証（本番データを預かるため、手が空いたときに設定する）
+- [ ] LINE公式アカウント（Messaging API チャネル）の名前をテスト名「竹」から店舗名へ変更
+- [ ] 複数店舗に販売する場合、LINE認証情報を Tenant ごとに持たせる改修が必要
+  （現状は環境変数でシステム全体に1つだけ）
