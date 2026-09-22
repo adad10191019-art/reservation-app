@@ -5,6 +5,7 @@ import {
   hm,
   intersect,
   normalize,
+  startOfWeek,
   subtract,
   toHm,
 } from "./time";
@@ -121,5 +122,22 @@ describe("generateStarts（開始できる時刻）", () => {
   it("引数が不正なら例外になる", () => {
     expect(() => generateStarts([{ start: 600, end: 700 }], 0, 15)).toThrow();
     expect(() => generateStarts([{ start: 600, end: 700 }], 30, 0)).toThrow();
+  });
+});
+
+describe("startOfWeek（週の始まり）", () => {
+  it("週の途中の日から、その週の日曜日を返す", () => {
+    // 2026-09-21 は月曜（前段の「曜日の判定」参照）
+    expect(startOfWeek("2026-09-21")).toBe("2026-09-20");
+    expect(startOfWeek("2026-09-26")).toBe("2026-09-20"); // 土曜
+  });
+
+  it("日曜そのものを渡すと、そのまま返る", () => {
+    expect(startOfWeek("2026-09-20")).toBe("2026-09-20");
+  });
+
+  it("月をまたぐ週でも正しく戻る", () => {
+    // 2026-10-01 は木曜。その週の日曜は9月の日付になる
+    expect(startOfWeek("2026-10-01")).toBe("2026-09-27");
   });
 });

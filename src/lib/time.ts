@@ -153,6 +153,11 @@ export function sanitizeDate(date: string | undefined): string {
   return date;
 }
 
+/** その日を含む週の日曜日を返す（週は日曜始まり） */
+export function startOfWeek(date: string): string {
+  return addDays(date, -dayOfWeekOf(date));
+}
+
 const WEEKDAY_JA = ["日", "月", "火", "水", "木", "金", "土"];
 
 /** "2026-09-21" → "9月21日(月)" */

@@ -1,9 +1,9 @@
 /**
- * 1日分の予定表を組み立てる。カレンダー画面が使う。
+ * 予定表を組み立てる。カレンダー画面（日表示・週表示）が使う。
  */
 import { prisma } from "./prisma";
 import { resolveWorkingIntervals } from "./availability-core";
-import { type Interval, dayOfWeekOf } from "./time";
+import { addDays, type Interval, dayOfWeekOf } from "./time";
 
 export type ScheduledReservation = {
   id: string;
@@ -123,4 +123,95 @@ export async function getDaySchedule(params: {
     points.length > 0 ? Math.ceil(Math.max(...points) / 60) * 60 : DEFAULT_VIEW_END;
 
   return { date, columns, viewStart, viewEnd };
+}
+
+// ── 週表示 ────────────────────────────────
+
+export type WeekDayCell = {
+  date: string;
+  /** その日、このスタッフが1件も勤務時間を持たない（休み） */
+  isOff: boolean;
+  reservations: ScheduledReservation[];
+};
+
+export type WeekStaffRow = {
+  staffId: string;
+  staffName: string;
+  /** 日曜始まりで7日分 */
+  days: WeekDayCell[];
+};
+
+export type WeekSchedule = {
+  /** 週の日曜日 */
+  startDate: string;
+  dates: string[];
+  staffRows: WeekStaffRow[];
+};
+
+/**
+ * 週表示は「その週はどのくらい混んでいるか」を一目で見るためのもの。
+ * 日表示のような分単位の帯ではなく、日ごとにその日の予約を積んで示す。
+ */
+export async function getWeekSchedule(params: {
+  tenantId: string;
+  startDate: string; // 週の日曜日
+}): Promise<WeekSchedule> {
+  const { tenantId, startDate } = params;
+  const dates = Array.from({ length: 7 }, (_, i) => addDays(startDate, i));
+
+  const staffs = await prisma.staff.findMany({
+    where: { tenantId, isActive: true },
+    orderBy: [{ displayOrder: "asc" }, { name: "asc" }],
+  });
+  const staffIds = staffs.map((s) => s.id);
+
+  const [businessHours, dateOverrides, reservations] = await Promise.all([
+    // 週をまたぐので曜日では絞らず、対象スタッフの分をまとめて取る
+    prisma.businessHour.findMany({
+      where: { tenantId, OR: [{ staffId: null }, { staffId: { in: staffIds } }] },
+    }),
+    prisma.dateOverride.findMany({
+      where: {
+        tenantId,
+        date: { in: dates },
+        OR: [{ staffId: null }, { staffId: { in: staffIds } }],
+      },
+    }),
+    prisma.reservation.findMany({
+      where: { tenantId, date: { in: dates }, staffId: { in: staffIds }, status: "booked" },
+      include: { customer: true },
+      orderBy: [{ date: "asc" }, { startMinutes: "asc" }],
+    }),
+  ]);
+
+  const staffRows: WeekStaffRow[] = staffs.map((staff) => ({
+    staffId: staff.id,
+    staffName: staff.name,
+    days: dates.map((date) => {
+      const working = resolveWorkingIntervals({
+        staffId: staff.id,
+        businessHours: businessHours.filter((h) => h.dayOfWeek === dayOfWeekOf(date)),
+        dateOverrides: dateOverrides.filter((o) => o.date === date),
+      });
+
+      return {
+        date,
+        isOff: working.length === 0,
+        reservations: reservations
+          .filter((r) => r.staffId === staff.id && r.date === date)
+          .map((r) => ({
+            id: r.id,
+            staffId: r.staffId,
+            startMinutes: r.startMinutes,
+            endMinutes: r.endMinutes,
+            menuName: r.menuNameSnapshot,
+            customerName: r.customer.name,
+            durationMinutes: r.durationSnapshot,
+            price: r.priceSnapshot,
+          })),
+      };
+    }),
+  }));
+
+  return { startDate, dates, staffRows };
 }
