@@ -25,6 +25,7 @@ async function loadTarget(reservationId: string) {
   if (!reservation) return null;
   if (!reservation.customer.lineUserId) return null;
 
+  const tenant = reservation.tenant;
   const base = process.env.APP_URL?.replace(/\/$/, "");
   const summary: ReservationSummary = {
     shopName: reservation.tenant.name,
@@ -39,7 +40,7 @@ async function loadTarget(reservationId: string) {
       : undefined,
   };
 
-  return { to: reservation.customer.lineUserId, summary };
+  return { to: reservation.customer.lineUserId, summary, tenant };
 }
 
 export async function notifyReservationCreated(
@@ -49,6 +50,7 @@ export async function notifyReservationCreated(
   if (!target) return { ok: true, sent: false, reason: "LINEに紐づいていないお客様です" };
 
   return pushTextMessage({
+    tenant: target.tenant,
     to: target.to,
     text: reservationCreatedText(target.summary),
   });
@@ -61,6 +63,7 @@ export async function notifyReservationCanceled(
   if (!target) return { ok: true, sent: false, reason: "LINEに紐づいていないお客様です" };
 
   return pushTextMessage({
+    tenant: target.tenant,
     to: target.to,
     text: reservationCanceledText(target.summary),
   });
@@ -106,6 +109,7 @@ export async function sendRemindersFor(date: string): Promise<ReminderOutcome[]>
     }
 
     const result = await pushTextMessage({
+      tenant: target.tenant,
       to: target.to,
       text: reservationReminderText(target.summary),
     });
@@ -172,7 +176,11 @@ async function notifyStaff(
   let sent = 0;
   let skipped = 0;
   for (const user of recipients) {
-    const result = await pushTextMessage({ to: user.lineUserId as string, text });
+    const result = await pushTextMessage({
+      tenant: reservation.tenant,
+      to: user.lineUserId as string,
+      text,
+    });
     if (result.ok && result.sent) sent++;
     else skipped++;
   }

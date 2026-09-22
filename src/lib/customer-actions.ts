@@ -46,7 +46,7 @@ export async function startLineLogin(formData: FormData) {
   if (!tenant) redirect("/");
   const handle = tenantHandle(tenant);
 
-  if (!isLineConfigured()) {
+  if (!isLineConfigured(tenant)) {
     redirect(bookPath(handle, { error: "LINEログインの設定がまだです" }));
   }
 
@@ -60,7 +60,7 @@ export async function startLineLogin(formData: FormData) {
     maxAge: 600, // 10分で切れる
   });
 
-  redirect(buildAuthorizeUrl({ state: nonce }));
+  redirect(buildAuthorizeUrl(tenant, { state: nonce }));
 }
 
 /**
@@ -68,8 +68,6 @@ export async function startLineLogin(formData: FormData) {
  * LINEの認証情報が無いときだけ使える。本番では動かない。
  */
 export async function devLogin(formData: FormData) {
-  if (!isDevFallbackAllowed()) redirect("/");
-
   const tenantId = String(formData.get("tenantId") ?? "");
   const name = String(formData.get("name") ?? "").trim();
   const next = String(formData.get("next") ?? "");
@@ -78,6 +76,7 @@ export async function devLogin(formData: FormData) {
   if (!tenant) redirect("/");
   const handle = tenantHandle(tenant);
 
+  if (!isDevFallbackAllowed(tenant)) redirect("/");
   if (!name) redirect(bookPath(handle, { error: "お名前を入力してください" }));
 
   // 実際のLINEの利用者IDと混ざらないよう、印を付けておく

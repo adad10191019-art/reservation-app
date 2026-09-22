@@ -58,7 +58,7 @@ export async function GET(request: Request) {
 
   let profile;
   try {
-    profile = await fetchLineProfile(code);
+    profile = await fetchLineProfile(tenant, code);
   } catch (e) {
     return await errorRedirect(
       request,

@@ -203,7 +203,10 @@ export async function startStaffLineLink() {
   const session = await requireSession();
   const path = "/notify";
 
-  if (!isLineConfigured()) {
+  const tenant = await prisma.tenant.findUnique({ where: { id: session.tenantId } });
+  if (!tenant) redirect(path);
+
+  if (!isLineConfigured(tenant)) {
     redirect(`${path}?error=${encodeURIComponent("LINEログインの設定がまだです")}`);
   }
 
@@ -227,7 +230,7 @@ export async function startStaffLineLink() {
     },
   );
 
-  redirect(buildAuthorizeUrl({ state: nonce }));
+  redirect(buildAuthorizeUrl(tenant, { state: nonce }));
 }
 
 export async function unlinkStaffLine() {

@@ -226,7 +226,7 @@ export default async function PublicBookingPage({
                 ))}
               </div>
 
-              <LoginBox tenantId={tenantId} handle={handle} date={date} menuId={menu.id} />
+              <LoginBox tenant={tenant} handle={handle} date={date} menuId={menu.id} />
             </>
           )}
         </section>
@@ -244,19 +244,20 @@ export default async function PublicBookingPage({
 }
 
 function LoginBox({
-  tenantId,
+  tenant,
   handle,
   date,
   menuId,
 }: {
-  tenantId: string;
+  tenant: { id: string; lineLoginChannelId: string | null; lineLoginChannelSecret: string | null };
   handle: string;
   date: string;
   menuId: string;
 }) {
+  const tenantId = tenant.id;
   const next = `/book/${handle}?date=${date}&menuId=${menuId}`;
 
-  if (isLineConfigured()) {
+  if (isLineConfigured(tenant)) {
     return (
       <form action={startLineLogin} className="rounded-md bg-neutral-50 p-4 text-center">
         <p className="mb-3 text-sm text-neutral-600">
@@ -276,14 +277,14 @@ function LoginBox({
     );
   }
 
-  if (isDevFallbackAllowed()) {
+  if (isDevFallbackAllowed(tenant)) {
     return (
       <form action={devLogin} className="rounded-md border border-dashed border-amber-400 bg-amber-50 p-4">
         <p className="mb-3 text-xs leading-relaxed text-amber-900">
           <strong>開発用の仮ログインです。</strong>
-          LINEの認証情報（<code>LINE_LOGIN_CHANNEL_ID</code> /{" "}
-          <code>LINE_LOGIN_CHANNEL_SECRET</code>）を <code>.env</code> に設定すると、
-          LINEログインに切り替わります。本番では動きません。
+          LINEの認証情報を設定画面（または{" "}
+          <code>LINE_LOGIN_CHANNEL_ID</code> / <code>LINE_LOGIN_CHANNEL_SECRET</code>）に
+          設定すると、LINEログインに切り替わります。本番では動きません。
         </p>
         <input type="hidden" name="tenantId" value={tenantId} />
         <input type="hidden" name="next" value={next} />

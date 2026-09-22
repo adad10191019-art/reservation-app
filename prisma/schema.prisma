@@ -29,8 +29,15 @@ model Tenant {
   // お客様向けの予約受付の条件
   bookingWindowDays  Int      @default(30) // 何日先まで予約を受けるか
   bookingLeadMinutes Int      @default(120) // 開始の何分前まで受けるか
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+
+  /// 店舗ごとのLINE連携。空なら環境変数（システム全体の既定値）を使う。
+  /// 複数の公式LINEアカウントをテナントごとに使い分けるための項目。
+  lineLoginChannelId       String?
+  lineLoginChannelSecret   String?
+  lineMessagingAccessToken String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   users         User[]
   staffs        Staff[]

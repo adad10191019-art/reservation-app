@@ -8,7 +8,6 @@
  * 送信済みの予約は飛ばすので、1日に何度動かしても二重に送られない。
  */
 import "dotenv/config";
-import { isMessagingConfigured } from "../src/lib/line-messaging";
 import { sendRemindersFor } from "../src/lib/notify";
 import { prisma } from "../src/lib/prisma";
 import { addDays, formatDateLabel, todayString } from "../src/lib/time";
@@ -17,12 +16,8 @@ async function main() {
   const arg = process.argv[2];
   const date = /^\d{4}-\d{2}-\d{2}$/.test(arg ?? "") ? arg : addDays(todayString(), 1);
 
-  if (!isMessagingConfigured()) {
-    console.log(
-      "LINE_MESSAGING_ACCESS_TOKEN が未設定です。送信はせず、内容だけ表示します。\n",
-    );
-  }
-
+  // アクセストークンは店舗ごとに持てるため、ここでは一括では判定しない。
+  // 未設定の店舗の分は、下の結果に理由付きで「未送信」と出る。
   console.log(`対象: ${formatDateLabel(date)}\n`);
 
   const outcomes = await sendRemindersFor(date);

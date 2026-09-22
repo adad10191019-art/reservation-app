@@ -4,9 +4,10 @@
  * お客様に新規登録をさせずに本人確認をするための仕組み。
  * LINE の画面で許可してもらい、戻ってきたときに利用者IDと名前を受け取る。
  *
- * 認証情報（LINE_LOGIN_CHANNEL_ID / LINE_LOGIN_CHANNEL_SECRET）が
- * 設定されていない間は、開発用の仮ログインに切り替わる。
- * 仮ログインは本番では動かない（NODE_ENV で止める）。
+ * 認証情報は店舗（Tenant）ごとに持てる。店舗が設定していなければ、
+ * 環境変数（LINE_LOGIN_CHANNEL_ID / LINE_LOGIN_CHANNEL_SECRET）を
+ * システム全体の既定値として使う。どちらも無い間は、開発用の仮ログインに
+ * 切り替わる。仮ログインは本番では動かない（NODE_ENV で止める）。
  */
 
 const AUTHORIZE_URL = "https://access.line.me/oauth2/v2.1/authorize";
@@ -20,15 +21,31 @@ export type LineProfile = {
   pictureUrl?: string;
 };
 
-export function isLineConfigured(): boolean {
-  return Boolean(
-    process.env.LINE_LOGIN_CHANNEL_ID && process.env.LINE_LOGIN_CHANNEL_SECRET,
-  );
+/** LINEログインの認証情報を持つテナント。Prisma の Tenant はこれを満たす */
+export type TenantLineLoginConfig = {
+  lineLoginChannelId: string | null;
+  lineLoginChannelSecret: string | null;
+};
+
+function resolveLoginCredentials(tenant: TenantLineLoginConfig): {
+  channelId: string | null;
+  channelSecret: string | null;
+} {
+  return {
+    channelId: tenant.lineLoginChannelId || process.env.LINE_LOGIN_CHANNEL_ID || null,
+    channelSecret:
+      tenant.lineLoginChannelSecret || process.env.LINE_LOGIN_CHANNEL_SECRET || null,
+  };
+}
+
+export function isLineConfigured(tenant: TenantLineLoginConfig): boolean {
+  const { channelId, channelSecret } = resolveLoginCredentials(tenant);
+  return Boolean(channelId && channelSecret);
 }
 
 /** 仮ログインを使ってよいか（認証情報が無く、かつ本番でない場合だけ） */
-export function isDevFallbackAllowed(): boolean {
-  return !isLineConfigured() && process.env.NODE_ENV !== "production";
+export function isDevFallbackAllowed(tenant: TenantLineLoginConfig): boolean {
+  return !isLineConfigured(tenant) && process.env.NODE_ENV !== "production";
 }
 
 function callbackUrl(): string {
@@ -42,8 +59,11 @@ function callbackUrl(): string {
  * state は、戻ってきたときに「自分が始めた手続きか」を確かめるための合言葉。
  * 他人に手続きを始めさせる攻撃（CSRF）を防ぐために必ず確認する。
  */
-export function buildAuthorizeUrl(params: { state: string }): string {
-  const channelId = process.env.LINE_LOGIN_CHANNEL_ID;
+export function buildAuthorizeUrl(
+  tenant: TenantLineLoginConfig,
+  params: { state: string },
+): string {
+  const { channelId } = resolveLoginCredentials(tenant);
   if (!channelId) throw new Error("LINE_LOGIN_CHANNEL_ID が設定されていません");
 
   const query = new URLSearchParams({
@@ -57,9 +77,11 @@ export function buildAuthorizeUrl(params: { state: string }): string {
 }
 
 /** 認可コードを使って、利用者の情報を受け取る */
-export async function fetchLineProfile(code: string): Promise<LineProfile> {
-  const channelId = process.env.LINE_LOGIN_CHANNEL_ID;
-  const channelSecret = process.env.LINE_LOGIN_CHANNEL_SECRET;
+export async function fetchLineProfile(
+  tenant: TenantLineLoginConfig,
+  code: string,
+): Promise<LineProfile> {
+  const { channelId, channelSecret } = resolveLoginCredentials(tenant);
   if (!channelId || !channelSecret) {
     throw new Error("LINEの認証情報が設定されていません");
   }

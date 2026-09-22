@@ -55,7 +55,7 @@ export default async function NotifySettingsPage({
           <span className="ml-2 text-xs opacity-70">（{user?.email}）</span>
         </div>
 
-        {!isLineConfigured() ? (
+        {!isLineConfigured(tenant) ? (
           <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
             LINEログインの設定がまだのため、紐づけできません。
           </p>

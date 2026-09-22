@@ -307,6 +307,42 @@ export async function saveStore(formData: FormData) {
   back(path);
 }
 
+// ── LINE連携（店舗ごと） ──────────────────
+
+/**
+ * この店舗専用のLINE連携情報を保存する。
+ *
+ * 空欄にすると未設定に戻る。未設定の間は、環境変数
+ * （システム全体の既定値）が使われる。
+ * 複数の公式LINEアカウントを店舗ごとに使い分けたいときに、ここへ入れる。
+ */
+export async function saveLineSettings(formData: FormData) {
+  const session = await requireOwner();
+  const path = "/settings/store";
+
+  const channelId = String(formData.get("lineLoginChannelId") ?? "").trim() || null;
+  const channelSecret = String(formData.get("lineLoginChannelSecret") ?? "").trim() || null;
+  const messagingToken =
+    String(formData.get("lineMessagingAccessToken") ?? "").trim() || null;
+
+  // 片方だけ入れると、戻ってきたときに認証できず気づきにくい事故になる
+  if ((channelId === null) !== (channelSecret === null)) {
+    back(path, "LINEログインは、チャネルIDとチャネルシークレットを両方入れてください");
+  }
+
+  await prisma.tenant.update({
+    where: { id: session.tenantId },
+    data: {
+      lineLoginChannelId: channelId,
+      lineLoginChannelSecret: channelSecret,
+      lineMessagingAccessToken: messagingToken,
+    },
+  });
+
+  refreshAll();
+  back(path);
+}
+
 // ── 権限の切り替え ────────────────────────
 
 export async function changeAccountRole(formData: FormData) {

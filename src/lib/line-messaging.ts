@@ -5,7 +5,9 @@
  * また、LINEログインのチャネルと公式アカウントが同じプロバイダーにないと、
  * 受け取る利用者IDが一致せず送れない。
  *
- * LINE_MESSAGING_ACCESS_TOKEN が未設定の間は、送らずに内容を控えるだけにする。
+ * アクセストークンは店舗（Tenant）ごとに持てる。店舗が設定していなければ、
+ * 環境変数（LINE_MESSAGING_ACCESS_TOKEN）をシステム全体の既定値として使う。
+ * どちらも無い間は、送らずに内容を控えるだけにする。
  * 通知が無くても予約そのものは成立させたいので、失敗しても例外は投げない。
  */
 
@@ -15,8 +17,17 @@ export type PushResult =
   | { ok: true; sent: boolean; reason?: string }
   | { ok: false; reason: string };
 
-export function isMessagingConfigured(): boolean {
-  return Boolean(process.env.LINE_MESSAGING_ACCESS_TOKEN);
+/** メッセージ送信のアクセストークンを持つテナント。Prisma の Tenant はこれを満たす */
+export type TenantMessagingConfig = {
+  lineMessagingAccessToken: string | null;
+};
+
+function resolveMessagingToken(tenant: TenantMessagingConfig): string | null {
+  return tenant.lineMessagingAccessToken || process.env.LINE_MESSAGING_ACCESS_TOKEN || null;
+}
+
+export function isMessagingConfigured(tenant: TenantMessagingConfig): boolean {
+  return Boolean(resolveMessagingToken(tenant));
 }
 
 /**
@@ -25,10 +36,11 @@ export function isMessagingConfigured(): boolean {
  * 送信できなくても予約は成立させたいので、結果を返すだけで例外にはしない。
  */
 export async function pushTextMessage(params: {
+  tenant: TenantMessagingConfig;
   to: string;
   text: string;
 }): Promise<PushResult> {
-  const { to, text } = params;
+  const { tenant, to, text } = params;
 
   if (!to) return { ok: false, reason: "送り先の利用者IDがありません" };
 
@@ -38,10 +50,10 @@ export async function pushTextMessage(params: {
     return { ok: true, sent: false, reason: "仮ログインの相手のため送信しません" };
   }
 
-  const token = process.env.LINE_MESSAGING_ACCESS_TOKEN;
+  const token = resolveMessagingToken(tenant);
   if (!token) {
     console.log(`[LINE通知・未送信（認証情報が未設定）] ${to}\n${text}\n`);
-    return { ok: true, sent: false, reason: "LINE_MESSAGING_ACCESS_TOKEN が未設定です" };
+    return { ok: true, sent: false, reason: "LINEの送信アクセストークンが未設定です" };
   }
 
   try {
