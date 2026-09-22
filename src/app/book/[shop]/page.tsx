@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { findAvailability } from "@/lib/availability";
+import { findAvailability, findWeekAvailability } from "@/lib/availability";
 import { filterBookableStarts } from "@/lib/booking-window";
 import {
   createCustomerReservation,
@@ -13,7 +13,16 @@ import { isDevFallbackAllowed, isLineConfigured } from "@/lib/line";
 import { prisma } from "@/lib/prisma";
 import { SubmitButton } from "@/components/submit-button";
 import { findTenantByHandle, tenantHandle } from "@/lib/tenant";
-import { addDays, formatDateLabel, sanitizeDate, toHm, todayString } from "@/lib/time";
+import {
+  addDays,
+  dayOfWeekOf,
+  formatDateLabel,
+  sanitizeDate,
+  toHm,
+  todayString,
+} from "@/lib/time";
+
+const WEEKDAY_JA = ["日", "月", "火", "水", "木", "金", "土"];
 
 export default async function PublicBookingPage({
   params,
@@ -78,6 +87,26 @@ export default async function PublicBookingPage({
     : (availability?.merged ?? []).filter((s) => bookableStarts.has(s.startMinutes));
 
   const lastDate = addDays(todayString(), tenant.bookingWindowDays);
+
+  // 1週間ぶんの空き状況をまとめて見せる帯。今日から7日分を常に表示する
+  // （選んだ日が7日より先でも、帯自体は今日基準のまま動かさない）
+  const weekDates = Array.from({ length: 7 }, (_, i) => addDays(todayString(), i));
+  const weekAvailability = menu
+    ? await findWeekAvailability({
+        tenantId,
+        dates: weekDates,
+        menuId: menu.id,
+        staffId: selectedStaffId || undefined,
+      })
+    : [];
+  const weekSummary = weekAvailability.map((day) => {
+    const bookable = filterBookableStarts(day.starts, {
+      date: day.date,
+      windowDays: tenant.bookingWindowDays,
+      leadMinutes: tenant.bookingLeadMinutes,
+    });
+    return { date: day.date, count: bookable.length, earliest: bookable[0] ?? null };
+  });
 
   return (
     <main className="mx-auto w-full max-w-2xl p-4 sm:p-6">
@@ -175,6 +204,56 @@ export default async function PublicBookingPage({
           </button>
         </div>
       </form>
+
+      {menu && (
+        <section className="mb-5">
+          <h2 className="mb-2 text-xs font-medium text-neutral-600">
+            今週の空き状況（{menu.name}
+            {selectedStaffId ? ` ／ ${staffNames.get(selectedStaffId)}` : ""}）
+          </h2>
+          <div className="flex gap-1.5 overflow-x-auto pb-1">
+            {weekSummary.map((day) => {
+              const isSelected = day.date === date;
+              const hasSlots = day.count > 0;
+              return (
+                <Link
+                  key={day.date}
+                  href={`/book/${handle}?date=${day.date}&menuId=${menu.id}${
+                    selectedStaffId ? `&staffId=${selectedStaffId}` : ""
+                  }`}
+                  className={`flex w-16 shrink-0 flex-col items-center rounded-md border px-1.5 py-2 text-center transition-colors ${
+                    isSelected
+                      ? "border-sky-600 bg-sky-50 ring-2 ring-sky-300"
+                      : hasSlots
+                        ? "border-neutral-200 bg-white hover:bg-neutral-50"
+                        : "border-neutral-100 bg-neutral-50"
+                  }`}
+                >
+                  <span
+                    className={`text-xs ${isSelected ? "text-sky-800" : "text-neutral-500"}`}
+                  >
+                    {WEEKDAY_JA[dayOfWeekOf(day.date)]}
+                  </span>
+                  <span
+                    className={`text-sm font-medium tabular-nums ${
+                      isSelected ? "text-sky-900" : "text-neutral-800"
+                    }`}
+                  >
+                    {Number(day.date.split("-")[2])}
+                  </span>
+                  {hasSlots ? (
+                    <span className="mt-1 text-[11px] tabular-nums text-emerald-700">
+                      {toHm(day.earliest as number)}〜
+                    </span>
+                  ) : (
+                    <span className="mt-1 text-[11px] text-neutral-300">満</span>
+                  )}
+                </Link>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {!menu ? (
         <p className="text-sm text-neutral-500">ただいま受付中のメニューがありません。</p>

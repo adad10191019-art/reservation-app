@@ -151,3 +151,99 @@ export async function findAvailability(params: {
     earliest: merged[0] ?? null,
   };
 }
+
+export type DayAvailability = {
+  date: string;
+  /** 「誰でもいい」でまとめた、開始できる時刻（受付期間・締め切りでの絞り込み前） */
+  starts: number[];
+};
+
+/**
+ * 複数日分の空き状況を、まとめて低コストで求める。
+ *
+ * findAvailability を日数ぶん呼ぶと、その回数だけDBへの往復が増える。
+ * ここでは「店舗・メニュー・対応スタッフ」は1回、その他は
+ * 対象の日付をまとめて1回の問い合わせで取り、日数が増えても
+ * 往復の回数を増やさない（1日分を見るのと同じコストで済む）。
+ *
+ * 受付期間・締め切りでの絞り込みは呼び出し側（filterBookableStarts）に任せる。
+ * 単日の findAvailability と役割を揃えるため。
+ */
+export async function findWeekAvailability(params: {
+  tenantId: string;
+  dates: string[]; // "YYYY-MM-DD" の配列。連続していなくてもよい
+  menuId: string;
+  staffId?: string;
+}): Promise<DayAvailability[]> {
+  const { tenantId, dates, menuId, staffId } = params;
+  const empty = dates.map((date) => ({ date, starts: [] as number[] }));
+
+  const [tenant, menu, staffMenus] = await Promise.all([
+    prisma.tenant.findUnique({ where: { id: tenantId } }),
+    prisma.menu.findFirst({ where: { id: menuId, tenantId } }),
+    prisma.staffMenu.findMany({
+      where: {
+        tenantId,
+        menuId,
+        staff: { isActive: true, ...(staffId ? { id: staffId } : {}) },
+      },
+      include: { staff: true },
+    }),
+  ]);
+  if (!tenant || !menu) return empty;
+
+  const requiredMinutes = menu.durationMinutes + menu.bufferMinutes;
+  const slotMinutes = tenant.slotMinutes;
+  const staffs = staffMenus
+    .map((sm) => sm.staff)
+    .sort((a, b) => a.displayOrder - b.displayOrder || a.name.localeCompare(b.name));
+  if (staffs.length === 0) return empty;
+
+  const staffIds = staffs.map((s) => s.id);
+
+  const [businessHours, dateOverrides, reservations, blocks] = await Promise.all([
+    // 曜日では絞らず、対象スタッフの分をまとめて取る（複数日にまたがるため）
+    prisma.businessHour.findMany({
+      where: { tenantId, OR: [{ staffId: null }, { staffId: { in: staffIds } }] },
+    }),
+    prisma.dateOverride.findMany({
+      where: {
+        tenantId,
+        date: { in: dates },
+        OR: [{ staffId: null }, { staffId: { in: staffIds } }],
+      },
+    }),
+    prisma.reservation.findMany({
+      where: { tenantId, date: { in: dates }, staffId: { in: staffIds }, status: "booked" },
+    }),
+    prisma.block.findMany({
+      where: {
+        tenantId,
+        date: { in: dates },
+        OR: [{ staffId: null }, { staffId: { in: staffIds } }],
+      },
+    }),
+  ]);
+
+  return dates.map((date) => {
+    const dayOfWeek = dayOfWeekOf(date);
+    const startsByStaff = staffs.map((staff) => {
+      const working = resolveWorkingIntervals({
+        staffId: staff.id,
+        businessHours: businessHours.filter((h) => h.dayOfWeek === dayOfWeek),
+        dateOverrides: dateOverrides.filter((o) => o.date === date),
+      });
+      const busy = [
+        ...reservations.filter((r) => r.staffId === staff.id && r.date === date),
+        ...blocks.filter(
+          (b) => (b.staffId === null || b.staffId === staff.id) && b.date === date,
+        ),
+      ].map((x) => ({ start: x.startMinutes, end: x.endMinutes }));
+
+      return computeStarts({ working, busy, requiredMinutes, slotMinutes });
+    });
+
+    const starts = [...new Set(startsByStaff.flat())].sort((a, b) => a - b);
+    return { date, starts };
+  });
+}
