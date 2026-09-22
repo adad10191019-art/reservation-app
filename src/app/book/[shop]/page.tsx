@@ -20,7 +20,7 @@ export default async function PublicBookingPage({
   searchParams,
 }: {
   params: Promise<{ shop: string }>;
-  searchParams: Promise<{ date?: string; menuId?: string; error?: string }>;
+  searchParams: Promise<{ date?: string; menuId?: string; staffId?: string; error?: string }>;
 }) {
   const { shop } = await params;
   const sp = await searchParams;
@@ -47,24 +47,35 @@ export default async function PublicBookingPage({
     ).map((s) => [s.id, s.name]),
   );
 
+  // 「誰でもいい」で問い合わせる。担当者ごとの内訳（perStaff）も同時に
+  // 手に入るので、指名したい場合はそこから絞り込む（問い合わせを増やさない）
   const availability = menu
     ? await findAvailability({ tenantId, date, menuId: menu.id })
     : null;
 
+  // このメニューに対応できるスタッフだけを選択肢にする
+  const eligibleStaff = availability?.perStaff ?? [];
+  const selectedStaffId =
+    sp.staffId && eligibleStaff.some((s) => s.staffId === sp.staffId) ? sp.staffId : "";
+
+  const rawStarts = selectedStaffId
+    ? (eligibleStaff.find((s) => s.staffId === selectedStaffId)?.starts ?? [])
+    : (availability?.merged ?? []).map((s) => s.startMinutes);
+
   // 受付期間と締め切りで絞る
   const bookableStarts = new Set(
-    filterBookableStarts(
-      (availability?.merged ?? []).map((s) => s.startMinutes),
-      {
-        date,
-        windowDays: tenant.bookingWindowDays,
-        leadMinutes: tenant.bookingLeadMinutes,
-      },
-    ),
+    filterBookableStarts(rawStarts, {
+      date,
+      windowDays: tenant.bookingWindowDays,
+      leadMinutes: tenant.bookingLeadMinutes,
+    }),
   );
-  const slots = (availability?.merged ?? []).filter((s) =>
-    bookableStarts.has(s.startMinutes),
-  );
+
+  const slots = selectedStaffId
+    ? rawStarts
+        .filter((m) => bookableStarts.has(m))
+        .map((m) => ({ startMinutes: m, staffIds: [selectedStaffId] }))
+    : (availability?.merged ?? []).filter((s) => bookableStarts.has(s.startMinutes));
 
   const lastDate = addDays(todayString(), tenant.bookingWindowDays);
 
@@ -110,7 +121,7 @@ export default async function PublicBookingPage({
       {/* 条件を選ぶ */}
       <form
         method="get"
-        className="mb-5 grid gap-3 rounded-lg border border-neutral-200 bg-white p-4 sm:grid-cols-3"
+        className="mb-5 grid gap-3 rounded-lg border border-neutral-200 bg-white p-4 sm:grid-cols-4"
       >
         <label className="block sm:col-span-2">
           <span className="mb-1 block text-xs font-medium text-neutral-600">メニュー</span>
@@ -128,6 +139,22 @@ export default async function PublicBookingPage({
         </label>
 
         <label className="block">
+          <span className="mb-1 block text-xs font-medium text-neutral-600">担当</span>
+          <select
+            name="staffId"
+            defaultValue={selectedStaffId}
+            className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+          >
+            <option value="">誰でもいい（最短）</option>
+            {eligibleStaff.map((s) => (
+              <option key={s.staffId} value={s.staffId}>
+                {s.staffName}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="block">
           <span className="mb-1 block text-xs font-medium text-neutral-600">日付</span>
           <input
             type="date"
@@ -139,7 +166,7 @@ export default async function PublicBookingPage({
           />
         </label>
 
-        <div className="sm:col-span-3">
+        <div className="sm:col-span-4">
           <button
             type="submit"
             className="rounded-md bg-neutral-800 px-4 py-1.5 text-sm font-medium text-white hover:bg-neutral-700"
