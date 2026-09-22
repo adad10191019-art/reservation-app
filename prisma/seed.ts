@@ -317,7 +317,8 @@ async function main() {
     { staff: sato, menu: color, customer: ito, day: 1, at: "14:00" },
     { staff: suzuki, menu: cut, customer: kobayashi, day: 1, at: "11:00" },
     { staff: tanaka, menu: spa, customer: yamada, day: 2, at: "10:30" },
-    { staff: sato, menu: perm, customer: kobayashi, day: 2, at: "14:00" },
+    // 14:00-15:00 は全スタッフの「スタッフ会議」ブロックと重なるため、その直後にする
+    { staff: sato, menu: perm, customer: kobayashi, day: 2, at: "15:00" },
   ];
 
   for (const b of bookings) {
