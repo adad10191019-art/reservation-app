@@ -86,10 +86,15 @@ export default async function MySchedulePage({
   };
 
   const { viewStart, viewEnd } = schedule;
-  const totalHeight = (viewEnd - viewStart) * PX_PER_MIN;
+  // 時刻の目盛りは行の中央揃えなので、一番上と一番下の分は上下に
+  // はみ出す。その逃げ場として、時間軸の上下にパディング（LABEL_PAD）を
+  // 足しておく。目盛り・グレー帯・予約すべて同じ top() を通すので、
+  // ずれずに一律で下へシフトするだけになる。
+  const LABEL_PAD = 12;
+  const totalHeight = (viewEnd - viewStart) * PX_PER_MIN + LABEL_PAD * 2;
   const hours: number[] = [];
   for (let m = viewStart; m <= viewEnd; m += 60) hours.push(m);
-  const top = (minutes: number) => (minutes - viewStart) * PX_PER_MIN;
+  const top = (minutes: number) => (minutes - viewStart) * PX_PER_MIN + LABEL_PAD;
   const closed = myColumn ? subtract([{ start: viewStart, end: viewEnd }], myColumn.working) : [];
 
   return (
