@@ -17,7 +17,7 @@ import { requireSession } from "./auth";
 import { logChange } from "./change-log";
 import { parseRanges } from "./ranges";
 import { prisma } from "./prisma";
-import { formatDateLabel, toHm } from "./time";
+import { formatDateLabel, hm, toHm } from "./time";
 
 const PATH = "/my-schedule";
 
@@ -38,25 +38,44 @@ async function requireOwnStaffId(): Promise<{ tenantId: string; staffId: string;
   return { tenantId: session.tenantId, staffId: session.staffId, name: session.name };
 }
 
-/** 自分の、この日だけの勤務時間を保存する（空欄なら曜日ごとの基本パターンに戻る） */
+/**
+ * 自分の、この日だけの勤務時間（入り・出）を保存する。
+ * 空欄なら曜日ごとの基本パターンに戻る。
+ *
+ * 昼休憩など、勤務の途中で空けたい時間は、ここではなく
+ * 下の「自分の予定（ブロック枠）」に入れてもらう。1本の勤務時間 ＋
+ * その中を塞ぐ予定、という2つの仕組みに分けたほうが、
+ * 「入り・出だけ入れればいい」というシンプルな入力で済む。
+ */
 export async function saveOwnDayOverride(formData: FormData) {
   const { tenantId, staffId, name } = await requireOwnStaffId();
   const date = String(formData.get("date") ?? "");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) back(date, "日付の形式が正しくありません");
 
   const isClosed = formData.get("closed") === "on";
-  const text = String(formData.get("ranges") ?? "");
+  const startText = String(formData.get("start") ?? "").trim();
+  const endText = String(formData.get("end") ?? "").trim();
 
   type Row = { isClosed: boolean; startMinutes: number | null; endMinutes: number | null };
   let rows: Row[] = [];
 
   if (isClosed) {
     rows = [{ isClosed: true, startMinutes: null, endMinutes: null }];
-  } else {
-    const result = parseRanges(text);
-    if (!result.ok) back(date, result.message);
-    else rows = result.intervals.map((i) => ({ isClosed: false, startMinutes: i.start, endMinutes: i.end }));
+  } else if (startText && endText) {
+    let start: number;
+    let end: number;
+    try {
+      start = hm(startText);
+      end = hm(endText);
+    } catch {
+      back(date, "時刻の形式が正しくありません");
+    }
+    if (end <= start) back(date, "「出」は「入り」より後の時刻にしてください");
+    rows = [{ isClosed: false, startMinutes: start, endMinutes: end }];
+  } else if (startText || endText) {
+    back(date, "「入り」「出」は両方入力してください（空欄にする場合は両方消してください）");
   }
+  // 両方空欄なら rows は空のまま → 曜日ごとの基本パターンに戻る
 
   await prisma.$transaction(async (tx) => {
     await tx.dateOverride.deleteMany({ where: { tenantId, staffId, date } });

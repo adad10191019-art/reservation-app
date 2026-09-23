@@ -64,13 +64,13 @@ export default async function MySchedulePage({
     ).map((h) => ({ start: h.startMinutes, end: h.endMinutes })),
   );
 
+  // 「入り・出」は1本だけを想定している（途中の空きは下の自分の予定で表す）。
+  // 複数区間が入っていた場合は、最初の1本だけを入り・出欄に出す
+  const firstRange = ownOverrides.find((o) => o.startMinutes !== null && o.endMinutes !== null);
   const currentOverride = {
     isClosed: ownOverrides.some((o) => o.isClosed),
-    ranges: formatRanges(
-      ownOverrides
-        .filter((o) => o.startMinutes !== null && o.endMinutes !== null)
-        .map((o) => ({ start: o.startMinutes as number, end: o.endMinutes as number })),
-    ),
+    start: firstRange ? toHm(firstRange.startMinutes as number) : "",
+    end: firstRange ? toHm(firstRange.endMinutes as number) : "",
   };
 
   return (
@@ -104,25 +104,38 @@ export default async function MySchedulePage({
       <section className="mb-5 rounded-lg border border-neutral-200 bg-white p-4">
         <h3 className="mb-1 font-semibold">この日だけの勤務時間</h3>
         <p className="mb-4 text-xs leading-relaxed text-neutral-500">
-          入力すると、いつもの曜日パターン（{weekly || "休み"}）より<strong>優先</strong>されます。
-          空欄に戻せば、いつものパターンに戻ります。
+          入り・出の時刻だけ入れてください。いつもの曜日パターン（{weekly || "休み"}）より
+          <strong>優先</strong>されます。両方空欄に戻せば、いつものパターンに戻ります。
           <br />
-          <code>10:00-13:00, 14:00-19:00</code> のように書けば分割もできます。
+          <strong>昼休憩など、勤務の途中で空けたい時間は、下の「自分の予定」に入れてください。</strong>
         </p>
 
-        <form action={saveOwnDayOverride} className="flex flex-wrap items-center gap-3">
+        <form action={saveOwnDayOverride} className="flex flex-wrap items-end gap-3">
           <input type="hidden" name="date" value={date} />
           <label className="flex items-center gap-1.5 text-sm">
             <input type="checkbox" name="closed" defaultChecked={currentOverride.isClosed} className="size-4" />
             この日は休む
           </label>
-          <input
-            type="text"
-            name="ranges"
-            defaultValue={currentOverride.ranges}
-            placeholder={`いつも: ${weekly || "休み"}`}
-            className="min-w-56 flex-1 rounded-md border border-neutral-300 px-2 py-1.5 font-mono text-sm"
-          />
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-neutral-600">入り</span>
+            <input
+              type="time"
+              name="start"
+              step={300}
+              defaultValue={currentOverride.start}
+              className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-neutral-600">出</span>
+            <input
+              type="time"
+              name="end"
+              step={300}
+              defaultValue={currentOverride.end}
+              className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+            />
+          </label>
           <button
             type="submit"
             className="rounded-md bg-neutral-800 px-4 py-1.5 text-sm font-medium text-white hover:bg-neutral-700"
