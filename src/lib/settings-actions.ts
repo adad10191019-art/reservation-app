@@ -67,6 +67,43 @@ export async function saveMenu(formData: FormData) {
   back(path);
 }
 
+/**
+ * メニューを削除する。
+ *
+ * 予約は menuNameSnapshot などに値を複製して持つので、本来は
+ * メニュー本体が消えても過去の表示は崩れない。ただし「間違って消した」
+ * ときの取り返しがつかないぶん危険なので、1件でも予約が紐づいて
+ * いれば（過去も含めて）削除させず、設定 → メニュー の「受付中」の
+ * チェックを外す方法に誘導する。
+ */
+export async function deleteMenu(formData: FormData) {
+  const session = await requireOwner();
+  const path = "/settings/menus";
+
+  const id = String(formData.get("id") ?? "");
+  if (!id) back(path, "メニューが指定されていません");
+
+  // tenantId を必ず条件に入れる
+  const menu = await prisma.menu.findFirst({ where: { id, tenantId: session.tenantId } });
+  if (!menu) back(path, "メニューが見つかりません");
+
+  const used = await prisma.reservation.count({
+    where: { menuId: id, tenantId: session.tenantId },
+  });
+  if (used > 0) {
+    back(
+      path,
+      `「${menu.name}」は${used}件の予約で使われているため削除できません。「受付中」のチェックを外してください`,
+    );
+  }
+
+  // StaffMenu（対応表）は Menu の削除に連動して自動で消える
+  await prisma.menu.delete({ where: { id } });
+
+  refreshAll();
+  back(path);
+}
+
 // ── スタッフ ──────────────────────────────
 
 export async function saveStaff(formData: FormData) {

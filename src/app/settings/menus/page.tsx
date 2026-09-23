@@ -1,7 +1,7 @@
 import { Banner } from "@/components/banner";
 import { requireOwner } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { saveMenu } from "@/lib/settings-actions";
+import { deleteMenu, saveMenu } from "@/lib/settings-actions";
 
 export default async function MenuSettingsPage({
   searchParams,
@@ -41,12 +41,15 @@ export default async function MenuSettingsPage({
               }`}
             >
               <div className="mb-3 flex items-center justify-between">
-                <h3 className="font-medium">{menu.name}</h3>
-                {!menu.isActive && (
-                  <span className="rounded-full border border-neutral-300 px-2 py-0.5 text-xs text-neutral-500">
-                    停止中
-                  </span>
-                )}
+                <div className="flex items-center gap-2">
+                  <h3 className="font-medium">{menu.name}</h3>
+                  {!menu.isActive && (
+                    <span className="rounded-full border border-neutral-300 px-2 py-0.5 text-xs text-neutral-500">
+                      停止中
+                    </span>
+                  )}
+                </div>
+                <DeleteMenuForm menuId={menu.id} />
               </div>
               <MenuForm menu={menu} />
             </div>
@@ -60,8 +63,8 @@ export default async function MenuSettingsPage({
       </section>
 
       <p className="text-xs leading-relaxed text-neutral-500">
-        メニューは削除できません。使わなくなったものは「受付中」のチェックを外してください。
-        過去の予約が参照しているため、消すと記録が壊れます。
+        削除できるのは、まだ1件も予約が無いメニューだけです。
+        すでに使われているものは、消さずに「受付中」のチェックを外してください。
       </p>
     </div>
   );
@@ -148,7 +151,7 @@ function MenuForm({
         </label>
       </div>
 
-      <div className="sm:col-span-12">
+      <div className="flex items-center gap-2 sm:col-span-12">
         <button
           type="submit"
           className="rounded-md bg-neutral-800 px-4 py-1.5 text-sm font-medium text-white hover:bg-neutral-700"
@@ -156,6 +159,20 @@ function MenuForm({
           {menu ? "更新する" : "追加する"}
         </button>
       </div>
+    </form>
+  );
+}
+
+function DeleteMenuForm({ menuId }: { menuId: string }) {
+  return (
+    <form action={deleteMenu}>
+      <input type="hidden" name="id" value={menuId} />
+      <button
+        type="submit"
+        className="rounded-md border border-red-300 px-3 py-1.5 text-xs font-medium text-red-800 hover:bg-red-50"
+      >
+        削除する
+      </button>
     </form>
   );
 }
