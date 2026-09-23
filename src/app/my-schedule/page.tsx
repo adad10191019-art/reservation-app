@@ -3,10 +3,21 @@ import { AppHeader } from "@/components/app-header";
 import { Banner } from "@/components/banner";
 import { requireSession } from "@/lib/auth";
 import { formatRanges } from "@/lib/ranges";
-import { getTenant } from "@/lib/schedule";
+import { getDaySchedule, getTenant } from "@/lib/schedule";
 import { prisma } from "@/lib/prisma";
 import { createOwnBlock, deleteOwnBlock, saveOwnDayOverride } from "@/lib/staff-schedule-actions";
-import { addDays, dayOfWeekOf, formatDateLabel, sanitizeDate, toHm, todayString } from "@/lib/time";
+import {
+  addDays,
+  dayOfWeekOf,
+  formatDateLabel,
+  sanitizeDate,
+  subtract,
+  toHm,
+  todayString,
+} from "@/lib/time";
+
+/** 1分あたりの高さ（px）。/calendar の日表示と揃えている */
+const PX_PER_MIN = 1.4;
 
 export default async function MySchedulePage({
   searchParams,
@@ -38,7 +49,8 @@ export default async function MySchedulePage({
 
   const staffId = session.staffId;
 
-  const [businessHours, ownOverrides, ownBlocks, shopBlocks] = await Promise.all([
+  const [schedule, businessHours, ownOverrides, ownBlocks] = await Promise.all([
+    getDaySchedule({ tenantId: tenant.id, date }),
     prisma.businessHour.findMany({
       where: {
         tenantId: tenant.id,
@@ -51,11 +63,11 @@ export default async function MySchedulePage({
       where: { tenantId: tenant.id, date, staffId },
       orderBy: { startMinutes: "asc" },
     }),
-    prisma.block.findMany({
-      where: { tenantId: tenant.id, date, staffId: null },
-      orderBy: { startMinutes: "asc" },
-    }),
   ]);
+
+  // 自分の列だけを取り出す。まだ勤務日として登録されていない
+  // （どのメニューにも対応していない等）場合は列自体が無いこともある
+  const myColumn = schedule.columns.find((c) => c.staffId === staffId) ?? null;
 
   const weekly = formatRanges(
     (businessHours.some((h) => h.staffId === staffId)
@@ -72,6 +84,13 @@ export default async function MySchedulePage({
     start: firstRange ? toHm(firstRange.startMinutes as number) : "",
     end: firstRange ? toHm(firstRange.endMinutes as number) : "",
   };
+
+  const { viewStart, viewEnd } = schedule;
+  const totalHeight = (viewEnd - viewStart) * PX_PER_MIN;
+  const hours: number[] = [];
+  for (let m = viewStart; m <= viewEnd; m += 60) hours.push(m);
+  const top = (minutes: number) => (minutes - viewStart) * PX_PER_MIN;
+  const closed = myColumn ? subtract([{ start: viewStart, end: viewEnd }], myColumn.working) : [];
 
   return (
     <main className="mx-auto w-full max-w-2xl p-4 sm:p-6">
@@ -92,7 +111,7 @@ export default async function MySchedulePage({
 
       <Banner error={sp.error} done={sp.done} />
 
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-lg font-semibold">{formatDateLabel(date)}</h2>
         <nav className="flex items-center gap-1">
           <DayLink date={addDays(date, -1)} label="← 前日" />
@@ -101,10 +120,89 @@ export default async function MySchedulePage({
         </nav>
       </div>
 
-      <p className="mb-5 text-xs leading-relaxed text-neutral-500">
+      <p className="mb-3 text-xs leading-relaxed text-neutral-500">
         ここにある内容は<strong>自分（{session.name}）の分だけ</strong>です。
         他のスタッフの予定は見えません・触れません。
       </p>
+
+      {/* 今日のスケジュール（自分の列だけのタイムライン） */}
+      <section className="mb-5 overflow-hidden rounded-lg border border-neutral-200 bg-white">
+        {!myColumn ? (
+          <p className="px-4 py-8 text-center text-sm text-neutral-500">
+            この日は対応できるメニューが無いため、予定を表示できません。
+          </p>
+        ) : (
+          <div className="flex">
+            <div className="relative w-14 shrink-0" style={{ height: totalHeight }}>
+              {hours.map((m) => (
+                <span
+                  key={m}
+                  className="absolute right-2 -translate-y-1/2 text-xs tabular-nums text-neutral-400"
+                  style={{ top: top(m) }}
+                >
+                  {toHm(m)}
+                </span>
+              ))}
+            </div>
+
+            <div className="relative min-w-64 flex-1 border-l border-neutral-200" style={{ height: totalHeight }}>
+              {closed.map((c) => (
+                <div
+                  key={`${c.start}-${c.end}`}
+                  className="absolute inset-x-0 bg-neutral-100"
+                  style={{ top: top(c.start), height: (c.end - c.start) * PX_PER_MIN }}
+                />
+              ))}
+
+              {hours.map((m) => (
+                <div
+                  key={m}
+                  className="absolute inset-x-0 border-t border-neutral-100"
+                  style={{ top: top(m) }}
+                />
+              ))}
+
+              {myColumn.blocks.map((b) => (
+                <div
+                  key={b.id}
+                  className="absolute inset-x-1 overflow-hidden rounded border border-dashed border-amber-400 bg-amber-50 px-1.5 py-1 text-xs leading-tight text-amber-900"
+                  style={{
+                    top: top(b.startMinutes),
+                    height: (b.endMinutes - b.startMinutes) * PX_PER_MIN - 2,
+                  }}
+                >
+                  <div className="truncate font-medium">
+                    {b.reason}
+                    {b.wholeShop && <span className="ml-1 font-normal text-amber-700">（店舗全体）</span>}
+                  </div>
+                  <div className="tabular-nums text-amber-700">
+                    {toHm(b.startMinutes)}–{toHm(b.endMinutes)}
+                  </div>
+                </div>
+              ))}
+
+              {myColumn.reservations.map((r) => (
+                <Link
+                  key={r.id}
+                  href={`/reservations/${r.id}`}
+                  title={`${toHm(r.startMinutes)}–${toHm(r.endMinutes)} ${r.menuName} ${r.customerName}様`}
+                  className="absolute inset-x-1 block overflow-hidden rounded border border-sky-300 bg-sky-100 px-1.5 py-1 text-xs leading-none shadow-sm transition-colors hover:border-sky-400 hover:bg-sky-200"
+                  style={{
+                    top: top(r.startMinutes),
+                    height: (r.endMinutes - r.startMinutes) * PX_PER_MIN - 2,
+                  }}
+                >
+                  <div className="truncate font-medium text-sky-900">{r.menuName}</div>
+                  <div className="mt-0.5 tabular-nums text-sky-800">
+                    {toHm(r.startMinutes)}–{toHm(r.endMinutes)}
+                  </div>
+                  <div className="mt-0.5 truncate text-sky-700">{r.customerName} 様</div>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
 
       {/* この日だけの勤務時間 */}
       <section className="mb-5 rounded-lg border border-neutral-200 bg-white p-4">
@@ -152,11 +250,11 @@ export default async function MySchedulePage({
       </section>
 
       {/* 自分の予定（ブロック枠） */}
-      <section className="mb-5 rounded-lg border border-neutral-200 bg-white p-4">
+      <section className="rounded-lg border border-neutral-200 bg-white p-4">
         <h3 className="mb-1 font-semibold">自分の予定（商談・私用などで時間を塞ぐ）</h3>
         <p className="mb-4 text-xs leading-relaxed text-neutral-500">
-          予約ではないが、この時間は空けたくないときに使います。
-          ここに入れておけば、お客様や他のスタッフからは「空いていない時間」として扱われます。
+          予約ではないが、この時間は空けたくないときに使います。上のスケジュールにも
+          点線で表示されます。お客様や他のスタッフからは「空いていない時間」として扱われます。
         </p>
 
         <form action={createOwnBlock} className="mb-4 grid gap-3 sm:grid-cols-12">
@@ -233,24 +331,6 @@ export default async function MySchedulePage({
           </ul>
         )}
       </section>
-
-      {shopBlocks.length > 0 && (
-        <section className="rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-sm">
-          <h3 className="mb-2 font-medium text-neutral-700">
-            店舗全体の予定（参考。ここからは変更できません）
-          </h3>
-          <ul className="space-y-1 text-neutral-600">
-            {shopBlocks.map((block) => (
-              <li key={block.id}>
-                <span className="tabular-nums">
-                  {toHm(block.startMinutes)}–{toHm(block.endMinutes)}
-                </span>{" "}
-                {block.reason}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
     </main>
   );
 }
