@@ -28,7 +28,10 @@ npm install
 cp .env.example .env
 ```
 
-`.env` の `AUTH_SECRET` に長いランダム文字列を入れる。次のコマンドで作れる。
+`.env` の `DATABASE_URL`（と `DIRECT_URL`）に、PostgreSQL（Neonなど）の接続文字列を入れる。
+このプロジェクトは PostgreSQL 専用で、SQLiteなど他のDBでは動かない。
+
+`AUTH_SECRET` には長いランダム文字列を入れる。次のコマンドで作れる。
 
 ```bash
 node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
@@ -63,6 +66,7 @@ npm run dev
 | `npm run check:tenant` | 他店舗のデータが混ざらないか検証 |
 | `npm run db:studio` | DBの中身をブラウザで確認 |
 | `npm run db:reset` | DBを作り直してダミーデータを入れ直す（全データが消えます） |
+| `npm run db:demo-week` | 直近1週間をスタッフ・時間バラバラに埋めるデモ用データを投入 |
 | `npm run check:line` | LINEの設定が読めているか確認（送信はしない） |
 | `npm run remind` | 前日リマインドを送る（日付の指定も可） |
 | `npm run typecheck` | 型チェック |
@@ -118,14 +122,20 @@ SQLite は書き込みを1つずつしか行わないため偶然防げていた
 60分のメニューでも刻みが15分なら 10:15 開始で受けられる。
 刻みを変えても既存の予約は動かさず、新規の予約だけが新しい刻みに揃う。
 
-**マスタは削除せず「停止」にする**
-メニューもスタッフも、過去の予約が参照している。消すと記録が壊れるため、
-`isActive` を false にして一覧から外す。
+**マスタは基本は「停止」、使われていなければ削除もできる**
+メニューもスタッフも、過去の予約が参照しているものは消すと記録が壊れるため、
+`isActive` を false にして一覧から外す。ただし予約が1件も紐づいていないメニューは、
+`menuNameSnapshot` などの複製済みの値だけで過去の表示が完結する（本体を読み返す
+コードがどこにも無い）ため、削除しても実害が無い。設定 → メニュー の「削除する」で
+消せる。1件でも予約があれば拒否される。
 
-**営業時間は1行のテキストで入力する**
+**営業時間は1行のテキストで入力する（店舗全体・複数人をまとめて編集する画面に限る）**
 `10:00-13:00, 14:00-19:00` のように書く。1日に複数の区間を持てるので、
 入力欄を区間の数だけ増やすより扱いやすい。読み取りは `ranges.ts` の純粋な処理で、
 重なりや逆転を見つけたら保存せずに理由を返す。
+一方、本人が自分の分だけ直す `/my-schedule` では、区間は「入り・出」の1本だけに絞り、
+ブラウザ標準の時刻ピッカーにしている。昼休憩など途中を空けたい時間は、
+テキストで表現させず「自分の予定（ブロック枠）」に入れてもらう方針にした。
 
 **ログイン状態は署名付き Cookie で持つ**
 中身をそのまま入れると書き換えられるため、サーバーの秘密鍵（`AUTH_SECRET`）で署名し、
@@ -143,6 +153,20 @@ SQLite は書き込みを1つずつしか行わないため偶然防げていた
 **お客様向けの経路にだけ受付期間と締め切りを掛ける**
 店舗側は当日の直前でも予約を入れる必要があるため、この制限は
 `bookAsCustomer` の側にだけ置く。判定は `booking-window.ts` の純粋な処理。
+
+**自分の予定は自分だけ、他人の予定はオーナーだけが触れる**
+ブロック枠・日付ごとの勤務時間は、最初はオーナー専用だった。何かあるたびに
+オーナーへ頼む手間を減らすため、`staff-schedule-actions.ts` を別に用意し、
+`staffId` を常に自分自身に固定して自分の分だけ作成・削除できるようにした。
+削除は `id` だけでなく `staffId` も条件に入れており、他人の予定のIDを
+知っていても消せない。settings-actions.ts（オーナー専用、対象を誰にでも指定できる）
+とは意図的にファイルを分けている。
+
+**予定の変更・削除は消さずに記録する（ChangeLog）**
+本人が自分の予定を触れるようにした分、誤って消すリスクも増える。
+ブロック枠・日付ごとの勤務時間を作成・削除するたびに、誰が・いつ・何をしたかを
+`ChangeLog` に残す（オーナーの操作も含む）。記録そのものは消さない。
+オーナーは 設定 → 履歴 で確認できる。
 
 ## 構成
 
@@ -164,6 +188,8 @@ src/lib/
   ranges.ts                  "10:00-13:00, 14:00-19:00" の読み書き
   constants.ts               画面とサーバーの両方で使う定数
   settings-actions.ts        設定の保存（オーナー限定）
+  staff-schedule-actions.ts  自分の予定の保存（本人限定。他人には触れない）
+  change-log.ts              予定の変更履歴の記録
   booking-window.ts          受付期間と締め切りの判定（DBを触らない）
   slug.ts                    お客様向けURLの短い名前の検査
   tenant.ts                  短い名前／店舗IDから店舗を引く
@@ -179,10 +205,12 @@ src/components/
   banner.tsx                 保存結果の表示
 src/app/settings/
   menus/ staff/ hours/ days/ accounts/ store/   設定画面（オーナー限定）
+  history/                   予定の変更履歴（オーナー限定）
 src/app/
   notify/                    通知を受け取るLINEの紐づけ（ログインした人全員）
   customers/                 顧客一覧・詳細（来店履歴つき）
   calendar/week/             予約カレンダーの週表示
+  my-schedule/               自分の予定（本人限定。他のスタッフの分は見えない）
 src/app/book/
   [shop]/                    お客様向けの予約画面（ログイン不要で閲覧できる）
   [shop]/mine/               ご自分の予約の確認・キャンセル
@@ -198,48 +226,27 @@ docs/
   postgres-schema.sql        PostgreSQL 版スキーマ（生成・参照用）
 ```
 
-## PostgreSQL へ切り替える（公開するとき）
+## データベースについて
 
-手元の開発は SQLite で動く。公開先（Vercel などのサーバーレス環境）はファイルが残らないため、
-PostgreSQL に切り替える必要がある。スキーマは PostgreSQL でもそのまま作れることを確認済み
-（`docs/postgres-schema.sql` が、DBに接続せずに生成した確認結果）。
+もともとは手元では SQLite、公開先では PostgreSQL という2本立てで、
+`src/lib/prisma.ts` が `DATABASE_URL` の書き出しを見て自動で切り替える設計だった
+（当時の移行手順は git の履歴に残っている）。今は PostgreSQL（Neon）に完全移行済みで、
+`schema.prisma` の provider も `"postgresql"` に固定されている。
 
-**1. PostgreSQL を用意する**
+**手元の開発と公開先（本番）は、同じ1つのNeon DBを共有している。** 開発用と本番用を
+分けていない。テストデータ（`npm run db:seed` や `npm run db:demo-week`）を流すと、
+公開中の環境にもそのまま反映される点に注意。将来ちゃんと外部の顧客に売るなら、
+ここは開発用と本番用のDBを分けるべき部分。
 
-Neon・Supabase・Vercel Postgres などの無料枠でよい。接続文字列を控える。
-
-**2. 設定を2か所変える**
-
-```prisma
-// prisma/schema.prisma
-datasource db {
-  provider = "postgresql"   // "sqlite" から変更
-}
-```
-
-```bash
-# .env
-DATABASE_URL="postgresql://ユーザー名:パスワード@ホスト:5432/データベース名?sslmode=require"
-```
-
-接続の切り替えにコード修正は要らない。`src/lib/prisma.ts` が `DATABASE_URL` の
-書き出し（`file:` か `postgres://` か）を見て、使うドライバを自動で選ぶ。
-
-**3. マイグレーションを作り直す**
-
-既存の `prisma/migrations/` は SQLite 向けのSQLなので、PostgreSQL には流せない。
-
-```bash
-rm -rf prisma/migrations
-npx prisma migrate dev --name init
-npm run db:seed
-```
+`docs/postgres-schema.sql` は、PostgreSQL でも問題なくテーブルが作れることを
+移行前に確認した記録（生成した時点のスナップショットなので、その後のスキーマ変更は
+反映されていない）。
 
 ### 公開先での設定
 
-- 環境変数に `DATABASE_URL` と `AUTH_SECRET` を設定する
+- 環境変数に `DATABASE_URL`・`DIRECT_URL`・`AUTH_SECRET` を設定する
 - ビルドコマンドは `npm run build`（`postinstall` で `prisma generate` が走る）
-- `.env` と `*.db` はリポジトリに含まれない（`.gitignore` 済み）
+- `.env` はリポジトリに含まれない（`.gitignore` 済み）
 - `AUTH_SECRET` は公開先ごとに別の値にする。漏れるとログイン状態を偽造できる
 
 ## お客様向けの予約画面
@@ -249,6 +256,14 @@ npm run db:seed
 **短い名前を後から付けても、それまでに配った店舗IDのURLは使えたまま**。
 
 ログインなしで空き時間を見られ、予約するときだけ LINE ログインを求める。新規登録は不要。
+
+- **担当を指名できる。** 「誰でもいい（最短）」が既定だが、そのメニューに対応できる
+  スタッフの中から指名も選べる。`findAvailability` が返す `perStaff`（担当ごとの内訳）を
+  そのまま使うので、指名の有無で問い合わせが増えない
+- **今週の空き状況を帯で見せる。** 1日ずつしか見えないと、別の日を確かめる気に
+  ならないという指摘への対応。今日から7日分、各日の最短の空き時刻（無ければ「満」）を
+  横並びで表示する。`findWeekAvailability` が対象の日付をまとめて1回の問い合わせで
+  取るため、日数が増えても往復回数は変わらない
 
 ### LINEログインの設定
 
@@ -423,3 +438,9 @@ https://<プロジェクト名>.vercel.app/book/callback
 - [ ] LINE公式アカウント（Messaging API チャネル）の名前をテスト名「竹」から店舗名へ変更
 - [x] 顧客一覧・詳細（来店履歴つき）の画面
 - [x] カレンダーの週表示
+- [x] お客様向け予約画面で担当スタッフを指名できる機能
+- [x] お客様向け予約画面に、1週間分の空き状況を一目で見せる帯
+- [x] 予約が0件のメニューを削除できる機能
+- [x] 自分の予定（ブロック枠・日付ごとの勤務時間）を本人が自分の分だけ編集できる機能
+- [x] 予定の変更履歴（ChangeLog）とオーナー向けの履歴画面
+- [x] SQLiteとの二重対応をやめ、PostgreSQL専用の記述に整理

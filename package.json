@@ -23,7 +23,6 @@
     "db:demo-week": "tsx scripts/seed-week-demo.ts"
   },
   "dependencies": {
-    "@prisma/adapter-better-sqlite3": "^7.10.0",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
     "dotenv": "^18.0.1",

@@ -77,10 +77,16 @@ export default async function MySchedulePage({
     <main className="mx-auto w-full max-w-2xl p-4 sm:p-6">
       <AppHeader tenantName={tenant.name} subtitle="自分の予定" session={session}>
         <Link
-          href="/calendar"
+          href={`/calendar?date=${date}`}
           className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
         >
-          カレンダーへ
+          全体を見る（日表示）
+        </Link>
+        <Link
+          href={`/calendar/week?date=${date}`}
+          className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
+        >
+          全体を見る（週表示）
         </Link>
       </AppHeader>
 

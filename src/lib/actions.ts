@@ -54,7 +54,11 @@ export async function login(formData: FormData) {
           name: user.staff?.name ?? user.email,
         }),
       );
-      redirect("/calendar");
+      // スタッフは、まず自分の予定が見える画面に着地させる。
+      // 全員分の予約が並ぶカレンダーは「必要なときに見る」もので、
+      // 毎回そこへ着地させると自分の分を探す手間が生まれる。
+      // オーナーは全員を把握する必要があるので、これまで通りカレンダーへ。
+      redirect(user.role === "owner" || !user.staffId ? "/calendar" : "/my-schedule");
     }
   }
 
