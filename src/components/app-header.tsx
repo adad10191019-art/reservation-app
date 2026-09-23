@@ -38,6 +38,15 @@ export function AppHeader({
           </span>
         </span>
 
+        {session.staffId && (
+          <Link
+            href="/my-schedule"
+            className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50"
+          >
+            自分の予定
+          </Link>
+        )}
+
         <Link
           href="/notify"
           className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50"

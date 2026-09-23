@@ -48,6 +48,7 @@ model Tenant {
   customers     Customer[]
   reservations  Reservation[]
   blocks        Block[]
+  changeLogs    ChangeLog[]
 }
 
 // ── ログインする人 ─────────────────────
@@ -179,6 +180,28 @@ model Block {
 
   @@index([tenantId, date])
   @@index([staffId, date])
+}
+
+// ── 変更履歴 ─────────────────────────────
+// ブロック枠・日付ごとの勤務時間は、本人（スタッフ）も自分の分だけ
+// 作成・削除できるようにする。誤って消したときに追えるよう、
+// 誰が・いつ・何をしたかをここに残す。行は消さず残し続ける。
+model ChangeLog {
+  id        String   @id @default(uuid())
+  tenantId  String
+  /// 消えても分かるよう、操作した時点の表示名をそのまま複製して残す
+  actorName String
+  /// "block" | "dateOverride"
+  entity    String
+  /// "created" | "deleted"
+  action    String
+  /// 画面にそのまま出す説明文（例: "9/24 14:00-15:00 会議 を追加"）
+  summary   String
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, createdAt])
 }
 
 // ── 顧客 ───────────────────────────────

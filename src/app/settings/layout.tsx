@@ -10,6 +10,7 @@ const TABS = [
   { href: "/settings/days", label: "日付ごと" },
   { href: "/settings/accounts", label: "アカウント" },
   { href: "/settings/store", label: "店舗" },
+  { href: "/settings/history", label: "履歴" },
 ];
 
 // LayoutProps は Next.js が生成する型。ルートごとに用意される

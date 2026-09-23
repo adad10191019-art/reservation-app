@@ -3,10 +3,12 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireOwner } from "./auth";
+import { logChange } from "./change-log";
 import { SLOT_CHOICES } from "./constants";
 import { hashPassword } from "./password";
 import { prisma } from "./prisma";
 import { parseRanges } from "./ranges";
+import { formatDateLabel, toHm } from "./time";
 import { validateSlug } from "./slug";
 import type { Role } from "./session";
 
@@ -494,6 +496,14 @@ export async function saveDateOverrides(formData: FormData) {
     }
   });
 
+  await logChange({
+    tenantId: session.tenantId,
+    actorName: session.name,
+    entity: "dateOverride",
+    action: "created",
+    summary: `${formatDateLabel(date)} の日付ごとの勤務時間を変更（店舗全体・全スタッフぶん）`,
+  });
+
   refreshAll();
   redirect(`${path}&done=1`);
 }
@@ -521,11 +531,13 @@ export async function createBlock(formData: FormData) {
 
   const interval = result.intervals[0];
 
+  let staffName = "全スタッフ";
   if (staffId) {
     const staff = await prisma.staff.findFirst({
       where: { id: staffId, tenantId: session.tenantId },
     });
     if (!staff) fail("スタッフが見つかりません");
+    staffName = staff.name;
   }
 
   // すでに入っている予約と重なる場合は知らせる（登録自体は認める）
@@ -551,6 +563,14 @@ export async function createBlock(formData: FormData) {
     },
   });
 
+  await logChange({
+    tenantId: session.tenantId,
+    actorName: session.name,
+    entity: "block",
+    action: "created",
+    summary: `${formatDateLabel(date)} ${toHm(interval.start)}-${toHm(interval.end)} ${reason}（${staffName}）を追加`,
+  });
+
   refreshAll();
   if (overlapping > 0) {
     redirect(
@@ -568,12 +588,29 @@ export async function deleteBlock(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   const path = daysPath(date);
 
+  // 消える前に内容を控えておく（削除後では履歴に残せないため）
+  const block = await prisma.block.findFirst({
+    where: { id, tenantId: session.tenantId },
+    include: { staff: true },
+  });
+  if (!block) {
+    redirect(path + "&error=" + encodeURIComponent("見つかりません"));
+  }
+
   const deleted = await prisma.block.deleteMany({
     where: { id, tenantId: session.tenantId },
   });
   if (deleted.count === 0) {
     redirect(path + "&error=" + encodeURIComponent("見つかりません"));
   }
+
+  await logChange({
+    tenantId: session.tenantId,
+    actorName: session.name,
+    entity: "block",
+    action: "deleted",
+    summary: `${formatDateLabel(block.date)} ${toHm(block.startMinutes)}-${toHm(block.endMinutes)} ${block.reason}（${block.staff?.name ?? "全スタッフ"}）を削除`,
+  });
 
   refreshAll();
   redirect(`${path}&done=1`);
