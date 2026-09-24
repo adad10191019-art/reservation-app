@@ -2,24 +2,10 @@ import Link from "next/link";
 import { AppHeader } from "@/components/app-header";
 import { Banner } from "@/components/banner";
 import { requireSession } from "@/lib/auth";
-import { formatRanges } from "@/lib/ranges";
-import { getDaySchedule, getTenant } from "@/lib/schedule";
 import { prisma } from "@/lib/prisma";
-import {
-  createOwnBlock,
-  deleteOwnBlock,
-  issueCalendarToken,
-  saveOwnDayOverride,
-} from "@/lib/staff-schedule-actions";
-import {
-  addDays,
-  dayOfWeekOf,
-  formatDateLabel,
-  sanitizeDate,
-  subtract,
-  toHm,
-  todayString,
-} from "@/lib/time";
+import { getDaySchedule, getTenant } from "@/lib/schedule";
+import { createOwnBlock, deleteOwnBlock } from "@/lib/staff-schedule-actions";
+import { addDays, formatDateLabel, sanitizeDate, subtract, toHm, todayString } from "@/lib/time";
 
 /** 1分あたりの高さ（px）。/calendar の日表示と揃えている */
 const PX_PER_MIN = 1.4;
@@ -54,46 +40,17 @@ export default async function MySchedulePage({
 
   const staffId = session.staffId;
 
-  const [schedule, businessHours, ownOverrides, ownBlocks, staffRecord] = await Promise.all([
+  const [schedule, ownBlocks] = await Promise.all([
     getDaySchedule({ tenantId: tenant.id, date }),
-    prisma.businessHour.findMany({
-      where: {
-        tenantId: tenant.id,
-        dayOfWeek: dayOfWeekOf(date),
-        OR: [{ staffId: null }, { staffId }],
-      },
-    }),
-    prisma.dateOverride.findMany({ where: { tenantId: tenant.id, date, staffId } }),
     prisma.block.findMany({
       where: { tenantId: tenant.id, date, staffId },
       orderBy: { startMinutes: "asc" },
     }),
-    prisma.staff.findUnique({ where: { id: staffId }, select: { calendarToken: true } }),
   ]);
-
-  const calendarFeedUrl = staffRecord?.calendarToken
-    ? `${process.env.APP_URL ?? "http://localhost:3000"}/api/staff-calendar/${staffRecord.calendarToken}`
-    : null;
 
   // 自分の列だけを取り出す。まだ勤務日として登録されていない
   // （どのメニューにも対応していない等）場合は列自体が無いこともある
   const myColumn = schedule.columns.find((c) => c.staffId === staffId) ?? null;
-
-  const weekly = formatRanges(
-    (businessHours.some((h) => h.staffId === staffId)
-      ? businessHours.filter((h) => h.staffId === staffId)
-      : businessHours.filter((h) => h.staffId === null)
-    ).map((h) => ({ start: h.startMinutes, end: h.endMinutes })),
-  );
-
-  // 「入り・出」は1本だけを想定している（途中の空きは下の自分の予定で表す）。
-  // 複数区間が入っていた場合は、最初の1本だけを入り・出欄に出す
-  const firstRange = ownOverrides.find((o) => o.startMinutes !== null && o.endMinutes !== null);
-  const currentOverride = {
-    isClosed: ownOverrides.some((o) => o.isClosed),
-    start: firstRange ? toHm(firstRange.startMinutes as number) : "",
-    end: firstRange ? toHm(firstRange.endMinutes as number) : "",
-  };
 
   const { viewStart, viewEnd } = schedule;
   // 時刻の目盛りは行の中央揃えなので、一番上と一番下の分は上下に
@@ -109,7 +66,12 @@ export default async function MySchedulePage({
 
   return (
     <main className="mx-auto w-full max-w-2xl p-4 sm:p-6">
-      <AppHeader tenantName={tenant.name} subtitle="自分の予定" session={session}>
+      <AppHeader
+        tenantName={tenant.name}
+        subtitle="自分の予定"
+        session={session}
+        menuLinks={[{ href: `/my-schedule/settings?date=${date}`, label: "予定の設定" }]}
+      >
         <Link
           href={`/calendar?date=${date}`}
           className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
@@ -310,105 +272,6 @@ export default async function MySchedulePage({
           </ul>
         )}
       </section>
-
-      {/* あまり使わない設定類は、普段は閉じておく */}
-      <details className="group rounded-lg border border-neutral-200 bg-white">
-        <summary className="cursor-pointer list-none px-4 py-3 font-semibold text-neutral-700 marker:content-none">
-          <span className="inline-flex items-center gap-1.5">
-            設定
-            <span className="text-neutral-400 transition-transform group-open:rotate-90">›</span>
-          </span>
-        </summary>
-
-        <div className="border-t border-neutral-200 p-4">
-          <h3 className="mb-1 font-semibold">この日だけの勤務時間</h3>
-          <p className="mb-4 text-xs leading-relaxed text-neutral-500">
-            入り・出の時刻だけ入れてください。いつもの曜日パターン（{weekly || "休み"}）より
-            <strong>優先</strong>されます。両方空欄に戻せば、いつものパターンに戻ります。
-            <br />
-            <strong>昼休憩など、勤務の途中で空けたい時間は、上の「自分の予定」に入れてください。</strong>
-          </p>
-
-          <form action={saveOwnDayOverride} className="flex flex-wrap items-end gap-3">
-            <input type="hidden" name="date" value={date} />
-            <label className="flex items-center gap-1.5 text-sm">
-              <input type="checkbox" name="closed" defaultChecked={currentOverride.isClosed} className="size-4" />
-              この日は休む
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-xs font-medium text-neutral-600">入り</span>
-              <input
-                type="time"
-                name="start"
-                step={300}
-                defaultValue={currentOverride.start}
-                className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
-              />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-xs font-medium text-neutral-600">出</span>
-              <input
-                type="time"
-                name="end"
-                step={300}
-                defaultValue={currentOverride.end}
-                className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
-              />
-            </label>
-            <button
-              type="submit"
-              className="rounded-md bg-neutral-800 px-4 py-1.5 text-sm font-medium text-white hover:bg-neutral-700"
-            >
-              保存する
-            </button>
-          </form>
-        </div>
-
-        <div className="border-t border-neutral-200 p-4">
-          <h3 className="mb-1 font-semibold">Googleカレンダーと同期</h3>
-          <p className="mb-4 text-xs leading-relaxed text-neutral-500">
-            自分の予約・自分の予定（ブロック枠）を、Googleカレンダーで確認できるようにします。
-            発行したURLをGoogleカレンダーの「他のカレンダー」→「URLから追加」に貼り付けてください。
-            <br />
-            更新はGoogle側の巡回タイミング次第で、数時間ほど反映が遅れることがあります。
-          </p>
-
-          {calendarFeedUrl ? (
-            <div className="space-y-3">
-              <input
-                type="text"
-                readOnly
-                value={calendarFeedUrl}
-                className="w-full rounded-md border border-neutral-300 bg-neutral-50 px-2 py-1.5 text-xs text-neutral-700"
-              />
-              <form action={issueCalendarToken}>
-                <input type="hidden" name="date" value={date} />
-                <button
-                  type="submit"
-                  className="rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-800 hover:bg-red-50"
-                >
-                  URLを再発行する（今のURLは使えなくなります）
-                </button>
-              </form>
-            </div>
-          ) : (
-            <form action={issueCalendarToken}>
-              <input type="hidden" name="date" value={date} />
-              <button
-                type="submit"
-                className="rounded-md bg-neutral-800 px-4 py-1.5 text-sm font-medium text-white hover:bg-neutral-700"
-              >
-                同期用URLを発行する
-              </button>
-            </form>
-          )}
-
-          <p className="mt-3 text-xs leading-relaxed text-neutral-500">
-            このURLを知っている人は誰でも中身（予約・予定）を見られます。他人に教えないでください。
-            誤って共有してしまった場合は「再発行」で無効化できます。
-          </p>
-        </div>
-      </details>
     </main>
   );
 }

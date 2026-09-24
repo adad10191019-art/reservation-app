@@ -9,12 +9,15 @@ export async function AppHeader({
   subtitle,
   session,
   children,
+  menuLinks,
 }: {
   tenantName: string;
   subtitle: string;
   session: SessionData;
   /** 画面ごとの操作ボタン */
   children?: React.ReactNode;
+  /** 歯車メニューに追加する、画面ごとのリンク（通知設定・ログアウトより上に出す） */
+  menuLinks?: { href: string; label: string }[];
 }) {
   // group_admin だけ、部署を切り替えるための一覧を持たせる
   const tenants =
@@ -105,7 +108,16 @@ export async function AppHeader({
             </svg>
           </summary>
 
-          <div className="absolute right-0 z-10 mt-1 w-36 rounded-md border border-neutral-200 bg-white py-1 shadow-lg">
+          <div className="absolute right-0 z-10 mt-1 w-40 rounded-md border border-neutral-200 bg-white py-1 shadow-lg">
+            {menuLinks?.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="block px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
+              >
+                {item.label}
+              </Link>
+            ))}
             <Link
               href="/notify"
               className="block px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"

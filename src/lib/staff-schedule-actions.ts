@@ -21,9 +21,10 @@ import { prisma } from "./prisma";
 import { formatDateLabel, hm, toHm } from "./time";
 
 const PATH = "/my-schedule";
+const SETTINGS_PATH = "/my-schedule/settings";
 
-function back(date: string, message?: string): never {
-  const path = `${PATH}?date=${encodeURIComponent(date)}`;
+function back(date: string, message?: string, basePath: string = PATH): never {
+  const path = `${basePath}?date=${encodeURIComponent(date)}`;
   redirect(message ? `${path}&error=${encodeURIComponent(message)}` : `${path}&done=1`);
 }
 
@@ -51,7 +52,7 @@ async function requireOwnStaffId(): Promise<{ tenantId: string; staffId: string;
 export async function saveOwnDayOverride(formData: FormData) {
   const { tenantId, staffId, name } = await requireOwnStaffId();
   const date = String(formData.get("date") ?? "");
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) back(date, "日付の形式が正しくありません");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) back(date, "日付の形式が正しくありません", SETTINGS_PATH);
 
   const isClosed = formData.get("closed") === "on";
   const startText = String(formData.get("start") ?? "").trim();
@@ -69,12 +70,16 @@ export async function saveOwnDayOverride(formData: FormData) {
       start = hm(startText);
       end = hm(endText);
     } catch {
-      back(date, "時刻の形式が正しくありません");
+      back(date, "時刻の形式が正しくありません", SETTINGS_PATH);
     }
-    if (end <= start) back(date, "「出」は「入り」より後の時刻にしてください");
+    if (end <= start) back(date, "「出」は「入り」より後の時刻にしてください", SETTINGS_PATH);
     rows = [{ isClosed: false, startMinutes: start, endMinutes: end }];
   } else if (startText || endText) {
-    back(date, "「入り」「出」は両方入力してください（空欄にする場合は両方消してください）");
+    back(
+      date,
+      "「入り」「出」は両方入力してください（空欄にする場合は両方消してください）",
+      SETTINGS_PATH,
+    );
   }
   // 両方空欄なら rows は空のまま → 曜日ごとの基本パターンに戻る
 
@@ -99,7 +104,8 @@ export async function saveOwnDayOverride(formData: FormData) {
   revalidatePath("/calendar/week");
   revalidatePath("/booking");
   revalidatePath(PATH);
-  back(date);
+  revalidatePath(SETTINGS_PATH);
+  back(date, undefined, SETTINGS_PATH);
 }
 
 /** 自分の予定（ブロック枠）を1件追加する */
@@ -168,8 +174,8 @@ export async function issueCalendarToken(formData: FormData) {
   const token = randomBytes(24).toString("base64url");
   await prisma.staff.update({ where: { id: staffId }, data: { calendarToken: token } });
 
-  revalidatePath(PATH);
-  back(date);
+  revalidatePath(SETTINGS_PATH);
+  back(date, undefined, SETTINGS_PATH);
 }
 
 /** 自分の予定（ブロック枠）を1件削除する。他人の分は消せない */
