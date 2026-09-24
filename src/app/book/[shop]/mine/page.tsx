@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { STATUS_LABEL, type ReservationStatus } from "@/lib/booking";
 import { cancelCustomerReservation } from "@/lib/customer-actions";
 import { getActiveCustomer } from "@/lib/customer-store";
+import { priceLabel } from "@/lib/price";
 import { prisma } from "@/lib/prisma";
 import { findTenantByHandle, tenantHandle } from "@/lib/tenant";
 import { formatDateLabel, toHm, todayString } from "@/lib/time";
@@ -90,8 +91,9 @@ export default async function MyReservationsPage({
                   {formatDateLabel(r.date)} {toHm(r.startMinutes)}
                 </div>
                 <div className="mb-3 text-sm text-sky-800">
-                  {r.menuNameSnapshot}（{r.durationSnapshot}分 /{" "}
-                  {r.priceSnapshot.toLocaleString()}円） / 担当：{r.staff.name}
+                  {r.menuNameSnapshot}（{r.durationSnapshot}分
+                  {priceLabel(r.priceSnapshot) ? ` / ${priceLabel(r.priceSnapshot)}` : ""}） /
+                  担当：{r.staff.name}
                 </div>
                 <form action={cancelCustomerReservation}>
                   <input type="hidden" name="tenantId" value={tenantId} />

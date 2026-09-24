@@ -2,14 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { findAvailability, findWeekAvailability } from "@/lib/availability";
 import { filterBookableStarts } from "@/lib/booking-window";
-import {
-  createCustomerReservation,
-  customerLogout,
-  devLogin,
-  startLineLogin,
-} from "@/lib/customer-actions";
+import { customerLogout, devLogin, startLineLogin } from "@/lib/customer-actions";
 import { getActiveCustomer } from "@/lib/customer-store";
 import { isDevFallbackAllowed, isLineConfigured } from "@/lib/line";
+import { priceLabel } from "@/lib/price";
 import { prisma } from "@/lib/prisma";
 import { SubmitButton } from "@/components/submit-button";
 import { findTenantByHandle, tenantHandle } from "@/lib/tenant";
@@ -161,7 +157,8 @@ export default async function PublicBookingPage({
           >
             {menus.map((m) => (
               <option key={m.id} value={m.id}>
-                {m.name}（{m.durationMinutes}分 / {m.price.toLocaleString()}円）
+                {m.name}（{m.durationMinutes}分
+                {priceLabel(m.price) ? ` / ${priceLabel(m.price)}` : ""}）
               </option>
             ))}
           </select>
@@ -261,7 +258,8 @@ export default async function PublicBookingPage({
         <section className="rounded-lg border border-neutral-200 bg-white p-4">
           <h2 className="mb-1 font-semibold">{formatDateLabel(date)} の空き時間</h2>
           <p className="mb-4 text-xs text-neutral-500">
-            {menu.name}：{menu.durationMinutes}分 / {menu.price.toLocaleString()}円
+            {menu.name}：{menu.durationMinutes}分
+            {priceLabel(menu.price) ? ` / ${priceLabel(menu.price)}` : ""}
           </p>
 
           {slots.length === 0 ? (
@@ -271,8 +269,7 @@ export default async function PublicBookingPage({
               日付やメニューを変えてお試しください。
             </p>
           ) : loggedIn ? (
-            <form action={createCustomerReservation} className="space-y-4">
-              <input type="hidden" name="tenantId" value={tenantId} />
+            <form action={`/book/${handle}/confirm`} className="space-y-4">
               <input type="hidden" name="date" value={date} />
               <input type="hidden" name="menuId" value={menu.id} />
 
@@ -304,10 +301,10 @@ export default async function PublicBookingPage({
               </fieldset>
 
               <SubmitButton
-                pendingText="予約しています…"
+                pendingText="確認画面へ移動しています…"
                 className="w-full rounded-md bg-sky-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-sky-700"
               >
-                この時間で予約する
+                この時間で予約する（確認画面へ）
               </SubmitButton>
 
               <p className="text-xs text-neutral-500">
