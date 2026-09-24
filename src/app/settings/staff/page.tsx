@@ -1,7 +1,7 @@
 import { Banner } from "@/components/banner";
 import { requireOwner } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { saveStaff } from "@/lib/settings-actions";
+import { deleteStaff, saveStaff } from "@/lib/settings-actions";
 
 export default async function StaffSettingsPage({
   searchParams,
@@ -66,6 +66,9 @@ export default async function StaffSettingsPage({
                 }}
                 menus={menus}
               />
+              <div className="mt-3 border-t border-neutral-100 pt-3">
+                <DeleteStaffForm staffId={staff.id} />
+              </div>
             </div>
           ))}
           {staffs.length === 0 && (
@@ -77,11 +80,26 @@ export default async function StaffSettingsPage({
       </section>
 
       <p className="text-xs leading-relaxed text-neutral-500">
-        スタッフは削除できません。退職した場合は「在籍中」のチェックを外してください。
-        過去の予約に担当として残るため、消すと記録が壊れます。
+        予約が1件でも紐づいているスタッフは削除できません。退職した場合は
+        「在籍中」のチェックを外してください。消すと過去の予約の記録が壊れます。
+        予約が無いスタッフ（追加を試しただけ、など）だけ削除できます。
         勤務時間は「営業時間」タブで設定します。
       </p>
     </div>
+  );
+}
+
+function DeleteStaffForm({ staffId }: { staffId: string }) {
+  return (
+    <form action={deleteStaff}>
+      <input type="hidden" name="id" value={staffId} />
+      <button
+        type="submit"
+        className="rounded-md border border-red-300 px-3 py-1.5 text-xs font-medium text-red-800 hover:bg-red-50"
+      >
+        削除する（予約が無い場合のみ）
+      </button>
+    </form>
   );
 }
 

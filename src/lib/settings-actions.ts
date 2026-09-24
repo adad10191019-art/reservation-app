@@ -154,6 +154,49 @@ export async function saveStaff(formData: FormData) {
   back(path);
 }
 
+/**
+ * スタッフを削除する。
+ *
+ * deleteMenu と同じ考え方で、1件でも予約が紐づいていれば（過去も含めて）
+ * 削除させず、「在籍中」のチェックを外す方法に誘導する。
+ * ログインアカウントが紐づいている場合も、先にそちらを削除してもらう
+ * （アカウントの staffId が参照できなくなるため）。
+ */
+export async function deleteStaff(formData: FormData) {
+  const session = await requireOwner();
+  const path = "/settings/staff";
+
+  const id = String(formData.get("id") ?? "");
+  if (!id) back(path, "スタッフが指定されていません");
+
+  const staff = await prisma.staff.findFirst({ where: { id, tenantId: session.tenantId } });
+  if (!staff) back(path, "スタッフが見つかりません");
+
+  const used = await prisma.reservation.count({
+    where: { staffId: id, tenantId: session.tenantId },
+  });
+  if (used > 0) {
+    back(
+      path,
+      `「${staff.name}」は${used}件の予約で使われているため削除できません。「在籍中」のチェックを外してください`,
+    );
+  }
+
+  const linkedAccount = await prisma.user.findFirst({ where: { staffId: id } });
+  if (linkedAccount) {
+    back(
+      path,
+      `「${staff.name}」にはログインアカウント（${linkedAccount.email}）が紐づいているため削除できません。先にアカウント設定から削除してください`,
+    );
+  }
+
+  // 対応メニュー・営業時間・日付ごとの例外・ブロック枠は Staff の削除に連動して自動で消える
+  await prisma.staff.delete({ where: { id } });
+
+  refreshAll();
+  back(path);
+}
+
 // ── 営業時間（曜日ごとの基本パターン） ────
 
 export async function saveBusinessHours(formData: FormData) {
