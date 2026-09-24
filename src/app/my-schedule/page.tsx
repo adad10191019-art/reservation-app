@@ -5,7 +5,12 @@ import { requireSession } from "@/lib/auth";
 import { formatRanges } from "@/lib/ranges";
 import { getDaySchedule, getTenant } from "@/lib/schedule";
 import { prisma } from "@/lib/prisma";
-import { createOwnBlock, deleteOwnBlock, saveOwnDayOverride } from "@/lib/staff-schedule-actions";
+import {
+  createOwnBlock,
+  deleteOwnBlock,
+  issueCalendarToken,
+  saveOwnDayOverride,
+} from "@/lib/staff-schedule-actions";
 import {
   addDays,
   dayOfWeekOf,
@@ -49,7 +54,7 @@ export default async function MySchedulePage({
 
   const staffId = session.staffId;
 
-  const [schedule, businessHours, ownOverrides, ownBlocks] = await Promise.all([
+  const [schedule, businessHours, ownOverrides, ownBlocks, staffRecord] = await Promise.all([
     getDaySchedule({ tenantId: tenant.id, date }),
     prisma.businessHour.findMany({
       where: {
@@ -63,7 +68,12 @@ export default async function MySchedulePage({
       where: { tenantId: tenant.id, date, staffId },
       orderBy: { startMinutes: "asc" },
     }),
+    prisma.staff.findUnique({ where: { id: staffId }, select: { calendarToken: true } }),
   ]);
+
+  const calendarFeedUrl = staffRecord?.calendarToken
+    ? `${process.env.APP_URL ?? "http://localhost:3000"}/api/staff-calendar/${staffRecord.calendarToken}`
+    : null;
 
   // 自分の列だけを取り出す。まだ勤務日として登録されていない
   // （どのメニューにも対応していない等）場合は列自体が無いこともある
@@ -335,6 +345,52 @@ export default async function MySchedulePage({
             ))}
           </ul>
         )}
+      </section>
+
+      {/* Googleカレンダー同期 */}
+      <section className="mt-5 rounded-lg border border-neutral-200 bg-white p-4">
+        <h3 className="mb-1 font-semibold">Googleカレンダーと同期</h3>
+        <p className="mb-4 text-xs leading-relaxed text-neutral-500">
+          自分の予約・自分の予定（ブロック枠）を、Googleカレンダーで確認できるようにします。
+          発行したURLをGoogleカレンダーの「他のカレンダー」→「URLから追加」に貼り付けてください。
+          <br />
+          更新はGoogle側の巡回タイミング次第で、数時間ほど反映が遅れることがあります。
+        </p>
+
+        {calendarFeedUrl ? (
+          <div className="space-y-3">
+            <input
+              type="text"
+              readOnly
+              value={calendarFeedUrl}
+              className="w-full rounded-md border border-neutral-300 bg-neutral-50 px-2 py-1.5 text-xs text-neutral-700"
+            />
+            <form action={issueCalendarToken}>
+              <input type="hidden" name="date" value={date} />
+              <button
+                type="submit"
+                className="rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-800 hover:bg-red-50"
+              >
+                URLを再発行する（今のURLは使えなくなります）
+              </button>
+            </form>
+          </div>
+        ) : (
+          <form action={issueCalendarToken}>
+            <input type="hidden" name="date" value={date} />
+            <button
+              type="submit"
+              className="rounded-md bg-neutral-800 px-4 py-1.5 text-sm font-medium text-white hover:bg-neutral-700"
+            >
+              同期用URLを発行する
+            </button>
+          </form>
+        )}
+
+        <p className="mt-3 text-xs leading-relaxed text-neutral-500">
+          このURLを知っている人は誰でも中身（予約・予定）を見られます。他人に教えないでください。
+          誤って共有してしまった場合は「再発行」で無効化できます。
+        </p>
       </section>
     </main>
   );

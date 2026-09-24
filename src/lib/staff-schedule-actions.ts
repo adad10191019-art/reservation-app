@@ -11,6 +11,7 @@
  * すべて requireSession（オーナーでなくてよい）で、
  * かつ session.staffId が無いアカウント（スタッフに紐づいていない）は弾く。
  */
+import { randomBytes } from "node:crypto";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireSession } from "./auth";
@@ -152,6 +153,22 @@ export async function createOwnBlock(formData: FormData) {
       `登録しましたが、この時間にはすでに予約が${overlapping}件あります。カレンダーで確認してください`,
     );
   }
+  back(date);
+}
+
+/**
+ * Googleカレンダー等から購読するためのURL用トークンを発行する。
+ * 呼ぶたびに新しく発行し直す（＝以前のURLは使えなくなる）。
+ * 漏れた・不要になったURLを無効化する手段として、これしか用意していない。
+ */
+export async function issueCalendarToken(formData: FormData) {
+  const { staffId } = await requireOwnStaffId();
+  const date = String(formData.get("date") ?? "");
+
+  const token = randomBytes(24).toString("base64url");
+  await prisma.staff.update({ where: { id: staffId }, data: { calendarToken: token } });
+
+  revalidatePath(PATH);
   back(date);
 }
 

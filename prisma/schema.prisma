@@ -83,6 +83,10 @@ model Staff {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  // Googleカレンダー等から購読するための、予定を推測できない長さのランダムな合言葉。
+  // ログイン無しでURLだけを鍵にするため、漏れたら再発行して失効させる
+  calendarToken String? @unique
+
   tenant        Tenant         @relation(fields: [tenantId], references: [id])
   user          User?
   staffMenus    StaffMenu[]
