@@ -65,7 +65,7 @@ export default async function ReservationDetailPage({
   const canManage = canManageStaffReservation(session, reservation.staffId);
   // 付け替え先も自分に限る（オーナーは制限なし）
   const selectableSlots = (availability?.merged ?? []).filter((slot) =>
-    session.role === "owner"
+    session.role === "owner" || session.role === "group_admin"
       ? true
       : !!session.staffId && slot.staffIds.includes(session.staffId),
   );

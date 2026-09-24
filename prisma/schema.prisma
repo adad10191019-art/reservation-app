@@ -54,18 +54,19 @@ model Tenant {
 // ── ログインする人 ─────────────────────
 model User {
   id           String   @id @default(uuid())
-  tenantId     String
+  /// group_admin（全部署を横断できる役割）は特定の部署に属さないため null
+  tenantId     String?
   email        String
   passwordHash String
-  role         String // "owner" | "staff"
+  role         String // "owner" | "staff" | "group_admin"
   staffId      String?  @unique
   /// 通知の受け取りに使うLINE利用者ID。未設定なら通知を受け取らない
   lineUserId   String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  tenant Tenant @relation(fields: [tenantId], references: [id])
-  staff  Staff? @relation(fields: [staffId], references: [id])
+  tenant Tenant? @relation(fields: [tenantId], references: [id])
+  staff  Staff?  @relation(fields: [staffId], references: [id])
 
   @@unique([tenantId, email])
   @@unique([tenantId, lineUserId])

@@ -2,10 +2,19 @@
  * 動作確認用のダミーデータ。
  *
  * ログインに使えるアカウント（パスワードはすべて password123）
- *   owner@example.com   … オーナー（全員の予約を操作できる）
- *   sato@example.com    … スタッフ 佐藤（自分の担当分のみ）
- *   suzuki@example.com  … スタッフ 鈴木
- *   tanaka@example.com  … スタッフ 田中
+ *   就活のイロハ
+ *     owner@example.com … オーナー（全員の予約を操作できる）
+ *     a@example.com      … 担当者A（面談・面接練習・ES添削）
+ *     b@example.com      … 担当者B（面談・面接練習）
+ *     c@example.com      … 担当者C（面談・ES添削）
+ *   youth商材(仮)
+ *     owner-b@example.com … オーナー
+ *     sa@example.com       … 担当者A
+ *     sb@example.com       … 担当者B
+ *     sc@example.com       … 担当者C
+ *   全部署を横断できるアカウント（部署に属さない）
+ *     ceo@example.com   … 社長
+ *     admin@example.com … 内勤（バックアップ）
  */
 import "dotenv/config";
 import { hashPassword } from "../src/lib/password";
@@ -29,6 +38,7 @@ function hm(text: string): number {
 
 async function main() {
   // 何度でも流せるように、毎回まっさらにする
+  await prisma.changeLog.deleteMany();
   await prisma.reservation.deleteMany();
   await prisma.block.deleteMany();
   await prisma.dateOverride.deleteMany();
@@ -40,34 +50,41 @@ async function main() {
   await prisma.staff.deleteMany();
   await prisma.tenant.deleteMany();
 
-  // ── 店舗 ──────────────────────────
+  // ── 部署（テナント） ──────────────
   const tenant = await prisma.tenant.create({
-    data: { name: "サンプルヘアサロン", slug: "sample-salon", slotMinutes: 15 },
+    data: { name: "就活のイロハ", slug: "shukatsu-iroha", slotMinutes: 15 },
   });
 
-  // 他店舗のデータが混ざらないことを確認するための2店舗目
+  // 他部署のデータが混ざらないことを確認するための2部署目
   const otherTenant = await prisma.tenant.create({
-    data: { name: "別店舗（分離確認用）", slug: "other-shop" },
+    data: { name: "youth商材(仮)", slug: "youth-shouzai" },
   });
 
-  // ── スタッフ ──────────────────────
-  const [sato, suzuki, tanaka] = await Promise.all([
+  // ── 担当者（就活のイロハ） ────────
+  const [staffA, staffB, staffC] = await Promise.all([
     prisma.staff.create({
-      data: { tenantId: tenant.id, name: "佐藤", displayOrder: 1 },
+      data: { tenantId: tenant.id, name: "担当者A", displayOrder: 1 },
     }),
     prisma.staff.create({
-      data: { tenantId: tenant.id, name: "鈴木", displayOrder: 2 },
+      data: { tenantId: tenant.id, name: "担当者B", displayOrder: 2 },
     }),
     prisma.staff.create({
-      data: { tenantId: tenant.id, name: "田中", displayOrder: 3 },
+      data: { tenantId: tenant.id, name: "担当者C", displayOrder: 3 },
     }),
   ]);
 
-  // 2店舗目にも一通りのデータを入れる。
-  // 「他店舗のデータが見えない」ことを検証するために、中身が必要。
-  const otherStaff = await prisma.staff.create({
-    data: { tenantId: otherTenant.id, name: "他店スタッフ" },
-  });
+  // ── 担当者（youth商材、分離確認用）──
+  const [otherStaffA, otherStaffB, otherStaffC] = await Promise.all([
+    prisma.staff.create({
+      data: { tenantId: otherTenant.id, name: "担当者A", displayOrder: 1 },
+    }),
+    prisma.staff.create({
+      data: { tenantId: otherTenant.id, name: "担当者B", displayOrder: 2 },
+    }),
+    prisma.staff.create({
+      data: { tenantId: otherTenant.id, name: "担当者C", displayOrder: 3 },
+    }),
+  ]);
 
   // ── ログインするアカウント ────────
   const passwordHash = await hashPassword("password123");
@@ -83,9 +100,9 @@ async function main() {
   });
 
   for (const [email, staff] of [
-    ["sato@example.com", sato],
-    ["suzuki@example.com", suzuki],
-    ["tanaka@example.com", tanaka],
+    ["a@example.com", staffA],
+    ["b@example.com", staffB],
+    ["c@example.com", staffC],
   ] as const) {
     await prisma.user.create({
       data: {
@@ -98,55 +115,99 @@ async function main() {
     });
   }
 
-  // ── メニュー ──────────────────────
-  const cut = await prisma.menu.create({
+  await prisma.user.create({
     data: {
-      tenantId: tenant.id,
-      name: "カット",
-      durationMinutes: 60,
-      bufferMinutes: 10,
-      price: 4400,
-    },
-  });
-  const color = await prisma.menu.create({
-    data: {
-      tenantId: tenant.id,
-      name: "カラー",
-      durationMinutes: 90,
-      bufferMinutes: 10,
-      price: 8800,
-    },
-  });
-  const perm = await prisma.menu.create({
-    data: {
-      tenantId: tenant.id,
-      name: "パーマ",
-      durationMinutes: 120,
-      bufferMinutes: 15,
-      price: 12000,
-    },
-  });
-  const spa = await prisma.menu.create({
-    data: {
-      tenantId: tenant.id,
-      name: "ヘッドスパ",
-      durationMinutes: 30,
-      bufferMinutes: 5,
-      price: 3300,
+      tenantId: otherTenant.id,
+      email: "owner-b@example.com",
+      passwordHash,
+      role: "owner",
+      staffId: null,
     },
   });
 
-  // ── 誰が何をできるか ──────────────
-  // 佐藤=全部 / 鈴木=カット・カラー / 田中=カット・ヘッドスパ
+  for (const [email, staff] of [
+    ["sa@example.com", otherStaffA],
+    ["sb@example.com", otherStaffB],
+    ["sc@example.com", otherStaffC],
+  ] as const) {
+    await prisma.user.create({
+      data: {
+        tenantId: otherTenant.id,
+        email,
+        passwordHash,
+        role: "staff",
+        staffId: staff.id,
+      },
+    });
+  }
+
+  // ── 全部署を横断できるアカウント（部署に属さない）──
+  await prisma.user.createMany({
+    data: [
+      { tenantId: null, email: "ceo@example.com", passwordHash, role: "group_admin" },
+      { tenantId: null, email: "admin@example.com", passwordHash, role: "group_admin" },
+    ],
+  });
+
+  // ── メニュー（就活のイロハ）───────
+  const interview = await prisma.menu.create({
+    data: {
+      tenantId: tenant.id,
+      name: "面談",
+      durationMinutes: 30,
+      bufferMinutes: 5,
+      price: 0,
+    },
+  });
+  const mockInterview = await prisma.menu.create({
+    data: {
+      tenantId: tenant.id,
+      name: "面接練習",
+      durationMinutes: 45,
+      bufferMinutes: 5,
+      price: 0,
+    },
+  });
+  const esReview = await prisma.menu.create({
+    data: {
+      tenantId: tenant.id,
+      name: "ES添削",
+      durationMinutes: 30,
+      bufferMinutes: 5,
+      price: 0,
+    },
+  });
+
+  // ── メニュー（youth商材）──────────
+  const meeting = await prisma.menu.create({
+    data: {
+      tenantId: otherTenant.id,
+      name: "面談",
+      durationMinutes: 30,
+      bufferMinutes: 5,
+      price: 0,
+    },
+  });
+  const kickoff = await prisma.menu.create({
+    data: {
+      tenantId: otherTenant.id,
+      name: "打ち合わせ",
+      durationMinutes: 60,
+      bufferMinutes: 10,
+      price: 0,
+    },
+  });
+
+  // ── 誰が何をできるか（就活のイロハ）
+  // 担当者A=全部 / 担当者B=面談・面接練習 / 担当者C=面談・ES添削
   const pairs: Array<[string, string]> = [
-    [sato.id, cut.id],
-    [sato.id, color.id],
-    [sato.id, perm.id],
-    [sato.id, spa.id],
-    [suzuki.id, cut.id],
-    [suzuki.id, color.id],
-    [tanaka.id, cut.id],
-    [tanaka.id, spa.id],
+    [staffA.id, interview.id],
+    [staffA.id, mockInterview.id],
+    [staffA.id, esReview.id],
+    [staffB.id, interview.id],
+    [staffB.id, mockInterview.id],
+    [staffC.id, interview.id],
+    [staffC.id, esReview.id],
   ];
   await prisma.staffMenu.createMany({
     data: pairs.map(([staffId, menuId]) => ({
@@ -156,7 +217,25 @@ async function main() {
     })),
   });
 
-  // ── 営業時間（月曜定休、10:00-13:00 / 14:00-19:00）──
+  // ── 誰が何をできるか（youth商材）──
+  // 3人とも面談・打ち合わせの両方に対応
+  const otherPairs: Array<[string, string]> = [
+    [otherStaffA.id, meeting.id],
+    [otherStaffA.id, kickoff.id],
+    [otherStaffB.id, meeting.id],
+    [otherStaffB.id, kickoff.id],
+    [otherStaffC.id, meeting.id],
+    [otherStaffC.id, kickoff.id],
+  ];
+  await prisma.staffMenu.createMany({
+    data: otherPairs.map(([staffId, menuId]) => ({
+      tenantId: otherTenant.id,
+      staffId,
+      menuId,
+    })),
+  });
+
+  // ── 営業時間（就活のイロハ。月曜定休、10:00-13:00 / 14:00-19:00）──
   const openDays = [0, 2, 3, 4, 5, 6]; // 1=月曜 は定休
   await prisma.businessHour.createMany({
     data: openDays.flatMap((dow) => [
@@ -177,28 +256,39 @@ async function main() {
     ]),
   });
 
-  // 田中だけ時短勤務（10:00-16:00 通し）
+  // 担当者Cだけ時短勤務（10:00-16:00 通し）
   await prisma.businessHour.createMany({
     data: openDays.map((dow) => ({
       tenantId: tenant.id,
-      staffId: tanaka.id,
+      staffId: staffC.id,
       dayOfWeek: dow,
       startMinutes: hm("10:00"),
       endMinutes: hm("16:00"),
     })),
   });
 
-  // ── 日付ごとの例外 ────────────────
-  // 鈴木は3日後が終日休み
+  // ── 営業時間（youth商材。土日休み、09:00-18:00 通し）──
+  await prisma.businessHour.createMany({
+    data: [1, 2, 3, 4, 5].map((dow) => ({
+      tenantId: otherTenant.id,
+      staffId: null,
+      dayOfWeek: dow,
+      startMinutes: hm("09:00"),
+      endMinutes: hm("18:00"),
+    })),
+  });
+
+  // ── 日付ごとの例外（就活のイロハ）──
+  // 担当者Bは3日後が終日休み
   await prisma.dateOverride.create({
     data: {
       tenantId: tenant.id,
-      staffId: suzuki.id,
+      staffId: staffB.id,
       date: dateStr(3),
       isClosed: true,
     },
   });
-  // 5日後は店舗全体が短縮営業（10:00-15:00）
+  // 5日後は全体が短縮営業（10:00-15:00）
   await prisma.dateOverride.create({
     data: {
       tenantId: tenant.id,
@@ -209,13 +299,13 @@ async function main() {
       endMinutes: hm("15:00"),
     },
   });
-  // 6日後の田中は分割シフト（10:00-12:00 と 16:00-19:00）。
+  // 6日後の担当者Cは分割シフト（10:00-12:00 と 16:00-19:00）。
   // 同じ日に2行入れることで、間の時間を勤務外にできる。
   await prisma.dateOverride.createMany({
     data: [
       {
         tenantId: tenant.id,
-        staffId: tanaka.id,
+        staffId: staffC.id,
         date: dateStr(6),
         isClosed: false,
         startMinutes: hm("10:00"),
@@ -223,7 +313,7 @@ async function main() {
       },
       {
         tenantId: tenant.id,
-        staffId: tanaka.id,
+        staffId: staffC.id,
         date: dateStr(6),
         isClosed: false,
         startMinutes: hm("16:00"),
@@ -233,7 +323,7 @@ async function main() {
   });
 
   // ── ブロック枠（予約以外で時間を塞ぐ）──
-  // 2日後の 14:00-15:00 は全スタッフが会議で埋まる
+  // 2日後の 14:00-15:00 は就活のイロハの全担当者が会議で埋まる
   await prisma.block.create({
     data: {
       tenantId: tenant.id,
@@ -241,63 +331,11 @@ async function main() {
       date: dateStr(2),
       startMinutes: hm("14:00"),
       endMinutes: hm("15:00"),
-      reason: "スタッフ会議",
+      reason: "定例会議",
     },
   });
 
-  // ── 2店舗目のデータ（分離確認用）────
-  {
-    const otherMenu = await prisma.menu.create({
-      data: {
-        tenantId: otherTenant.id,
-        name: "他店メニュー",
-        durationMinutes: 60,
-        bufferMinutes: 0,
-        price: 5000,
-      },
-    });
-    await prisma.staffMenu.create({
-      data: { tenantId: otherTenant.id, staffId: otherStaff.id, menuId: otherMenu.id },
-    });
-    await prisma.businessHour.createMany({
-      data: [0, 1, 2, 3, 4, 5, 6].map((dow) => ({
-        tenantId: otherTenant.id,
-        staffId: null,
-        dayOfWeek: dow,
-        startMinutes: hm("09:00"),
-        endMinutes: hm("18:00"),
-      })),
-    });
-    const otherCustomer = await prisma.customer.create({
-      data: { tenantId: otherTenant.id, name: "他店の顧客" },
-    });
-    await prisma.reservation.create({
-      data: {
-        tenantId: otherTenant.id,
-        staffId: otherStaff.id,
-        customerId: otherCustomer.id,
-        menuId: otherMenu.id,
-        date: dateStr(1),
-        startMinutes: hm("09:00"),
-        endMinutes: hm("10:00"),
-        menuNameSnapshot: otherMenu.name,
-        durationSnapshot: otherMenu.durationMinutes,
-        priceSnapshot: otherMenu.price,
-        status: "booked",
-      },
-    });
-    await prisma.user.create({
-      data: {
-        tenantId: otherTenant.id,
-        email: "owner-b@example.com",
-        passwordHash,
-        role: "owner",
-        staffId: null,
-      },
-    });
-  }
-
-  // ── 顧客 ──────────────────────────
+  // ── 顧客（就活のイロハ）───────────
   const [yamada, ito, kobayashi] = await Promise.all([
     prisma.customer.create({
       data: { tenantId: tenant.id, name: "山田 花子", phone: "090-1111-2222" },
@@ -310,15 +348,15 @@ async function main() {
     }),
   ]);
 
-  // ── 予約 ──────────────────────────
+  // ── 予約（就活のイロハ）───────────
   // 空き枠ロジックを試せるよう、わざと一部の枠を埋めておく
   const bookings = [
-    { staff: sato, menu: cut, customer: yamada, day: 1, at: "10:00" },
-    { staff: sato, menu: color, customer: ito, day: 1, at: "14:00" },
-    { staff: suzuki, menu: cut, customer: kobayashi, day: 1, at: "11:00" },
-    { staff: tanaka, menu: spa, customer: yamada, day: 2, at: "10:30" },
-    // 14:00-15:00 は全スタッフの「スタッフ会議」ブロックと重なるため、その直後にする
-    { staff: sato, menu: perm, customer: kobayashi, day: 2, at: "15:00" },
+    { staff: staffA, menu: interview, customer: yamada, day: 1, at: "10:00" },
+    { staff: staffA, menu: mockInterview, customer: ito, day: 1, at: "14:00" },
+    { staff: staffB, menu: interview, customer: kobayashi, day: 1, at: "11:00" },
+    { staff: staffC, menu: esReview, customer: yamada, day: 2, at: "10:30" },
+    // 14:00-15:00 は全担当者の「定例会議」ブロックと重なるため、その直後にする
+    { staff: staffA, menu: esReview, customer: kobayashi, day: 2, at: "15:00" },
   ];
 
   for (const b of bookings) {
@@ -344,23 +382,43 @@ async function main() {
   await prisma.reservation.create({
     data: {
       tenantId: tenant.id,
-      staffId: suzuki.id,
+      staffId: staffB.id,
       customerId: ito.id,
-      menuId: color.id,
+      menuId: mockInterview.id,
       date: dateStr(1),
       startMinutes: hm("14:00"),
-      endMinutes: hm("14:00") + color.durationMinutes + color.bufferMinutes,
-      menuNameSnapshot: color.name,
-      durationSnapshot: color.durationMinutes,
-      priceSnapshot: color.price,
+      endMinutes: hm("14:00") + mockInterview.durationMinutes + mockInterview.bufferMinutes,
+      menuNameSnapshot: mockInterview.name,
+      durationSnapshot: mockInterview.durationMinutes,
+      priceSnapshot: mockInterview.price,
       status: "canceled",
       canceledAt: new Date(),
     },
   });
 
+  // ── 顧客・予約（youth商材、分離確認用）
+  const otherCustomer = await prisma.customer.create({
+    data: { tenantId: otherTenant.id, name: "他部署の顧客" },
+  });
+  await prisma.reservation.create({
+    data: {
+      tenantId: otherTenant.id,
+      staffId: otherStaffA.id,
+      customerId: otherCustomer.id,
+      menuId: meeting.id,
+      date: dateStr(1),
+      startMinutes: hm("09:00"),
+      endMinutes: hm("09:00") + meeting.durationMinutes + meeting.bufferMinutes,
+      menuNameSnapshot: meeting.name,
+      durationSnapshot: meeting.durationMinutes,
+      priceSnapshot: meeting.price,
+      status: "booked",
+    },
+  });
+
   console.log("投入完了");
-  console.log(`  店舗        : ${await prisma.tenant.count()}`);
-  console.log(`  スタッフ    : ${await prisma.staff.count()}`);
+  console.log(`  部署        : ${await prisma.tenant.count()}`);
+  console.log(`  担当者      : ${await prisma.staff.count()}`);
   console.log(`  メニュー    : ${await prisma.menu.count()}`);
   console.log(`  対応表      : ${await prisma.staffMenu.count()}`);
   console.log(`  営業時間    : ${await prisma.businessHour.count()}`);

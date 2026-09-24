@@ -37,11 +37,23 @@ export async function getVerifiedSession(): Promise<SessionData | null> {
   const session = await getSession();
   if (!session) return null;
 
-  const user = await prisma.user.findFirst({
-    where: { id: session.userId, tenantId: session.tenantId },
+  const user = await prisma.user.findUnique({
+    where: { id: session.userId },
     include: { staff: true },
   });
   if (!user) return null;
+
+  // group_admin は特定の部署に属さない。Cookie が指す「今選んでいる部署」が
+  // 今も実在するかだけを確かめる（部署の切り替えは switchTenant で行う）。
+  if (user.role === "group_admin") {
+    const tenant = await prisma.tenant.findUnique({ where: { id: session.tenantId } });
+    if (!tenant) return null;
+
+    return { ...session, role: "group_admin", staffId: null, name: user.email };
+  }
+
+  // owner / staff は自分の所属部署以外を名乗れない
+  if (user.tenantId !== session.tenantId) return null;
 
   return {
     ...session,
@@ -58,10 +70,10 @@ export async function requireSession(): Promise<SessionData> {
   return session;
 }
 
-/** オーナーでなければ追い返す */
+/** オーナー（または全部署を横断できる group_admin）でなければ追い返す */
 export async function requireOwner(): Promise<SessionData> {
   const session = await requireSession();
-  if (session.role !== "owner") {
+  if (session.role !== "owner" && session.role !== "group_admin") {
     // 日本語をそのままURLに入れると Location ヘッダーに載せられない
     redirect(`/calendar?error=${encodeURIComponent("この操作はオーナーのみです")}`);
   }

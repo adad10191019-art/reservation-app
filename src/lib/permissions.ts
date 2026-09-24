@@ -18,7 +18,8 @@ export type Actor = {
 
 /** その担当分の予約を操作してよいか */
 export function canManageStaffReservation(actor: Actor, staffId: string): boolean {
-  if (actor.role === "owner") return true;
+  // オーナー、および今その部署を選んでいる group_admin はすべて操作できる
+  if (actor.role === "owner" || actor.role === "group_admin") return true;
   // スタッフ本人に紐づいていないアカウントは、誰の予約も操作できない
   if (!actor.staffId) return false;
   return actor.staffId === staffId;
@@ -26,7 +27,7 @@ export function canManageStaffReservation(actor: Actor, staffId: string): boolea
 
 /** 設定（スタッフ・メニュー・営業時間）を変更してよいか */
 export function canEditSettings(actor: Actor): boolean {
-  return actor.role === "owner";
+  return actor.role === "owner" || actor.role === "group_admin";
 }
 
 /** 操作できなかったときの説明 */

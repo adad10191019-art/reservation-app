@@ -45,10 +45,18 @@ export async function login(formData: FormData) {
 
   for (const user of candidates) {
     if (await verifyPassword(password, user.passwordHash)) {
+      // group_admin はどの部署にも属さないので、ログイン直後は
+      // 一番古い部署を仮に選んでおく（切り替えは switchTenant で行う）。
+      const tenantId =
+        user.role === "group_admin"
+          ? (await prisma.tenant.findFirst({ orderBy: { createdAt: "asc" } }))?.id
+          : (user.tenantId ?? undefined);
+      if (!tenantId) fail();
+
       await startSession(
         buildSession({
           userId: user.id,
-          tenantId: user.tenantId,
+          tenantId,
           role: user.role as Role,
           staffId: user.staffId,
           name: user.staff?.name ?? user.email,
@@ -57,8 +65,10 @@ export async function login(formData: FormData) {
       // スタッフは、まず自分の予定が見える画面に着地させる。
       // 全員分の予約が並ぶカレンダーは「必要なときに見る」もので、
       // 毎回そこへ着地させると自分の分を探す手間が生まれる。
-      // オーナーは全員を把握する必要があるので、これまで通りカレンダーへ。
-      redirect(user.role === "owner" || !user.staffId ? "/calendar" : "/my-schedule");
+      // オーナー・group_admin は全員を把握する必要があるので、これまで通りカレンダーへ。
+      redirect(user.role === "owner" || user.role === "group_admin" || !user.staffId
+        ? "/calendar"
+        : "/my-schedule");
     }
   }
 
@@ -70,6 +80,32 @@ export async function login(formData: FormData) {
 export async function logout() {
   await endSession();
   redirect("/login");
+}
+
+/** group_admin が、今操作対象にしている部署を切り替える */
+export async function switchTenant(formData: FormData) {
+  const session = await requireSession();
+  if (session.role !== "group_admin") {
+    redirect(`/calendar?error=${encodeURIComponent("この操作はできません")}`);
+  }
+
+  const tenantId = String(formData.get("tenantId") ?? "");
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+  if (!tenant) {
+    redirect(`/calendar?error=${encodeURIComponent("指定された部署が見つかりません")}`);
+  }
+
+  await startSession(
+    buildSession({
+      userId: session.userId,
+      tenantId: tenant.id,
+      role: session.role,
+      staffId: null,
+      name: session.name,
+    }),
+  );
+
+  redirect("/calendar");
 }
 
 // ── 新規登録 ──────────────────────────────

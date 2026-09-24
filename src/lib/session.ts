@@ -9,10 +9,15 @@
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-export type Role = "owner" | "staff";
+export type Role = "owner" | "staff" | "group_admin";
 
 export type SessionData = {
   userId: string;
+  /**
+   * 今、操作対象として選んでいる部署のID。
+   * owner/staff は自分の所属部署で固定。group_admin だけは
+   * ログイン後に部署を切り替えるたびにここが書き換わる。
+   */
   tenantId: string;
   role: Role;
   /** スタッフ本人のアカウントなら、そのスタッフID */
@@ -70,7 +75,9 @@ export function decodeSession(
     const data = JSON.parse(Buffer.from(payload, "base64url").toString()) as SessionData;
     if (typeof data.exp !== "number" || data.exp <= now) return null;
     if (!data.userId || !data.tenantId) return null;
-    if (data.role !== "owner" && data.role !== "staff") return null;
+    if (data.role !== "owner" && data.role !== "staff" && data.role !== "group_admin") {
+      return null;
+    }
     return data;
   } catch {
     return null;

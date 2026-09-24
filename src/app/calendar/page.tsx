@@ -57,7 +57,7 @@ export default async function CalendarPage({
         >
           ＋ 予約を追加
         </Link>
-        {session.role === "owner" && (
+        {(session.role === "owner" || session.role === "group_admin") && (
           <Link
             href="/settings/menus"
             className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
