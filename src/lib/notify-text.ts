@@ -91,3 +91,13 @@ export function staffCanceledText(r: ReservationSummary): string {
     `お客様：${r.customerName} 様`,
   ].join("\n");
 }
+
+// ── 店舗側への通知（メールの件名） ────────
+
+export function staffNewReservationSubject(r: ReservationSummary): string {
+  return `【${r.shopName}】ネット予約が入りました（${formatDateLabel(r.date)} ${toHm(r.startMinutes)}）`;
+}
+
+export function staffCanceledSubject(r: ReservationSummary): string {
+  return `【${r.shopName}】予約がキャンセルされました（${formatDateLabel(r.date)} ${toHm(r.startMinutes)}）`;
+}

@@ -4,13 +4,16 @@
  * 通知は「できたら送る」もの。送れなくても予約は成立させたいので、
  * ここでは例外を投げず、結果を返すだけにする。
  */
+import { sendNotificationEmail } from "./email";
 import { pushTextMessage, type PushResult } from "./line-messaging";
 import {
   type ReservationSummary,
   reservationCanceledText,
   reservationCreatedText,
   reservationReminderText,
+  staffCanceledSubject,
   staffCanceledText,
+  staffNewReservationSubject,
   staffNewReservationText,
 } from "./notify-text";
 import { prisma } from "./prisma";
@@ -138,14 +141,18 @@ export async function sendRemindersFor(date: string): Promise<ReminderOutcome[]>
 /**
  * お店の人に知らせる。
  *
- * 送る相手は、その店舗でLINEを紐づけている
+ * 送る相手は
  *   ・オーナー全員
  *   ・その予約の担当スタッフ本人
  * カレンダーを見に行かなくても、予約が入ったことに気づけるようにする。
+ *
+ * LINEを紐づけている人にはLINEで、まだの人にはログイン用のメールアドレス宛に
+ * メールで送る（どちらも設定が無ければ、送らずに内容をログへ出すだけになる）。
  */
 async function notifyStaff(
   reservationId: string,
   build: (summary: ReservationSummary) => string,
+  buildSubject: (summary: ReservationSummary) => string,
 ): Promise<{ sent: number; skipped: number }> {
   const reservation = await prisma.reservation.findUnique({
     where: { id: reservationId },
@@ -156,7 +163,6 @@ async function notifyStaff(
   const recipients = await prisma.user.findMany({
     where: {
       tenantId: reservation.tenantId,
-      lineUserId: { not: null },
       OR: [{ role: "owner" }, { staffId: reservation.staffId }],
     },
   });
@@ -172,15 +178,14 @@ async function notifyStaff(
     // 店舗側の画面はログインが要るため、URLは載せない
   };
   const text = build(summary);
+  const subject = buildSubject(summary);
 
   let sent = 0;
   let skipped = 0;
   for (const user of recipients) {
-    const result = await pushTextMessage({
-      tenant: reservation.tenant,
-      to: user.lineUserId as string,
-      text,
-    });
+    const result = user.lineUserId
+      ? await pushTextMessage({ tenant: reservation.tenant, to: user.lineUserId, text })
+      : await sendNotificationEmail({ to: user.email, subject, text });
     if (result.ok && result.sent) sent++;
     else skipped++;
   }
@@ -188,9 +193,9 @@ async function notifyStaff(
 }
 
 export function notifyStaffNewReservation(reservationId: string) {
-  return notifyStaff(reservationId, staffNewReservationText);
+  return notifyStaff(reservationId, staffNewReservationText, staffNewReservationSubject);
 }
 
 export function notifyStaffCanceled(reservationId: string) {
-  return notifyStaff(reservationId, staffCanceledText);
+  return notifyStaff(reservationId, staffCanceledText, staffCanceledSubject);
 }

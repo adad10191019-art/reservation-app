@@ -4,6 +4,8 @@ import {
   reservationCanceledText,
   reservationCreatedText,
   reservationReminderText,
+  staffCanceledSubject,
+  staffNewReservationSubject,
 } from "./notify-text";
 import { hm } from "./time";
 
@@ -61,5 +63,21 @@ describe("キャンセルの文面", () => {
       myPageUrl: "https://example.com/book/sample-salon/mine",
     });
     expect(text).not.toContain("https://example.com");
+  });
+});
+
+describe("店舗側への通知メールの件名", () => {
+  it("新規予約は店舗名・日時が入る", () => {
+    const subject = staffNewReservationSubject(BASE);
+    expect(subject).toContain("サンプルヘアサロン");
+    expect(subject).toContain("9月24日(木) 11:00");
+    expect(subject).toContain("ネット予約が入りました");
+  });
+
+  it("キャンセルは店舗名・日時が入る", () => {
+    const subject = staffCanceledSubject(BASE);
+    expect(subject).toContain("サンプルヘアサロン");
+    expect(subject).toContain("9月24日(木) 11:00");
+    expect(subject).toContain("キャンセル");
   });
 });
