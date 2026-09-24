@@ -5,10 +5,11 @@ import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getDaySchedule, getTenant } from "@/lib/schedule";
 import { createOwnBlock, deleteOwnBlock } from "@/lib/staff-schedule-actions";
-import { addDays, formatDateLabel, sanitizeDate, subtract, toHm, todayString } from "@/lib/time";
+import { addDays, formatDateLabel, sanitizeDate, toHm, todayString } from "@/lib/time";
 
-/** 1分あたりの高さ（px）。/calendar の日表示と揃えている */
-const PX_PER_MIN = 1.4;
+type AgendaItem =
+  | { kind: "reservation"; id: string; startMinutes: number; endMinutes: number; menuName: string; customerName: string }
+  | { kind: "block"; id: string; startMinutes: number; endMinutes: number; reason: string; wholeShop: boolean };
 
 export default async function MySchedulePage({
   searchParams,
@@ -52,17 +53,31 @@ export default async function MySchedulePage({
   // （どのメニューにも対応していない等）場合は列自体が無いこともある
   const myColumn = schedule.columns.find((c) => c.staffId === staffId) ?? null;
 
-  const { viewStart, viewEnd } = schedule;
-  // 時刻の目盛りは行の中央揃えなので、一番上と一番下の分は上下に
-  // はみ出す。その逃げ場として、時間軸の上下にパディング（LABEL_PAD）を
-  // 足しておく。目盛り・グレー帯・予約すべて同じ top() を通すので、
-  // ずれずに一律で下へシフトするだけになる。
-  const LABEL_PAD = 12;
-  const totalHeight = (viewEnd - viewStart) * PX_PER_MIN + LABEL_PAD * 2;
-  const hours: number[] = [];
-  for (let m = viewStart; m <= viewEnd; m += 60) hours.push(m);
-  const top = (minutes: number) => (minutes - viewStart) * PX_PER_MIN + LABEL_PAD;
-  const closed = myColumn ? subtract([{ start: viewStart, end: viewEnd }], myColumn.working) : [];
+  // 予約と自分の予定（ブロック枠）を、時刻順の1本のリストにまとめる
+  const agenda: AgendaItem[] = myColumn
+    ? [
+        ...myColumn.reservations.map(
+          (r): AgendaItem => ({
+            kind: "reservation",
+            id: r.id,
+            startMinutes: r.startMinutes,
+            endMinutes: r.endMinutes,
+            menuName: r.menuName,
+            customerName: r.customerName,
+          }),
+        ),
+        ...myColumn.blocks.map(
+          (b): AgendaItem => ({
+            kind: "block",
+            id: b.id,
+            startMinutes: b.startMinutes,
+            endMinutes: b.endMinutes,
+            reason: b.reason,
+            wholeShop: b.wholeShop,
+          }),
+        ),
+      ].sort((a, b) => a.startMinutes - b.startMinutes)
+    : [];
 
   return (
     <main className="mx-auto w-full max-w-2xl p-4 sm:p-6">
@@ -102,142 +117,114 @@ export default async function MySchedulePage({
         他のスタッフの予定は見えません・触れません。
       </p>
 
-      {/* 今日のスケジュール（自分の列だけのタイムライン） */}
-      <section className="mb-5 overflow-hidden rounded-lg border border-neutral-200 bg-white">
+      {/* 今日の予定（時刻順のカードリスト） */}
+      <section className="mb-5">
         {!myColumn ? (
-          <p className="px-4 py-8 text-center text-sm text-neutral-500">
+          <p className="rounded-lg border border-neutral-200 bg-white px-4 py-8 text-center text-sm text-neutral-500">
             この日は対応できるメニューが無いため、予定を表示できません。
           </p>
+        ) : agenda.length === 0 ? (
+          <p className="rounded-lg border border-neutral-200 bg-white px-4 py-8 text-center text-sm text-neutral-500">
+            この日の予定はありません。
+          </p>
         ) : (
-          <div className="flex">
-            <div className="relative w-14 shrink-0" style={{ height: totalHeight }}>
-              {hours.map((m) => (
-                <span
-                  key={m}
-                  className="absolute right-2 -translate-y-1/2 text-xs tabular-nums text-neutral-400"
-                  style={{ top: top(m) }}
+          <ul className="space-y-2">
+            {agenda.map((item) =>
+              item.kind === "reservation" ? (
+                <li key={`r-${item.id}`}>
+                  <Link
+                    href={`/reservations/${item.id}`}
+                    className="flex items-center gap-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2.5 transition-colors hover:border-sky-300 hover:bg-sky-100"
+                  >
+                    <span className="w-11 shrink-0 text-sm font-medium tabular-nums text-sky-800">
+                      {toHm(item.startMinutes)}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium text-sky-900">
+                        {item.menuName}
+                      </span>
+                      <span className="block truncate text-xs text-sky-700">
+                        {item.customerName} 様・{item.endMinutes - item.startMinutes}分
+                      </span>
+                    </span>
+                  </Link>
+                </li>
+              ) : (
+                <li
+                  key={`b-${item.id}`}
+                  className="flex items-center gap-3 rounded-lg border border-dashed border-amber-300 bg-amber-50 px-3 py-2.5"
                 >
-                  {toHm(m)}
-                </span>
-              ))}
-            </div>
-
-            <div className="relative min-w-64 flex-1 border-l border-neutral-200" style={{ height: totalHeight }}>
-              {closed.map((c) => (
-                <div
-                  key={`${c.start}-${c.end}`}
-                  className="absolute inset-x-0 bg-neutral-100"
-                  style={{ top: top(c.start), height: (c.end - c.start) * PX_PER_MIN }}
-                />
-              ))}
-
-              {hours.map((m) => (
-                <div
-                  key={m}
-                  className="absolute inset-x-0 border-t border-neutral-100"
-                  style={{ top: top(m) }}
-                />
-              ))}
-
-              {myColumn.blocks.map((b) => (
-                <div
-                  key={b.id}
-                  className="absolute inset-x-1 overflow-hidden rounded border border-dashed border-amber-400 bg-amber-50 px-1.5 py-1 text-xs leading-tight text-amber-900"
-                  style={{
-                    top: top(b.startMinutes),
-                    height: (b.endMinutes - b.startMinutes) * PX_PER_MIN - 2,
-                  }}
-                >
-                  <div className="truncate font-medium">
-                    {b.reason}
-                    {b.wholeShop && <span className="ml-1 font-normal text-amber-700">（店舗全体）</span>}
-                  </div>
-                  <div className="tabular-nums text-amber-700">
-                    {toHm(b.startMinutes)}–{toHm(b.endMinutes)}
-                  </div>
-                </div>
-              ))}
-
-              {myColumn.reservations.map((r) => (
-                <Link
-                  key={r.id}
-                  href={`/reservations/${r.id}`}
-                  title={`${toHm(r.startMinutes)}–${toHm(r.endMinutes)} ${r.menuName} ${r.customerName}様`}
-                  className="absolute inset-x-1 block overflow-hidden rounded border border-sky-300 bg-sky-100 px-1.5 py-1 text-xs leading-none shadow-sm transition-colors hover:border-sky-400 hover:bg-sky-200"
-                  style={{
-                    top: top(r.startMinutes),
-                    height: (r.endMinutes - r.startMinutes) * PX_PER_MIN - 2,
-                  }}
-                >
-                  <div className="truncate font-medium text-sky-900">{r.menuName}</div>
-                  <div className="mt-0.5 tabular-nums text-sky-800">
-                    {toHm(r.startMinutes)}–{toHm(r.endMinutes)}
-                  </div>
-                  <div className="mt-0.5 truncate text-sky-700">{r.customerName} 様</div>
-                </Link>
-              ))}
-            </div>
-          </div>
+                  <span className="w-11 shrink-0 text-sm font-medium tabular-nums text-amber-800">
+                    {toHm(item.startMinutes)}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-amber-900">
+                      {item.reason}
+                      {item.wholeShop && (
+                        <span className="ml-1 font-normal text-amber-700">（店舗全体）</span>
+                      )}
+                    </span>
+                    <span className="block truncate text-xs text-amber-700">
+                      {item.endMinutes - item.startMinutes}分
+                    </span>
+                  </span>
+                </li>
+              ),
+            )}
+          </ul>
         )}
       </section>
 
       {/* 自分の予定（ブロック枠） */}
       <section className="mb-5 rounded-lg border border-neutral-200 bg-white p-4">
-        <h3 className="mb-1 font-semibold">自分の予定（商談・私用などで時間を塞ぐ）</h3>
-        <p className="mb-4 text-xs leading-relaxed text-neutral-500">
-          予約ではないが、この時間は空けたくないときに使います。上のスケジュールにも
-          点線で表示されます。お客様や他のスタッフからは「空いていない時間」として扱われます。
-        </p>
+        <div className="mb-3 flex items-center gap-1.5">
+          <h3 className="font-semibold">自分の予定を追加</h3>
+          <details className="group relative">
+            <summary className="flex size-4 cursor-pointer list-none items-center justify-center rounded-full bg-neutral-200 text-[10px] text-neutral-600 marker:content-none hover:bg-neutral-300">
+              ?
+            </summary>
+            <p className="absolute left-0 top-6 z-10 w-64 rounded-md border border-neutral-200 bg-white p-2.5 text-xs leading-relaxed text-neutral-600 shadow-lg">
+              商談・私用など、予約ではないが時間を空けたくないときに使います。お客様や他のスタッフからは「空いていない時間」として扱われます。
+            </p>
+          </details>
+        </div>
 
-        <form action={createOwnBlock} className="mb-4 grid gap-3 sm:grid-cols-12">
-          <label className="block sm:col-span-3">
-            <span className="mb-1 block text-xs font-medium text-neutral-600">日付</span>
-            <input
-              type="date"
-              name="date"
-              required
-              defaultValue={date}
-              className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
-            />
-          </label>
-          <label className="block sm:col-span-2">
-            <span className="mb-1 block text-xs font-medium text-neutral-600">開始</span>
-            <input
-              type="time"
-              name="start"
-              required
-              step={300}
-              className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
-            />
-          </label>
-          <label className="block sm:col-span-2">
-            <span className="mb-1 block text-xs font-medium text-neutral-600">終了</span>
-            <input
-              type="time"
-              name="end"
-              required
-              step={300}
-              className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
-            />
-          </label>
-          <label className="block sm:col-span-3">
-            <span className="mb-1 block text-xs font-medium text-neutral-600">内容</span>
-            <input
-              type="text"
-              name="reason"
-              required
-              placeholder="商談、面談、私用 など"
-              className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
-            />
-          </label>
-          <div className="flex items-end sm:col-span-2">
-            <button
-              type="submit"
-              className="w-full rounded-md bg-neutral-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-700"
-            >
-              追加
-            </button>
-          </div>
+        <form action={createOwnBlock} className="mb-4 flex flex-wrap items-center gap-2">
+          <input
+            type="date"
+            name="date"
+            required
+            defaultValue={date}
+            className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+          />
+          <input
+            type="time"
+            name="start"
+            required
+            step={300}
+            className="w-24 rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+          />
+          <span className="text-sm text-neutral-400">〜</span>
+          <input
+            type="time"
+            name="end"
+            required
+            step={300}
+            className="w-24 rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+          />
+          <input
+            type="text"
+            name="reason"
+            required
+            placeholder="商談、私用 など"
+            className="min-w-32 flex-1 rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+          />
+          <button
+            type="submit"
+            className="rounded-md bg-neutral-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-700"
+          >
+            追加
+          </button>
         </form>
 
         {ownBlocks.length === 0 ? (
