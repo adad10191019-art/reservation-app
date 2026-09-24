@@ -124,6 +124,12 @@ export async function AppHeader({
             >
               通知設定
             </Link>
+            <Link
+              href="/account"
+              className="block px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
+            >
+              アカウント情報
+            </Link>
             <form action={logout}>
               <button
                 type="submit"
