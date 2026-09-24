@@ -64,9 +64,12 @@ export default async function MyReservationsPage({
         </p>
       )}
       {sp.done && (
-        <p className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-          ご予約を承りました。
-        </p>
+        <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          <p>ご予約を承りました。</p>
+          <p className="mt-1 text-xs text-emerald-700">
+            LINE通知が届かない場合がございます。念のため、この画面のスクリーンショットを保存しておくことをおすすめします。
+          </p>
+        </div>
       )}
       {sp.canceled && (
         <p className="mb-4 rounded-md border border-neutral-300 bg-neutral-50 px-3 py-2 text-sm text-neutral-700">
