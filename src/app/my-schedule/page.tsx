@@ -219,53 +219,8 @@ export default async function MySchedulePage({
         )}
       </section>
 
-      {/* この日だけの勤務時間 */}
-      <section className="mb-5 rounded-lg border border-neutral-200 bg-white p-4">
-        <h3 className="mb-1 font-semibold">この日だけの勤務時間</h3>
-        <p className="mb-4 text-xs leading-relaxed text-neutral-500">
-          入り・出の時刻だけ入れてください。いつもの曜日パターン（{weekly || "休み"}）より
-          <strong>優先</strong>されます。両方空欄に戻せば、いつものパターンに戻ります。
-          <br />
-          <strong>昼休憩など、勤務の途中で空けたい時間は、下の「自分の予定」に入れてください。</strong>
-        </p>
-
-        <form action={saveOwnDayOverride} className="flex flex-wrap items-end gap-3">
-          <input type="hidden" name="date" value={date} />
-          <label className="flex items-center gap-1.5 text-sm">
-            <input type="checkbox" name="closed" defaultChecked={currentOverride.isClosed} className="size-4" />
-            この日は休む
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-neutral-600">入り</span>
-            <input
-              type="time"
-              name="start"
-              step={300}
-              defaultValue={currentOverride.start}
-              className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-neutral-600">出</span>
-            <input
-              type="time"
-              name="end"
-              step={300}
-              defaultValue={currentOverride.end}
-              className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
-            />
-          </label>
-          <button
-            type="submit"
-            className="rounded-md bg-neutral-800 px-4 py-1.5 text-sm font-medium text-white hover:bg-neutral-700"
-          >
-            保存する
-          </button>
-        </form>
-      </section>
-
       {/* 自分の予定（ブロック枠） */}
-      <section className="rounded-lg border border-neutral-200 bg-white p-4">
+      <section className="mb-5 rounded-lg border border-neutral-200 bg-white p-4">
         <h3 className="mb-1 font-semibold">自分の予定（商談・私用などで時間を塞ぐ）</h3>
         <p className="mb-4 text-xs leading-relaxed text-neutral-500">
           予約ではないが、この時間は空けたくないときに使います。上のスケジュールにも
@@ -273,8 +228,17 @@ export default async function MySchedulePage({
         </p>
 
         <form action={createOwnBlock} className="mb-4 grid gap-3 sm:grid-cols-12">
-          <input type="hidden" name="date" value={date} />
           <label className="block sm:col-span-3">
+            <span className="mb-1 block text-xs font-medium text-neutral-600">日付</span>
+            <input
+              type="date"
+              name="date"
+              required
+              defaultValue={date}
+              className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+            />
+          </label>
+          <label className="block sm:col-span-2">
             <span className="mb-1 block text-xs font-medium text-neutral-600">開始</span>
             <input
               type="time"
@@ -284,7 +248,7 @@ export default async function MySchedulePage({
               className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
             />
           </label>
-          <label className="block sm:col-span-3">
+          <label className="block sm:col-span-2">
             <span className="mb-1 block text-xs font-medium text-neutral-600">終了</span>
             <input
               type="time"
@@ -294,7 +258,7 @@ export default async function MySchedulePage({
               className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
             />
           </label>
-          <label className="block sm:col-span-4">
+          <label className="block sm:col-span-3">
             <span className="mb-1 block text-xs font-medium text-neutral-600">内容</span>
             <input
               type="text"
@@ -347,51 +311,104 @@ export default async function MySchedulePage({
         )}
       </section>
 
-      {/* Googleカレンダー同期 */}
-      <section className="mt-5 rounded-lg border border-neutral-200 bg-white p-4">
-        <h3 className="mb-1 font-semibold">Googleカレンダーと同期</h3>
-        <p className="mb-4 text-xs leading-relaxed text-neutral-500">
-          自分の予約・自分の予定（ブロック枠）を、Googleカレンダーで確認できるようにします。
-          発行したURLをGoogleカレンダーの「他のカレンダー」→「URLから追加」に貼り付けてください。
-          <br />
-          更新はGoogle側の巡回タイミング次第で、数時間ほど反映が遅れることがあります。
-        </p>
+      {/* あまり使わない設定類は、普段は閉じておく */}
+      <details className="group rounded-lg border border-neutral-200 bg-white">
+        <summary className="cursor-pointer list-none px-4 py-3 font-semibold text-neutral-700 marker:content-none">
+          <span className="inline-flex items-center gap-1.5">
+            設定
+            <span className="text-neutral-400 transition-transform group-open:rotate-90">›</span>
+          </span>
+        </summary>
 
-        {calendarFeedUrl ? (
-          <div className="space-y-3">
-            <input
-              type="text"
-              readOnly
-              value={calendarFeedUrl}
-              className="w-full rounded-md border border-neutral-300 bg-neutral-50 px-2 py-1.5 text-xs text-neutral-700"
-            />
-            <form action={issueCalendarToken}>
-              <input type="hidden" name="date" value={date} />
-              <button
-                type="submit"
-                className="rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-800 hover:bg-red-50"
-              >
-                URLを再発行する（今のURLは使えなくなります）
-              </button>
-            </form>
-          </div>
-        ) : (
-          <form action={issueCalendarToken}>
+        <div className="border-t border-neutral-200 p-4">
+          <h3 className="mb-1 font-semibold">この日だけの勤務時間</h3>
+          <p className="mb-4 text-xs leading-relaxed text-neutral-500">
+            入り・出の時刻だけ入れてください。いつもの曜日パターン（{weekly || "休み"}）より
+            <strong>優先</strong>されます。両方空欄に戻せば、いつものパターンに戻ります。
+            <br />
+            <strong>昼休憩など、勤務の途中で空けたい時間は、上の「自分の予定」に入れてください。</strong>
+          </p>
+
+          <form action={saveOwnDayOverride} className="flex flex-wrap items-end gap-3">
             <input type="hidden" name="date" value={date} />
+            <label className="flex items-center gap-1.5 text-sm">
+              <input type="checkbox" name="closed" defaultChecked={currentOverride.isClosed} className="size-4" />
+              この日は休む
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-neutral-600">入り</span>
+              <input
+                type="time"
+                name="start"
+                step={300}
+                defaultValue={currentOverride.start}
+                className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-neutral-600">出</span>
+              <input
+                type="time"
+                name="end"
+                step={300}
+                defaultValue={currentOverride.end}
+                className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+              />
+            </label>
             <button
               type="submit"
               className="rounded-md bg-neutral-800 px-4 py-1.5 text-sm font-medium text-white hover:bg-neutral-700"
             >
-              同期用URLを発行する
+              保存する
             </button>
           </form>
-        )}
+        </div>
 
-        <p className="mt-3 text-xs leading-relaxed text-neutral-500">
-          このURLを知っている人は誰でも中身（予約・予定）を見られます。他人に教えないでください。
-          誤って共有してしまった場合は「再発行」で無効化できます。
-        </p>
-      </section>
+        <div className="border-t border-neutral-200 p-4">
+          <h3 className="mb-1 font-semibold">Googleカレンダーと同期</h3>
+          <p className="mb-4 text-xs leading-relaxed text-neutral-500">
+            自分の予約・自分の予定（ブロック枠）を、Googleカレンダーで確認できるようにします。
+            発行したURLをGoogleカレンダーの「他のカレンダー」→「URLから追加」に貼り付けてください。
+            <br />
+            更新はGoogle側の巡回タイミング次第で、数時間ほど反映が遅れることがあります。
+          </p>
+
+          {calendarFeedUrl ? (
+            <div className="space-y-3">
+              <input
+                type="text"
+                readOnly
+                value={calendarFeedUrl}
+                className="w-full rounded-md border border-neutral-300 bg-neutral-50 px-2 py-1.5 text-xs text-neutral-700"
+              />
+              <form action={issueCalendarToken}>
+                <input type="hidden" name="date" value={date} />
+                <button
+                  type="submit"
+                  className="rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-800 hover:bg-red-50"
+                >
+                  URLを再発行する（今のURLは使えなくなります）
+                </button>
+              </form>
+            </div>
+          ) : (
+            <form action={issueCalendarToken}>
+              <input type="hidden" name="date" value={date} />
+              <button
+                type="submit"
+                className="rounded-md bg-neutral-800 px-4 py-1.5 text-sm font-medium text-white hover:bg-neutral-700"
+              >
+                同期用URLを発行する
+              </button>
+            </form>
+          )}
+
+          <p className="mt-3 text-xs leading-relaxed text-neutral-500">
+            このURLを知っている人は誰でも中身（予約・予定）を見られます。他人に教えないでください。
+            誤って共有してしまった場合は「再発行」で無効化できます。
+          </p>
+        </div>
+      </details>
     </main>
   );
 }
