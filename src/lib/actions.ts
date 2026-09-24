@@ -31,7 +31,7 @@ export async function login(formData: FormData) {
   const password = String(formData.get("password") ?? "");
 
   // 日本語をそのままURLに入れると Location ヘッダーに載せられない
-  const fail = () =>
+  const fail = (): never =>
     redirect(`/login?error=${encodeURIComponent("メールアドレスまたはパスワードが違います")}`);
 
   if (!email || !password) fail();
@@ -51,7 +51,10 @@ export async function login(formData: FormData) {
         user.role === "group_admin"
           ? (await prisma.tenant.findFirst({ orderBy: { createdAt: "asc" } }))?.id
           : (user.tenantId ?? undefined);
-      if (!tenantId) fail();
+      if (!tenantId) {
+        fail();
+        return;
+      }
 
       await startSession(
         buildSession({

@@ -3,7 +3,7 @@ import { AppHeader } from "@/components/app-header";
 import { requireOwner } from "@/lib/auth";
 import { getTenant } from "@/lib/schedule";
 
-const TABS = [
+const BASE_TABS = [
   { href: "/settings/menus", label: "メニュー" },
   { href: "/settings/staff", label: "スタッフ" },
   { href: "/settings/hours", label: "営業時間" },
@@ -19,6 +19,12 @@ export default async function SettingsLayout({ children }: LayoutProps<"/setting
   const session = await requireOwner();
   const tenant = await getTenant(session.tenantId);
 
+  // 部署の追加・編集は、全部署を横断できる全社管理者だけができる
+  const tabs =
+    session.role === "group_admin"
+      ? [...BASE_TABS, { href: "/settings/tenants", label: "部署" }]
+      : BASE_TABS;
+
   return (
     <main className="mx-auto w-full max-w-3xl p-4 sm:p-6">
       <AppHeader tenantName={tenant.name} subtitle="設定" session={session}>
@@ -31,7 +37,7 @@ export default async function SettingsLayout({ children }: LayoutProps<"/setting
       </AppHeader>
 
       <nav className="mb-5 flex flex-wrap gap-1 border-b border-neutral-200 pb-px">
-        {TABS.map((tab) => (
+        {tabs.map((tab) => (
           <Link
             key={tab.href}
             href={tab.href}

@@ -2,15 +2,15 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { requireOwner } from "./auth";
+import { requireGroupAdmin, requireOwner, startSession } from "./auth";
 import { logChange } from "./change-log";
 import { SLOT_CHOICES } from "./constants";
 import { hashPassword } from "./password";
 import { prisma } from "./prisma";
 import { parseRanges } from "./ranges";
+import { buildSession, type Role } from "./session";
 import { formatDateLabel, toHm } from "./time";
 import { validateSlug } from "./slug";
-import type { Role } from "./session";
 
 /** 設定を変えたら、予約まわりの画面も作り直させる */
 function refreshAll() {
@@ -614,4 +614,76 @@ export async function deleteBlock(formData: FormData) {
 
   refreshAll();
   redirect(`${path}&done=1`);
+}
+
+// ── 部署（テナント）。全社を横断できる group_admin だけが行える ──
+
+/** 新しい部署を作り、作ったその場でそこへ切り替える */
+export async function createTenant(formData: FormData) {
+  const session = await requireGroupAdmin();
+  const path = "/settings/tenants";
+
+  const name = String(formData.get("name") ?? "").trim();
+  const slugInput = String(formData.get("slug") ?? "").trim();
+
+  if (!name) back(path, "部署名を入力してください");
+
+  let slug: string | null = null;
+  if (slugInput !== "") {
+    const checked = validateSlug(slugInput);
+    if (!checked.ok) back(path, checked.message);
+    slug = checked.slug;
+
+    const taken = await prisma.tenant.findFirst({ where: { slug }, select: { id: true } });
+    if (taken) back(path, "その短い名前は、ほかの部署が使っています");
+  }
+
+  const tenant = await prisma.tenant.create({ data: { name, slug } });
+
+  // 作ったその場で、その部署の設定を続けられるようにする
+  await startSession(
+    buildSession({
+      userId: session.userId,
+      tenantId: tenant.id,
+      role: "group_admin",
+      staffId: null,
+      name: session.name,
+    }),
+  );
+
+  revalidatePath("/settings", "layout");
+  redirect("/settings/store?done=1");
+}
+
+/** 既存の部署の名前・短い名前（URL）を変更する */
+export async function updateTenant(formData: FormData) {
+  await requireGroupAdmin();
+  const path = "/settings/tenants";
+
+  const id = String(formData.get("id") ?? "");
+  const name = String(formData.get("name") ?? "").trim();
+  const slugInput = String(formData.get("slug") ?? "").trim();
+
+  if (!name) back(path, "部署名を入力してください");
+
+  const target = await prisma.tenant.findUnique({ where: { id } });
+  if (!target) back(path, "部署が見つかりません");
+
+  let slug: string | null = null;
+  if (slugInput !== "") {
+    const checked = validateSlug(slugInput);
+    if (!checked.ok) back(path, checked.message);
+    slug = checked.slug;
+
+    const taken = await prisma.tenant.findFirst({
+      where: { slug, NOT: { id } },
+      select: { id: true },
+    });
+    if (taken) back(path, "その短い名前は、ほかの部署が使っています");
+  }
+
+  await prisma.tenant.update({ where: { id }, data: { name, slug } });
+
+  revalidatePath("/settings", "layout");
+  back(path);
 }

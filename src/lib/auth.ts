@@ -80,6 +80,15 @@ export async function requireOwner(): Promise<SessionData> {
   return session;
 }
 
+/** 全部署を横断できる group_admin でなければ追い返す（部署の追加・編集など） */
+export async function requireGroupAdmin(): Promise<SessionData> {
+  const session = await requireSession();
+  if (session.role !== "group_admin") {
+    redirect(`/calendar?error=${encodeURIComponent("この操作は全社管理者のみです")}`);
+  }
+  return session;
+}
+
 export async function startSession(data: SessionData): Promise<void> {
   const store = await cookies();
   store.set(SESSION_COOKIE, encodeSession(data), {
