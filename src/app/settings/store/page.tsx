@@ -70,6 +70,44 @@ export default async function StoreSettingsPage({
             </select>
           </label>
 
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-neutral-600">
+              何日先まで予約を受けるか
+            </span>
+            <div className="flex items-center gap-1 text-sm">
+              <input
+                type="number"
+                name="bookingWindowDays"
+                min={1}
+                max={365}
+                required
+                defaultValue={tenant.bookingWindowDays}
+                className="w-24 rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+              />
+              <span className="text-neutral-500">日先まで</span>
+            </div>
+          </label>
+
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-neutral-600">
+              開始の何分前で受付を締め切るか
+            </span>
+            <div className="flex items-center gap-1 text-sm">
+              <input
+                type="number"
+                name="bookingLeadMinutes"
+                min={0}
+                required
+                defaultValue={tenant.bookingLeadMinutes}
+                className="w-24 rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+              />
+              <span className="text-neutral-500">分前まで</span>
+            </div>
+            <span className="mt-1 block text-xs text-neutral-500">
+              例：120にすると、開始2時間前を過ぎた枠は予約できなくなります。
+            </span>
+          </label>
+
           <button
             type="submit"
             className="rounded-md bg-neutral-800 px-4 py-1.5 text-sm font-medium text-white hover:bg-neutral-700"

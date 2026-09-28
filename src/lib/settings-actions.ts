@@ -359,10 +359,18 @@ export async function saveStore(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   const slotMinutes = toInt(formData.get("slotMinutes"));
   const slugInput = String(formData.get("slug") ?? "").trim();
+  const bookingWindowDays = toInt(formData.get("bookingWindowDays"));
+  const bookingLeadMinutes = toInt(formData.get("bookingLeadMinutes"));
 
   if (!name) back(path, "店舗名を入力してください");
   if (slotMinutes === null || !SLOT_CHOICES.includes(slotMinutes as never)) {
     back(path, "予約枠の刻みの指定が正しくありません");
+  }
+  if (bookingWindowDays === null || bookingWindowDays < 1 || bookingWindowDays > 365) {
+    back(path, "受付期間は1〜365日の範囲で入力してください");
+  }
+  if (bookingLeadMinutes === null || bookingLeadMinutes < 0) {
+    back(path, "受付の締め切りは0分以上で入力してください");
   }
 
   // 空欄なら未設定に戻す（お客様向けURLは店舗IDのものになる）
@@ -382,7 +390,7 @@ export async function saveStore(formData: FormData) {
 
   await prisma.tenant.update({
     where: { id: session.tenantId },
-    data: { name, slotMinutes, slug },
+    data: { name, slotMinutes, slug, bookingWindowDays, bookingLeadMinutes },
   });
 
   refreshAll();
