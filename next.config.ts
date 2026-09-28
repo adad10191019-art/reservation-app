@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withSentryConfig } from "@sentry/nextjs/config";
 
 const nextConfig: NextConfig = {
   // DBのドライバはネイティブモジュールを含むため、
@@ -12,4 +13,10 @@ const nextConfig: NextConfig = {
   ],
 };
 
-export default nextConfig;
+export default withSentryConfig(nextConfig, {
+  org: "youth-personnel",
+  project: "reservation-app",
+  // ソースマップのアップロードには認証トークンが要る。
+  // 未設定の間はアップロードをスキップするだけで、エラー監視自体は動く
+  silent: true,
+});
