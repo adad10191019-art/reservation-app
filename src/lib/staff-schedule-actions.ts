@@ -11,11 +11,14 @@
  * すべて requireSession（オーナーでなくてよい）で、
  * かつ session.staffId が無いアカウント（スタッフに紐づいていない）は弾く。
  */
+import { cookies } from "next/headers";
 import { randomBytes } from "node:crypto";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireSession } from "./auth";
 import { logChange } from "./change-log";
+import { GOOGLE_CALENDAR_COOKIE } from "./constants";
+import { buildAuthorizeUrl, isGoogleCalendarConfigured } from "./google-calendar";
 import { parseRanges } from "./ranges";
 import { prisma } from "./prisma";
 import { formatDateLabel, hm, toHm } from "./time";
@@ -173,6 +176,42 @@ export async function issueCalendarToken(formData: FormData) {
 
   const token = randomBytes(24).toString("base64url");
   await prisma.staff.update({ where: { id: staffId }, data: { calendarToken: token } });
+
+  revalidatePath(SETTINGS_PATH);
+  back(date, undefined, SETTINGS_PATH);
+}
+
+/**
+ * Googleの許可画面へ送り出す（カレンダー→アプリの取り込みを始める）。
+ * 戻ってきたときに「自分が始めた手続きか」を確かめるため、合言葉をCookieに入れておく。
+ */
+export async function connectGoogleCalendar(formData: FormData) {
+  const { staffId } = await requireOwnStaffId();
+  const date = String(formData.get("date") ?? "");
+
+  if (!isGoogleCalendarConfigured()) {
+    back(date, "Googleカレンダー連携がまだ準備できていません", SETTINGS_PATH);
+  }
+
+  const nonce = randomBytes(16).toString("base64url");
+  const store = await cookies();
+  store.set(GOOGLE_CALENDAR_COOKIE, JSON.stringify({ nonce, staffId, date }), {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 600, // 10分で切れる
+  });
+
+  redirect(buildAuthorizeUrl(nonce));
+}
+
+/** Googleカレンダーとの連携を解除する */
+export async function disconnectGoogleCalendar(formData: FormData) {
+  const { staffId } = await requireOwnStaffId();
+  const date = String(formData.get("date") ?? "");
+
+  await prisma.googleCalendarConnection.deleteMany({ where: { staffId } });
 
   revalidatePath(SETTINGS_PATH);
   back(date, undefined, SETTINGS_PATH);

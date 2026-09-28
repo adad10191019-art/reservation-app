@@ -118,6 +118,15 @@ export function generateStarts(
   return out.sort((a, b) => a - b);
 }
 
+const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+
+/** "YYYY-MM-DD" とその日の0時からの経過分を、UTCのISO8601文字列にする（JST固定・DST無し） */
+export function dateMinutesToUtcIso(date: string, minutes: number): string {
+  const [y, m, d] = date.split("-").map(Number);
+  const utcMs = Date.UTC(y, m - 1, d, 0, minutes, 0) - JST_OFFSET_MS;
+  return new Date(utcMs).toISOString();
+}
+
 // ── 日付文字列（"YYYY-MM-DD"）の操作 ──────────────
 
 /** Date を "YYYY-MM-DD" にする（ローカル時間で） */

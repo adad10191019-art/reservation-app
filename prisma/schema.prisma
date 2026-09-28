@@ -27,8 +27,8 @@ model Tenant {
   slotMinutes Int    @default(15) // 予約枠の刻み（分）
 
   // お客様向けの予約受付の条件
-  bookingWindowDays  Int      @default(30) // 何日先まで予約を受けるか
-  bookingLeadMinutes Int      @default(120) // 開始の何分前まで受けるか
+  bookingWindowDays  Int @default(30) // 何日先まで予約を受けるか
+  bookingLeadMinutes Int @default(120) // 開始の何分前まで受けるか
 
   /// 店舗ごとのLINE連携。空なら環境変数（システム全体の既定値）を使う。
   /// 複数の公式LINEアカウントをテナントごとに使い分けるための項目。
@@ -39,16 +39,17 @@ model Tenant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users         User[]
-  staffs        Staff[]
-  menus         Menu[]
-  staffMenus    StaffMenu[]
-  businessHours BusinessHour[]
-  dateOverrides DateOverride[]
-  customers     Customer[]
-  reservations  Reservation[]
-  blocks        Block[]
-  changeLogs    ChangeLog[]
+  users                     User[]
+  staffs                    Staff[]
+  menus                     Menu[]
+  staffMenus                StaffMenu[]
+  businessHours             BusinessHour[]
+  dateOverrides             DateOverride[]
+  customers                 Customer[]
+  reservations              Reservation[]
+  blocks                    Block[]
+  changeLogs                ChangeLog[]
+  googleCalendarConnections GoogleCalendarConnection[]
 }
 
 // ── ログインする人 ─────────────────────
@@ -75,7 +76,6 @@ model User {
 
 /**
  * ログイン失敗の記録（総当たり攻撃対策）。
- *
  * メールアドレスは部署ごとに重複しうるが、ログイン試行者はどの部署の
  * アカウントか知らずに試すので、ここでは入力されたメールアドレスの
  * 文字列そのものをキーにして、部署をまたいでまとめて数える。
@@ -101,13 +101,36 @@ model Staff {
   // ログイン無しでURLだけを鍵にするため、漏れたら再発行して失効させる
   calendarToken String? @unique
 
-  tenant        Tenant         @relation(fields: [tenantId], references: [id])
-  user          User?
-  staffMenus    StaffMenu[]
-  businessHours BusinessHour[]
-  dateOverrides DateOverride[]
-  reservations  Reservation[]
-  blocks        Block[]
+  tenant                   Tenant                    @relation(fields: [tenantId], references: [id])
+  user                     User?
+  staffMenus               StaffMenu[]
+  businessHours            BusinessHour[]
+  dateOverrides            DateOverride[]
+  reservations             Reservation[]
+  blocks                   Block[]
+  googleCalendarConnection GoogleCalendarConnection?
+
+  @@index([tenantId])
+}
+
+// ── Googleカレンダーとの双方向連携 ─────
+// 本人のGoogleカレンダーにある予定を取り込んで、空き枠の計算に反映させる。
+// （アプリ→カレンダーは既存の calendarToken によるURL購読が別にある）
+model GoogleCalendarConnection {
+  staffId              String    @id
+  tenantId             String
+  /// 画面に表示するだけの情報（本人確認用）
+  googleEmail          String
+  /// 有効期限が無く、明示的に取り消されるまで使い続けられる
+  refreshToken         String
+  /// 直近取得したアクセストークン。期限内は使い回し、Google側への呼び出しを減らす
+  accessToken          String?
+  accessTokenExpiresAt DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  staff  Staff  @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId])
 }

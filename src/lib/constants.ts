@@ -10,3 +10,6 @@ export const SLOT_CHOICES = [5, 10, 15, 20, 30, 60] as const;
 
 /** LINEログインの手続き中に使う一時的な Cookie 名 */
 export const LINE_LOGIN_COOKIE = "line_login";
+
+/** Googleカレンダー連携の手続き中に使う一時的な Cookie 名 */
+export const GOOGLE_CALENDAR_COOKIE = "google_calendar_connect";

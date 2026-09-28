@@ -4,7 +4,34 @@
  */
 import { prisma } from "./prisma";
 import { computeStarts, resolveWorkingIntervals } from "./availability-core";
+import { fetchGoogleBusyByDate, isGoogleCalendarConfigured } from "./google-calendar";
 import { dayOfWeekOf } from "./time";
+
+/**
+ * 対象スタッフのうち、Googleカレンダー連携をしている人の分だけ、
+ * 指定した日付ぶんの busy（分単位）をまとめて取ってくる。
+ * 連携していないスタッフは空配列になる。
+ */
+async function fetchGoogleBusyByStaff(
+  staffIds: string[],
+  dates: string[],
+): Promise<Map<string, Map<string, { start: number; end: number }[]>>> {
+  const result = new Map<string, Map<string, { start: number; end: number }[]>>();
+  if (!isGoogleCalendarConfigured() || staffIds.length === 0) return result;
+
+  const connections = await prisma.googleCalendarConnection.findMany({
+    where: { staffId: { in: staffIds } },
+  });
+  if (connections.length === 0) return result;
+
+  await Promise.all(
+    connections.map(async (connection) => {
+      const busyByDate = await fetchGoogleBusyByDate(connection, dates);
+      result.set(connection.staffId, busyByDate);
+    }),
+  );
+  return result;
+}
 
 export type StaffAvailability = {
   staffId: string;
@@ -76,39 +103,42 @@ export async function findAvailability(params: {
 
   const staffIds = staffs.map((s) => s.id);
 
-  const [businessHours, dateOverrides, reservations, blocks] = await Promise.all([
-    prisma.businessHour.findMany({
-      where: {
-        tenantId,
-        dayOfWeek,
-        OR: [{ staffId: null }, { staffId: { in: staffIds } }],
-      },
-    }),
-    prisma.dateOverride.findMany({
-      where: {
-        tenantId,
-        date,
-        OR: [{ staffId: null }, { staffId: { in: staffIds } }],
-      },
-    }),
-    prisma.reservation.findMany({
-      where: {
-        tenantId,
-        date,
-        staffId: { in: staffIds },
-        status: "booked", // キャンセル済みは枠を塞がない
-        ...(excludeReservationId ? { id: { not: excludeReservationId } } : {}),
-      },
-    }),
-    // 予約以外で塞がっている時間（会議・清掃など）
-    prisma.block.findMany({
-      where: {
-        tenantId,
-        date,
-        OR: [{ staffId: null }, { staffId: { in: staffIds } }],
-      },
-    }),
-  ]);
+  const [businessHours, dateOverrides, reservations, blocks, googleBusyByStaff] =
+    await Promise.all([
+      prisma.businessHour.findMany({
+        where: {
+          tenantId,
+          dayOfWeek,
+          OR: [{ staffId: null }, { staffId: { in: staffIds } }],
+        },
+      }),
+      prisma.dateOverride.findMany({
+        where: {
+          tenantId,
+          date,
+          OR: [{ staffId: null }, { staffId: { in: staffIds } }],
+        },
+      }),
+      prisma.reservation.findMany({
+        where: {
+          tenantId,
+          date,
+          staffId: { in: staffIds },
+          status: "booked", // キャンセル済みは枠を塞がない
+          ...(excludeReservationId ? { id: { not: excludeReservationId } } : {}),
+        },
+      }),
+      // 予約以外で塞がっている時間（会議・清掃など）
+      prisma.block.findMany({
+        where: {
+          tenantId,
+          date,
+          OR: [{ staffId: null }, { staffId: { in: staffIds } }],
+        },
+      }),
+      // 本人のGoogleカレンダーにある予定（連携している人だけ）
+      fetchGoogleBusyByStaff(staffIds, [date]),
+    ]);
 
   const perStaff: StaffAvailability[] = staffs.map((staff) => {
     const working = resolveWorkingIntervals({
@@ -116,12 +146,17 @@ export async function findAvailability(params: {
       businessHours,
       dateOverrides,
     });
-    // 予約と、予約以外のブロック枠の両方が枠を塞ぐ。
+    // 予約・予約以外のブロック枠・Googleカレンダーの予定、すべてが枠を塞ぐ。
     // staffId が null のブロックは全スタッフに掛かる。
     const busy = [
-      ...reservations.filter((r) => r.staffId === staff.id),
-      ...blocks.filter((b) => b.staffId === null || b.staffId === staff.id),
-    ].map((x) => ({ start: x.startMinutes, end: x.endMinutes }));
+      ...reservations
+        .filter((r) => r.staffId === staff.id)
+        .map((r) => ({ start: r.startMinutes, end: r.endMinutes })),
+      ...blocks
+        .filter((b) => b.staffId === null || b.staffId === staff.id)
+        .map((b) => ({ start: b.startMinutes, end: b.endMinutes })),
+      ...(googleBusyByStaff.get(staff.id)?.get(date) ?? []),
+    ];
 
     return {
       staffId: staff.id,
@@ -201,29 +236,33 @@ export async function findWeekAvailability(params: {
 
   const staffIds = staffs.map((s) => s.id);
 
-  const [businessHours, dateOverrides, reservations, blocks] = await Promise.all([
-    // 曜日では絞らず、対象スタッフの分をまとめて取る（複数日にまたがるため）
-    prisma.businessHour.findMany({
-      where: { tenantId, OR: [{ staffId: null }, { staffId: { in: staffIds } }] },
-    }),
-    prisma.dateOverride.findMany({
-      where: {
-        tenantId,
-        date: { in: dates },
-        OR: [{ staffId: null }, { staffId: { in: staffIds } }],
-      },
-    }),
-    prisma.reservation.findMany({
-      where: { tenantId, date: { in: dates }, staffId: { in: staffIds }, status: "booked" },
-    }),
-    prisma.block.findMany({
-      where: {
-        tenantId,
-        date: { in: dates },
-        OR: [{ staffId: null }, { staffId: { in: staffIds } }],
-      },
-    }),
-  ]);
+  const [businessHours, dateOverrides, reservations, blocks, googleBusyByStaff] =
+    await Promise.all([
+      // 曜日では絞らず、対象スタッフの分をまとめて取る（複数日にまたがるため）
+      prisma.businessHour.findMany({
+        where: { tenantId, OR: [{ staffId: null }, { staffId: { in: staffIds } }] },
+      }),
+      prisma.dateOverride.findMany({
+        where: {
+          tenantId,
+          date: { in: dates },
+          OR: [{ staffId: null }, { staffId: { in: staffIds } }],
+        },
+      }),
+      prisma.reservation.findMany({
+        where: { tenantId, date: { in: dates }, staffId: { in: staffIds }, status: "booked" },
+      }),
+      prisma.block.findMany({
+        where: {
+          tenantId,
+          date: { in: dates },
+          OR: [{ staffId: null }, { staffId: { in: staffIds } }],
+        },
+      }),
+      // 本人のGoogleカレンダーにある予定（連携している人だけ）。
+      // 対象の日付をまとめて1回のAPI呼び出しで済ませる
+      fetchGoogleBusyByStaff(staffIds, dates),
+    ]);
 
   return dates.map((date) => {
     const dayOfWeek = dayOfWeekOf(date);
@@ -234,11 +273,14 @@ export async function findWeekAvailability(params: {
         dateOverrides: dateOverrides.filter((o) => o.date === date),
       });
       const busy = [
-        ...reservations.filter((r) => r.staffId === staff.id && r.date === date),
-        ...blocks.filter(
-          (b) => (b.staffId === null || b.staffId === staff.id) && b.date === date,
-        ),
-      ].map((x) => ({ start: x.startMinutes, end: x.endMinutes }));
+        ...reservations
+          .filter((r) => r.staffId === staff.id && r.date === date)
+          .map((r) => ({ start: r.startMinutes, end: r.endMinutes })),
+        ...blocks
+          .filter((b) => (b.staffId === null || b.staffId === staff.id) && b.date === date)
+          .map((b) => ({ start: b.startMinutes, end: b.endMinutes })),
+        ...(googleBusyByStaff.get(staff.id)?.get(date) ?? []),
+      ];
 
       return computeStarts({ working, busy, requiredMinutes, slotMinutes });
     });

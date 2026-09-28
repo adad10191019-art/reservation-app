@@ -5,7 +5,13 @@ import { requireSession } from "@/lib/auth";
 import { formatRanges } from "@/lib/ranges";
 import { getTenant } from "@/lib/schedule";
 import { prisma } from "@/lib/prisma";
-import { issueCalendarToken, saveOwnDayOverride } from "@/lib/staff-schedule-actions";
+import {
+  connectGoogleCalendar,
+  disconnectGoogleCalendar,
+  issueCalendarToken,
+  saveOwnDayOverride,
+} from "@/lib/staff-schedule-actions";
+import { isGoogleCalendarConfigured } from "@/lib/google-calendar";
 import { dayOfWeekOf, formatDateLabel, sanitizeDate, toHm } from "@/lib/time";
 
 export default async function MyScheduleSettingsPage({
@@ -31,7 +37,7 @@ export default async function MyScheduleSettingsPage({
 
   const staffId = session.staffId;
 
-  const [businessHours, ownOverrides, staffRecord] = await Promise.all([
+  const [businessHours, ownOverrides, staffRecord, googleConnection] = await Promise.all([
     prisma.businessHour.findMany({
       where: {
         tenantId: tenant.id,
@@ -41,6 +47,10 @@ export default async function MyScheduleSettingsPage({
     }),
     prisma.dateOverride.findMany({ where: { tenantId: tenant.id, date, staffId } }),
     prisma.staff.findUnique({ where: { id: staffId }, select: { calendarToken: true } }),
+    prisma.googleCalendarConnection.findUnique({
+      where: { staffId },
+      select: { googleEmail: true },
+    }),
   ]);
 
   const calendarFeedUrl = staffRecord?.calendarToken
@@ -127,7 +137,7 @@ export default async function MyScheduleSettingsPage({
       </section>
 
       <section className="rounded-lg border border-neutral-200 bg-white p-4">
-        <h3 className="mb-1 font-semibold">Googleカレンダーと同期</h3>
+        <h3 className="mb-1 font-semibold">Googleカレンダーで見る（アプリ→カレンダー）</h3>
         <p className="mb-4 text-xs leading-relaxed text-neutral-500">
           自分の予約・自分の予定（ブロック枠）を、Googleカレンダーで確認できるようにします。
           発行したURLをGoogleカレンダーの「他のカレンダー」→「URLから追加」に貼り付けてください。
@@ -168,6 +178,52 @@ export default async function MyScheduleSettingsPage({
         <p className="mt-3 text-xs leading-relaxed text-neutral-500">
           このURLを知っている人は誰でも中身（予約・予定）を見られます。他人に教えないでください。
           誤って共有してしまった場合は「再発行」で無効化できます。
+        </p>
+      </section>
+
+      <section className="rounded-lg border border-neutral-200 bg-white p-4">
+        <h3 className="mb-1 font-semibold">Googleカレンダーを取り込む（カレンダー→アプリ）</h3>
+        <p className="mb-4 text-xs leading-relaxed text-neutral-500">
+          連携すると、自分のGoogleカレンダーにすでに入っている予定の時間帯が、
+          この予約システム上でも「空いていない時間」として扱われます。
+          既存の予定をこちらに手入力し直す必要はありません。
+          <br />
+          反映はほぼリアルタイムです（予約の空き状況を確認するたびに、その場でGoogle側を確認します）。
+        </p>
+
+        {!isGoogleCalendarConfigured() ? (
+          <p className="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-500">
+            Googleカレンダー連携はまだ準備中です。
+          </p>
+        ) : googleConnection ? (
+          <div className="space-y-3">
+            <p className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+              連携中：{googleConnection.googleEmail}
+            </p>
+            <form action={disconnectGoogleCalendar}>
+              <input type="hidden" name="date" value={date} />
+              <button
+                type="submit"
+                className="rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-800 hover:bg-red-50"
+              >
+                連携を解除する
+              </button>
+            </form>
+          </div>
+        ) : (
+          <form action={connectGoogleCalendar}>
+            <input type="hidden" name="date" value={date} />
+            <button
+              type="submit"
+              className="rounded-md bg-neutral-800 px-4 py-1.5 text-sm font-medium text-white hover:bg-neutral-700"
+            >
+              Googleカレンダーと連携する
+            </button>
+          </form>
+        )}
+
+        <p className="mt-3 text-xs leading-relaxed text-neutral-500">
+          読み取り（予定があるかどうかの確認）だけを行います。内容の書き換えや削除はしません。
         </p>
       </section>
     </main>
