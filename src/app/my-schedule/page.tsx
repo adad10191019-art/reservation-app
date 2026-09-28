@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AppHeader } from "@/components/app-header";
 import { Banner } from "@/components/banner";
 import { requireSession } from "@/lib/auth";
+import { fetchGoogleBusyByDate, isGoogleCalendarConfigured } from "@/lib/google-calendar";
 import { prisma } from "@/lib/prisma";
 import { getDaySchedule, getTenant } from "@/lib/schedule";
 import { createOwnBlock, deleteOwnBlock } from "@/lib/staff-schedule-actions";
@@ -9,7 +10,8 @@ import { addDays, formatDateLabel, sanitizeDate, toHm, todayString } from "@/lib
 
 type AgendaItem =
   | { kind: "reservation"; id: string; startMinutes: number; endMinutes: number; menuName: string; customerName: string }
-  | { kind: "block"; id: string; startMinutes: number; endMinutes: number; reason: string; wholeShop: boolean };
+  | { kind: "block"; id: string; startMinutes: number; endMinutes: number; reason: string; wholeShop: boolean }
+  | { kind: "google"; startMinutes: number; endMinutes: number };
 
 export default async function MySchedulePage({
   searchParams,
@@ -41,13 +43,22 @@ export default async function MySchedulePage({
 
   const staffId = session.staffId;
 
-  const [schedule, ownBlocks] = await Promise.all([
+  const [schedule, ownBlocks, googleConnection] = await Promise.all([
     getDaySchedule({ tenantId: tenant.id, date }),
     prisma.block.findMany({
       where: { tenantId: tenant.id, date, staffId },
       orderBy: { startMinutes: "asc" },
     }),
+    isGoogleCalendarConfigured()
+      ? prisma.googleCalendarConnection.findUnique({ where: { staffId } })
+      : null,
   ]);
+
+  // 連携していれば、Googleカレンダーの予定も「見るだけ」の項目として混ぜる。
+  // タイトルは freebusy API からは取れないため、時間帯だけ表示する
+  const googleBusy = googleConnection
+    ? (await fetchGoogleBusyByDate(googleConnection, [date])).get(date) ?? []
+    : [];
 
   // 自分の列だけを取り出す。まだ勤務日として登録されていない
   // （どのメニューにも対応していない等）場合は列自体が無いこともある
@@ -75,6 +86,9 @@ export default async function MySchedulePage({
             reason: b.reason,
             wholeShop: b.wholeShop,
           }),
+        ),
+        ...googleBusy.map(
+          (g): AgendaItem => ({ kind: "google", startMinutes: g.start, endMinutes: g.end }),
         ),
       ].sort((a, b) => a.startMinutes - b.startMinutes)
     : [];
@@ -149,7 +163,7 @@ export default async function MySchedulePage({
                     </span>
                   </Link>
                 </li>
-              ) : (
+              ) : item.kind === "block" ? (
                 <li
                   key={`b-${item.id}`}
                   className="flex items-center gap-3 rounded-lg border border-dashed border-amber-300 bg-amber-50 px-3 py-2.5"
@@ -166,6 +180,23 @@ export default async function MySchedulePage({
                     </span>
                     <span className="block truncate text-xs text-amber-700">
                       {item.endMinutes - item.startMinutes}分
+                    </span>
+                  </span>
+                </li>
+              ) : (
+                <li
+                  key={`g-${item.startMinutes}`}
+                  className="flex items-center gap-3 rounded-lg border border-dashed border-violet-300 bg-violet-50 px-3 py-2.5"
+                >
+                  <span className="w-11 shrink-0 text-sm font-medium tabular-nums text-violet-800">
+                    {toHm(item.startMinutes)}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-violet-900">
+                      Googleカレンダーの予定
+                    </span>
+                    <span className="block truncate text-xs text-violet-700">
+                      {item.endMinutes - item.startMinutes}分・内容はここでは分かりません
                     </span>
                   </span>
                 </li>
