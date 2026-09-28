@@ -342,6 +342,15 @@ export default async function PublicBookingPage({
           : `${tenant.bookingLeadMinutes}分`}
         前を過ぎたお時間は、お電話でご相談ください。
       </p>
+
+      <p className="mt-3 flex gap-3 text-xs text-neutral-400">
+        <Link href="/legal/terms" className="hover:text-neutral-600 hover:underline">
+          利用規約
+        </Link>
+        <Link href="/legal/privacy" className="hover:text-neutral-600 hover:underline">
+          プライバシーポリシー
+        </Link>
+      </p>
     </main>
   );
 }
