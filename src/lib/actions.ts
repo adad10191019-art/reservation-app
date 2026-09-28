@@ -13,6 +13,7 @@ import {
 } from "./booking";
 import { LINE_LOGIN_COOKIE } from "./constants";
 import { buildAuthorizeUrl, isLineConfigured } from "./line";
+import { isLocked, recordFailure, recordSuccess } from "./login-attempts";
 import { verifyPassword } from "./password";
 import { notifyReservationCanceled, notifyReservationCreated } from "./notify";
 import { prisma } from "./prisma";
@@ -33,8 +34,15 @@ export async function login(formData: FormData) {
   // 日本語をそのままURLに入れると Location ヘッダーに載せられない
   const fail = (): never =>
     redirect(`/login?error=${encodeURIComponent("メールアドレスまたはパスワードが違います")}`);
+  const tooManyAttempts = (): never =>
+    redirect(
+      `/login?error=${encodeURIComponent(
+        "ログイン試行が多すぎます。しばらくしてからもう一度お試しください",
+      )}`,
+    );
 
   if (!email || !password) fail();
+  if (await isLocked(email)) tooManyAttempts();
 
   // メールアドレスは店舗ごとに一意なので、同じアドレスが別店舗に
   // 存在しうる。ここではパスワードまで一致した最初のアカウントを使う。
@@ -45,6 +53,8 @@ export async function login(formData: FormData) {
 
   for (const user of candidates) {
     if (await verifyPassword(password, user.passwordHash)) {
+      await recordSuccess(email);
+
       // group_admin はどの部署にも属さないので、ログイン直後は
       // 一番古い部署を仮に選んでおく（切り替えは switchTenant で行う）。
       const tenantId =
@@ -77,6 +87,7 @@ export async function login(formData: FormData) {
 
   // 「アドレスが無い」と「パスワードが違う」を区別しない。
   // 区別すると、どのアドレスが登録済みかを外から調べられてしまう。
+  await recordFailure(email);
   fail();
 }
 

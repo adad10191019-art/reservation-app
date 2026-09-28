@@ -73,6 +73,20 @@ model User {
   @@index([tenantId])
 }
 
+/**
+ * ログイン失敗の記録（総当たり攻撃対策）。
+ *
+ * メールアドレスは部署ごとに重複しうるが、ログイン試行者はどの部署の
+ * アカウントか知らずに試すので、ここでは入力されたメールアドレスの
+ * 文字列そのものをキーにして、部署をまたいでまとめて数える。
+ */
+model LoginAttempt {
+  email       String    @id
+  failedCount Int       @default(0)
+  lockedUntil DateTime?
+  updatedAt   DateTime  @updatedAt
+}
+
 // ── スタッフ ───────────────────────────
 model Staff {
   id           String   @id @default(uuid())
