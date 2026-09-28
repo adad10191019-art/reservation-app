@@ -37,7 +37,8 @@ export function buildAuthorizeUrl(state: string): string {
     // リフレッシュトークンを毎回必ずもらうための指定
     access_type: "offline",
     prompt: "consent",
-    scope: "https://www.googleapis.com/auth/calendar.readonly",
+    // 画面に表示する連携先メールアドレスの取得のため、email も一緒に求める
+    scope: "https://www.googleapis.com/auth/calendar.readonly email",
     state,
   });
   return `${AUTHORIZE_URL}?${query.toString()}`;
