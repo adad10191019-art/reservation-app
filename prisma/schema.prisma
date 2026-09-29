@@ -45,6 +45,10 @@ model Tenant {
   /// LINEログインと同じチャネルの中に登録する（新しいチャネルではない）
   liffId String?
 
+  /// お客様向け予約ページのブランドカラー（"#1F2A44" のような16進数）。
+  /// 空なら既定の色を使う。クライアントごとに予約ページの差し色を変えられるようにする
+  brandColor String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

@@ -1,11 +1,17 @@
 import { Banner } from "@/components/banner";
 import { requireOwner } from "@/lib/auth";
 import { getTenant } from "@/lib/schedule";
+import { resolveBrandPalette } from "@/lib/brand-color";
 import { SLOT_CHOICES } from "@/lib/constants";
 import { isEmailConfigured } from "@/lib/email";
 import { resolveCustomerLoginMethods } from "@/lib/email-login";
 import { resolveLiffId } from "@/lib/line";
-import { saveCustomerLoginMethod, saveLineSettings, saveStore } from "@/lib/settings-actions";
+import {
+  saveBrandColor,
+  saveCustomerLoginMethod,
+  saveLineSettings,
+  saveStore,
+} from "@/lib/settings-actions";
 
 export default async function StoreSettingsPage({
   searchParams,
@@ -267,6 +273,48 @@ export default async function StoreSettingsPage({
           このURLをお客様に案内します。短い名前を付けても、
           <strong>それまでに配った店舗IDのURLは使えたまま</strong>です。
         </p>
+      </section>
+
+      <section className="rounded-lg border border-neutral-200 bg-white p-4">
+        <h2 className="mb-1 font-semibold">予約ページのブランドカラー</h2>
+        <p className="mb-4 text-xs leading-relaxed text-neutral-500">
+          お客様向け予約ページのボタンなどに使う差し色です。空欄にすると既定の色（ネイビー）になります。
+        </p>
+
+        <form action={saveBrandColor} className="flex flex-wrap items-end gap-3">
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-neutral-600">色（16進数）</span>
+            <input
+              type="text"
+              name="brandColor"
+              defaultValue={tenant.brandColor ?? ""}
+              placeholder={resolveBrandPalette(null).base}
+              pattern="#?[0-9a-fA-F]{6}"
+              className="w-32 rounded-md border border-neutral-300 px-2 py-1.5 font-mono text-sm"
+            />
+          </label>
+
+          <span
+            className="h-9 w-9 shrink-0 rounded-md border border-neutral-300"
+            style={{ backgroundColor: tenant.brandColor || resolveBrandPalette(null).base }}
+          />
+
+
+          <button
+            type="submit"
+            className="rounded-md bg-neutral-800 px-4 py-1.5 text-sm font-medium text-white hover:bg-neutral-700"
+          >
+            保存する
+          </button>
+
+          <a
+            href={`/book/${tenant.slug ?? tenant.id}`}
+            target="_blank"
+            className="rounded-md border border-neutral-300 bg-white px-4 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+          >
+            予約ページで確認する
+          </a>
+        </form>
       </section>
 
       <section className="rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-sm leading-relaxed text-neutral-600">

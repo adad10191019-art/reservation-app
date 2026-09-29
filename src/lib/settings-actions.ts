@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { requireGroupAdmin, requireOwner, startSession } from "./auth";
 import { logChange } from "./change-log";
 import { SLOT_CHOICES } from "./constants";
+import { isValidHexColor } from "./brand-color";
 import { hashPassword } from "./password";
 import { prisma } from "./prisma";
 import { parseRanges } from "./ranges";
@@ -430,6 +431,27 @@ export async function saveLineSettings(formData: FormData) {
       lineMessagingAccessToken: messagingToken,
       liffId,
     },
+  });
+
+  refreshAll();
+  back(path);
+}
+
+/** お客様向け予約ページの差し色（ブランドカラー）を保存する */
+export async function saveBrandColor(formData: FormData) {
+  const session = await requireOwner();
+  const path = "/settings/store";
+
+  const input = String(formData.get("brandColor") ?? "").trim();
+  const brandColor = input === "" ? null : input;
+
+  if (brandColor !== null && !isValidHexColor(brandColor)) {
+    back(path, "色は #1F2A44 のような6桁の16進数で入力してください");
+  }
+
+  await prisma.tenant.update({
+    where: { id: session.tenantId },
+    data: { brandColor },
   });
 
   refreshAll();

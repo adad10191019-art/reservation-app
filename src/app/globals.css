@@ -4,6 +4,7 @@
    配色は layout.tsx / 各ページのクラスで指定する（body に直接書くと
    Tailwind のユーティリティを打ち消してしまうため）。 */
 @theme inline {
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-noto-sans-jp);
+  --font-heading: var(--font-shippori-mincho);
   --font-mono: var(--font-geist-mono);
 }
