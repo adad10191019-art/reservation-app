@@ -19,8 +19,7 @@ type WeekReservation = {
   startMinutes: number;
   endMinutes: number;
   customerName: string;
-  createdAt: Date;
-  updatedAt: Date;
+  movedAt: Date | null;
 };
 
 type WeekDayCell = {
@@ -161,11 +160,9 @@ export function WeekCalendarGrid({
                         <ul className="space-y-1">
                           {day.reservations.map((r) => {
                             const draggable = canManageStaffReservation(actor, r.staffId);
-                            const wasModified =
-                              new Date(r.updatedAt).getTime() > new Date(r.createdAt).getTime();
                             const justMoved =
-                              wasModified &&
-                              Date.now() - new Date(r.updatedAt).getTime() < RECENTLY_MOVED_MS;
+                              r.movedAt !== null &&
+                              Date.now() - new Date(r.movedAt).getTime() < RECENTLY_MOVED_MS;
                             return (
                               <li key={r.id}>
                                 <Link

@@ -14,9 +14,8 @@ export type ScheduledReservation = {
   customerName: string;
   durationMinutes: number;
   price: number;
-  /** 直近で動かした（ドラッグ移動した）予約に印を付けるために使う */
-  createdAt: Date;
-  updatedAt: Date;
+  /** 直近で日時・担当を変更した予約に印を付けるために使う。動かしたことが無ければ null */
+  movedAt: Date | null;
 };
 
 export type ScheduledBlock = {
@@ -100,8 +99,7 @@ export async function getDaySchedule(params: {
         customerName: r.customer.name,
         durationMinutes: r.durationSnapshot,
         price: r.priceSnapshot,
-        createdAt: r.createdAt,
-        updatedAt: r.updatedAt,
+        movedAt: r.movedAt,
       })),
     // 店舗全体のブロックは全スタッフの列に出す
     blocks: blocks
@@ -213,8 +211,7 @@ export async function getWeekSchedule(params: {
             customerName: r.customer.name,
             durationMinutes: r.durationSnapshot,
             price: r.priceSnapshot,
-            createdAt: r.createdAt,
-            updatedAt: r.updatedAt,
+            movedAt: r.movedAt,
           })),
       };
     }),

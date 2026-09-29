@@ -318,6 +318,8 @@ model Reservation {
 
   status         String    @default("booked") // "booked" | "done" | "canceled" | "no_show"
   canceledAt     DateTime?
+  /// 日時・担当を変更した日時。カレンダーで「直前に移動した」印を出すために使う
+  movedAt        DateTime?
   /// 前日リマインドを送った日時。二重送信を防ぐために使う
   reminderSentAt DateTime?
   note           String?

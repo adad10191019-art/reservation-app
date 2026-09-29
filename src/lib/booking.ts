@@ -305,7 +305,7 @@ export async function rescheduleReservation(input: RescheduleInput): Promise<Res
       // tenantId を where に残したまま更新する（条件の書き忘れを防ぐ）
       await tx.reservation.updateMany({
         where: { id: reservationId, tenantId },
-        data: { date, staffId, startMinutes, endMinutes },
+        data: { date, staffId, startMinutes, endMinutes, movedAt: new Date() },
       });
       }, SERIALIZABLE),
     );

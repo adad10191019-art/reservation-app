@@ -22,8 +22,7 @@ type Reservation = {
   endMinutes: number;
   menuName: string;
   customerName: string;
-  createdAt: Date;
-  updatedAt: Date;
+  movedAt: Date | null;
 };
 
 /** この時間より最近に更新された予約には「移動済み」の印を付ける */
@@ -233,10 +232,9 @@ export function DayCalendarGrid({
 
                 {col.reservations.map((r) => {
                   const draggable = canDragReservation(r.staffId);
-                  const wasModified =
-                    new Date(r.updatedAt).getTime() > new Date(r.createdAt).getTime();
                   const justMoved =
-                    wasModified && Date.now() - new Date(r.updatedAt).getTime() < RECENTLY_MOVED_MS;
+                    r.movedAt !== null &&
+                    Date.now() - new Date(r.movedAt).getTime() < RECENTLY_MOVED_MS;
                   return (
                     <Link
                       key={r.id}
