@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Banner } from "@/components/banner";
 import { requireOwner } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -149,6 +150,15 @@ export default async function AccountSettingsPage({
                   {user.staff && (
                     <span className="text-sm text-neutral-500">{user.staff.name}</span>
                   )}
+                  <span
+                    className={`rounded-full border px-2 py-0.5 text-xs ${
+                      user.lineUserId
+                        ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                        : "border-amber-300 bg-amber-50 text-amber-800"
+                    }`}
+                  >
+                    {user.lineUserId ? "LINE通知：紐づけ済み" : "LINE通知：未設定（メールで代替）"}
+                  </span>
                   {isSelf && (
                     <span className="rounded-full border border-sky-300 bg-sky-50 px-2 py-0.5 text-xs text-sky-800">
                       自分
@@ -217,6 +227,14 @@ export default async function AccountSettingsPage({
       </section>
 
       <p className="text-xs leading-relaxed text-neutral-500">
+        「LINE通知：紐づけ済み」は、本人が
+        <Link href="/notify" className="underline hover:text-neutral-700">
+          通知の受け取り
+        </Link>
+        画面でLINEを紐づけているかどうかです。紐づけていても、公式アカウントを友だち追加していなければ
+        実際には届きません（それはこの画面からは確認できません）。未設定の人には、ログイン用の
+        メールアドレス宛にメールで通知が届きます。
+        <br />
         自分自身のアカウントは削除できません。
         また、オーナーのアカウントは最低1つ必要です。
         <br />
