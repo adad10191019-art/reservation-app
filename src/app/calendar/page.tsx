@@ -1,19 +1,9 @@
 import Link from "next/link";
 import { AppHeader } from "@/components/app-header";
+import { DayCalendarGrid } from "@/components/day-calendar-grid";
 import { requireSession } from "@/lib/auth";
 import { getDaySchedule, getTenant } from "@/lib/schedule";
-import {
-  addDays,
-  formatDateLabel,
-  sanitizeDate,
-  subtract,
-  toHm,
-  todayString,
-} from "@/lib/time";
-
-/** 1分あたりの高さ（px）。1時間 = 84px。
- * 1.2 だと短い予約（15〜30分）で時間の行が見切れていたため広げた。 */
-const PX_PER_MIN = 1.4;
+import { addDays, formatDateLabel, sanitizeDate, todayString } from "@/lib/time";
 
 export default async function CalendarPage({
   searchParams,
@@ -29,11 +19,6 @@ export default async function CalendarPage({
   const schedule = await getDaySchedule({ tenantId: tenant.id, date });
 
   const { viewStart, viewEnd, columns } = schedule;
-  const totalHeight = (viewEnd - viewStart) * PX_PER_MIN;
-  const hours: number[] = [];
-  for (let m = viewStart; m <= viewEnd; m += 60) hours.push(m);
-
-  const top = (minutes: number) => (minutes - viewStart) * PX_PER_MIN;
   const today = todayString();
 
   return (
@@ -85,108 +70,18 @@ export default async function CalendarPage({
         </nav>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
-        {/* スタッフ名の行 */}
-        <div className="flex border-b border-neutral-200 bg-neutral-50">
-          <div className="w-14 shrink-0" />
-          {columns.map((col) => (
-            <div
-              key={col.staffId}
-              className="min-w-32 flex-1 border-l border-neutral-200 px-2 py-2 text-center text-sm font-medium"
-            >
-              {col.staffName}
-              {col.working.length === 0 && (
-                <span className="ml-1 text-xs font-normal text-neutral-400">休</span>
-              )}
-            </div>
-          ))}
-        </div>
-
-        {/* 時間帯の本体 */}
-        <div className="flex">
-          {/* 時刻の目盛り */}
-          <div className="relative w-14 shrink-0" style={{ height: totalHeight }}>
-            {hours.map((m) => (
-              <span
-                key={m}
-                className="absolute right-2 -translate-y-1/2 text-xs tabular-nums text-neutral-400"
-                style={{ top: top(m) }}
-              >
-                {toHm(m)}
-              </span>
-            ))}
-          </div>
-
-          {columns.map((col) => {
-            // 勤務時間外（休憩・営業時間外）を灰色で示す
-            const closed = subtract([{ start: viewStart, end: viewEnd }], col.working);
-
-            return (
-              <div
-                key={col.staffId}
-                className="relative min-w-32 flex-1 border-l border-neutral-200"
-                style={{ height: totalHeight }}
-              >
-                {closed.map((c) => (
-                  <div
-                    key={`${c.start}-${c.end}`}
-                    className="absolute inset-x-0 bg-neutral-100"
-                    style={{ top: top(c.start), height: (c.end - c.start) * PX_PER_MIN }}
-                  />
-                ))}
-
-                {hours.map((m) => (
-                  <div
-                    key={m}
-                    className="absolute inset-x-0 border-t border-neutral-100"
-                    style={{ top: top(m) }}
-                  />
-                ))}
-
-                {col.blocks.map((b) => (
-                  <div
-                    key={b.id}
-                    className="absolute inset-x-1 overflow-hidden rounded border border-dashed border-amber-400 bg-amber-50 px-1.5 py-1 text-xs leading-tight text-amber-900"
-                    style={{
-                      top: top(b.startMinutes),
-                      height: (b.endMinutes - b.startMinutes) * PX_PER_MIN - 2,
-                    }}
-                  >
-                    <div className="truncate font-medium">{b.reason}</div>
-                    <div className="tabular-nums text-amber-700">
-                      {toHm(b.startMinutes)}–{toHm(b.endMinutes)}
-                    </div>
-                  </div>
-                ))}
-
-                {col.reservations.map((r) => (
-                  <Link
-                    key={r.id}
-                    href={`/reservations/${r.id}`}
-                    title={`${toHm(r.startMinutes)}–${toHm(r.endMinutes)} ${r.menuName} ${r.customerName}様`}
-                    className="absolute inset-x-1 block overflow-hidden rounded border border-sky-300 bg-sky-100 px-1.5 py-1 text-xs leading-none shadow-sm transition-colors hover:border-sky-400 hover:bg-sky-200"
-                    style={{
-                      top: top(r.startMinutes),
-                      height: (r.endMinutes - r.startMinutes) * PX_PER_MIN - 2,
-                    }}
-                  >
-                    {/* 枠が短いと全部は入らない。一番見たい時刻を2行目に置き、
-                        入り切らない分は下（顧客名→メニュー名の順）から見切れさせる */}
-                    <div className="truncate font-medium text-sky-900">{r.menuName}</div>
-                    <div className="mt-0.5 tabular-nums text-sky-800">
-                      {toHm(r.startMinutes)}–{toHm(r.endMinutes)}
-                    </div>
-                    <div className="mt-0.5 truncate text-sky-700">{r.customerName} 様</div>
-                  </Link>
-                ))}
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      <DayCalendarGrid
+        date={date}
+        columns={columns}
+        viewStart={viewStart}
+        viewEnd={viewEnd}
+        slotMinutes={tenant.slotMinutes}
+        actor={{ role: session.role, staffId: session.staffId }}
+      />
 
       <p className="mt-3 text-xs text-neutral-500">
         灰色は勤務時間外（昼休憩・営業時間外・休業日）。予約の枠は片付け時間を含みます。
+        予約はドラッグして時間や担当を変えられます（お客様への通知は送られません）。
       </p>
     </main>
   );
