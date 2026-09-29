@@ -13,6 +13,7 @@
 const AUTHORIZE_URL = "https://access.line.me/oauth2/v2.1/authorize";
 const TOKEN_URL = "https://api.line.me/oauth2/v2.1/token";
 const PROFILE_URL = "https://api.line.me/v2/profile";
+const VERIFY_ID_TOKEN_URL = "https://api.line.me/oauth2/v2.1/verify";
 
 export type LineProfile = {
   /** LINE の利用者ID。店舗をまたいでも同じ人なら同じ値 */
@@ -26,6 +27,9 @@ export type TenantLineLoginConfig = {
   lineLoginChannelId: string | null;
   lineLoginChannelSecret: string | null;
 };
+
+/** LIFFアプリIDを持つテナント */
+export type TenantLiffConfig = { liffId: string | null };
 
 function resolveLoginCredentials(tenant: TenantLineLoginConfig): {
   channelId: string | null;
@@ -119,5 +123,58 @@ export async function fetchLineProfile(
     userId: profile.userId,
     displayName: profile.displayName ?? "LINEユーザー",
     pictureUrl: profile.pictureUrl,
+  };
+}
+
+// ── LIFF（LINEアプリの中で開く予約ページ） ──────
+
+/**
+ * LIFFアプリIDを決める。空なら環境変数（NEXT_PUBLIC_LIFF_ID）を使う。
+ *
+ * LIFFはLINEログインと同じチャネルの中に登録するものなので、
+ * LINEログイン自体が設定されていない店舗ではLIFFも使えない。
+ */
+export function resolveLiffId(
+  tenant: TenantLiffConfig & TenantLineLoginConfig,
+): string | null {
+  if (!isLineConfigured(tenant)) return null;
+  return tenant.liffId || process.env.NEXT_PUBLIC_LIFF_ID || null;
+}
+
+/**
+ * LIFFのSDKが渡してくるIDトークンを検証する。
+ *
+ * LINEに直接問い合わせて確かめるので、こちらでの署名検証は不要。
+ * aud（発行対象）が、この店舗のLINEログインチャネルと一致するかまで
+ * LINE側で確かめてくれる（他チャネル向けのトークンは弾かれる）。
+ */
+export async function verifyLiffIdToken(
+  tenant: TenantLineLoginConfig,
+  idToken: string,
+): Promise<LineProfile> {
+  const { channelId } = resolveLoginCredentials(tenant);
+  if (!channelId) throw new Error("LINEの認証情報が設定されていません");
+
+  const response = await fetch(VERIFY_ID_TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ id_token: idToken, client_id: channelId }),
+  });
+
+  if (!response.ok) {
+    throw new Error("LINEとのやり取りに失敗しました（本人確認）");
+  }
+
+  const payload = (await response.json()) as {
+    sub?: string;
+    name?: string;
+    picture?: string;
+  };
+  if (!payload.sub) throw new Error("LINEから利用者IDを受け取れませんでした");
+
+  return {
+    userId: payload.sub,
+    displayName: payload.name ?? "LINEユーザー",
+    pictureUrl: payload.picture,
   };
 }

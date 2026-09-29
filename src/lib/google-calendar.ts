@@ -13,6 +13,7 @@ import { dateMinutesToUtcIso } from "./time";
 
 const AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
+const REVOKE_URL = "https://oauth2.googleapis.com/revoke";
 const FREEBUSY_URL = "https://www.googleapis.com/calendar/v3/freeBusy";
 const USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo";
 
@@ -113,6 +114,25 @@ async function refreshAccessToken(
   const token = (await res.json()) as { access_token?: string; expires_in?: number };
   if (!token.access_token) throw new Error("Googleからトークンを受け取れませんでした");
   return { accessToken: token.access_token, expiresIn: token.expires_in ?? 3600 };
+}
+
+/**
+ * Googleに、以後このリフレッシュトークンを使わせないよう伝える。
+ *
+ * テナント解約などでこちらのDBから連携情報を消すときに合わせて呼ぶ。
+ * 失敗しても（すでに失効済み、Google側が一時的に不調、など）呼び出し側の
+ * 処理は止めない。DB上の削除さえ済めば、このアプリからは二度と使われない。
+ */
+export async function revokeGoogleToken(refreshToken: string): Promise<void> {
+  try {
+    await fetch(REVOKE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ token: refreshToken }),
+    });
+  } catch {
+    // 失敗しても致命的ではないので握りつぶす（呼び出し側はログのみ残す）
+  }
 }
 
 type ConnectionRow = {

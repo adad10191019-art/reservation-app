@@ -13,3 +13,6 @@ export const LINE_LOGIN_COOKIE = "line_login";
 
 /** Googleカレンダー連携の手続き中に使う一時的な Cookie 名 */
 export const GOOGLE_CALENDAR_COOKIE = "google_calendar_connect";
+
+/** お客様のメールログイン（コード確認待ち）の間だけ使う一時的な Cookie 名 */
+export const EMAIL_LOGIN_COOKIE = "email_login_pending";

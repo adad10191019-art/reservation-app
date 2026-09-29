@@ -2,7 +2,10 @@ import { Banner } from "@/components/banner";
 import { requireOwner } from "@/lib/auth";
 import { getTenant } from "@/lib/schedule";
 import { SLOT_CHOICES } from "@/lib/constants";
-import { saveLineSettings, saveStore } from "@/lib/settings-actions";
+import { isEmailConfigured } from "@/lib/email";
+import { resolveCustomerLoginMethods } from "@/lib/email-login";
+import { resolveLiffId } from "@/lib/line";
+import { saveCustomerLoginMethod, saveLineSettings, saveStore } from "@/lib/settings-actions";
 
 export default async function StoreSettingsPage({
   searchParams,
@@ -173,6 +176,24 @@ export default async function StoreSettingsPage({
             </span>
           </label>
 
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-neutral-600">
+              LIFF ID（LINEアプリの中で予約ページを開く）
+              <StatusBadge set={Boolean(tenant.liffId)} fallback={Boolean(process.env.NEXT_PUBLIC_LIFF_ID)} />
+            </span>
+            <input
+              type="text"
+              name="liffId"
+              defaultValue={tenant.liffId ?? ""}
+              placeholder="例：1234567890-AbCdEfGh"
+              className="w-full max-w-sm rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+            />
+            <span className="mt-1 block text-xs text-neutral-500">
+              上のLINEログインチャネルの「LIFF」タブから発行します（新しいチャネルは不要）。
+              設定すると、LINEアプリの中で開いたときはボタン操作なしでログインできるようになります。
+            </span>
+          </label>
+
           <button
             type="submit"
             className="rounded-md bg-neutral-800 px-4 py-1.5 text-sm font-medium text-white hover:bg-neutral-700"
@@ -180,6 +201,61 @@ export default async function StoreSettingsPage({
             保存する
           </button>
         </form>
+      </section>
+
+      <section className="rounded-lg border border-neutral-200 bg-white p-4">
+        <h2 className="mb-1 font-semibold">お客様のログイン方法</h2>
+        <p className="mb-4 text-xs leading-relaxed text-neutral-500">
+          LINEを使わないお客様がいるクライアントには「メール」、両方のお客様がいるなら
+          「両方」を選んでください。「自動」は、LINE連携があればLINE、無ければメールになります。
+        </p>
+
+        <form action={saveCustomerLoginMethod} className="space-y-3">
+          {(
+            [
+              { value: "auto", label: "自動（おすすめ）", desc: "LINE連携があればLINE、無ければメール" },
+              { value: "line", label: "LINEのみ", desc: "LINEでログインできるお客様だけを受け付ける" },
+              { value: "email", label: "メールのみ", desc: "LINEを使わず、メールの確認コードだけにする" },
+              { value: "both", label: "両方", desc: "お客様がLINE・メールから選べるようにする" },
+            ] as const
+          ).map((opt) => (
+            <label
+              key={opt.value}
+              className="flex cursor-pointer items-start gap-3 rounded-md border border-neutral-200 p-3 has-checked:border-sky-400 has-checked:bg-sky-50"
+            >
+              <input
+                type="radio"
+                name="customerLoginMethod"
+                value={opt.value}
+                defaultChecked={(tenant.customerLoginMethod ?? "auto") === opt.value}
+                className="mt-0.5"
+              />
+              <span>
+                <span className="block text-sm font-medium text-neutral-800">{opt.label}</span>
+                <span className="block text-xs text-neutral-500">{opt.desc}</span>
+              </span>
+            </label>
+          ))}
+
+          <button
+            type="submit"
+            className="rounded-md bg-neutral-800 px-4 py-1.5 text-sm font-medium text-white hover:bg-neutral-700"
+          >
+            保存する
+          </button>
+        </form>
+
+        <div className="mt-4 flex flex-wrap gap-2 text-xs">
+          <StatusPill ok={resolveCustomerLoginMethods(tenant).line} label="LINE" />
+          <StatusPill ok={isEmailConfigured()} label="メール送信" />
+          <StatusPill ok={Boolean(resolveLiffId(tenant))} label="LIFF（LINEアプリ内で完結）" />
+        </div>
+        {!isEmailConfigured() && (
+          <p className="mt-2 text-xs leading-relaxed text-amber-700">
+            メール送信（RESEND_API_KEY）が未設定です。「メール」「両方」を選んでも、
+            お客様にコードが届かず、ログインできません。
+          </p>
+        )}
       </section>
 
       <section className="rounded-lg border border-neutral-200 bg-white p-4">
@@ -234,6 +310,21 @@ function StatusBadge({ set, fallback }: { set: boolean; fallback: boolean }) {
   return (
     <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-normal text-amber-800">
       未設定
+    </span>
+  );
+}
+
+/** 「今この方法が実際に使えるか」を一目で示す */
+function StatusPill({ ok, label }: { ok: boolean; label: string }) {
+  return (
+    <span
+      className={`rounded-full border px-2 py-1 ${
+        ok
+          ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+          : "border-neutral-200 bg-neutral-50 text-neutral-500"
+      }`}
+    >
+      {ok ? "✓" : "×"} {label}
     </span>
   );
 }

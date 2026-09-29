@@ -9,6 +9,7 @@ import { hashPassword } from "./password";
 import { prisma } from "./prisma";
 import { parseRanges } from "./ranges";
 import { buildSession, type Role } from "./session";
+import { deleteTenantCompletely } from "./tenant-offboarding";
 import { formatDateLabel, toHm } from "./time";
 import { validateSlug } from "./slug";
 
@@ -414,6 +415,7 @@ export async function saveLineSettings(formData: FormData) {
   const channelSecret = String(formData.get("lineLoginChannelSecret") ?? "").trim() || null;
   const messagingToken =
     String(formData.get("lineMessagingAccessToken") ?? "").trim() || null;
+  const liffId = String(formData.get("liffId") ?? "").trim() || null;
 
   // 片方だけ入れると、戻ってきたときに認証できず気づきにくい事故になる
   if ((channelId === null) !== (channelSecret === null)) {
@@ -426,7 +428,28 @@ export async function saveLineSettings(formData: FormData) {
       lineLoginChannelId: channelId,
       lineLoginChannelSecret: channelSecret,
       lineMessagingAccessToken: messagingToken,
+      liffId,
     },
+  });
+
+  refreshAll();
+  back(path);
+}
+
+const CUSTOMER_LOGIN_METHODS = new Set(["auto", "line", "email", "both"]);
+
+/** お客様のログイン方法（自動／LINE／メール／両方）を保存する */
+export async function saveCustomerLoginMethod(formData: FormData) {
+  const session = await requireOwner();
+  const path = "/settings/store";
+
+  const method = String(formData.get("customerLoginMethod") ?? "auto");
+  if (!CUSTOMER_LOGIN_METHODS.has(method)) back(path, "ログイン方法の指定が正しくありません");
+
+  await prisma.tenant.update({
+    where: { id: session.tenantId },
+    // "auto" はDB上は null（未設定）として持つ
+    data: { customerLoginMethod: method === "auto" ? null : method },
   });
 
   refreshAll();
@@ -703,7 +726,7 @@ export async function createTenant(formData: FormData) {
   );
 
   revalidatePath("/settings", "layout");
-  redirect("/settings/store?done=1");
+  redirect("/settings/onboarding?done=1");
 }
 
 /** 既存の部署の名前・短い名前（URL）を変更する */
@@ -734,6 +757,53 @@ export async function updateTenant(formData: FormData) {
   }
 
   await prisma.tenant.update({ where: { id }, data: { name, slug } });
+
+  revalidatePath("/settings", "layout");
+  back(path);
+}
+
+/**
+ * 部署を解約し、紐づく全データ（予約・顧客・スタッフ・設定など）を完全に削除する。
+ * 取り消せないため、部署名の入力一致と同意チェックの両方を確かめてから実行する。
+ *
+ * 今まさにその部署を見ている session はこのあと存在しない部署を指すことになるので、
+ * 他に部署が残っていれば一番古いものへ、無ければ次のアクセスでログイン画面に
+ * 戻ることになる（getVerifiedSession が存在しない部署の session を無効と扱うため）。
+ */
+export async function deleteTenantAction(formData: FormData) {
+  const session = await requireGroupAdmin();
+  const path = "/settings/tenants";
+
+  const id = String(formData.get("id") ?? "");
+  const confirmName = String(formData.get("confirmName") ?? "").trim();
+  const agreed = formData.get("agreed") === "on";
+
+  const tenant = await prisma.tenant.findUnique({ where: { id } });
+  if (!tenant) back(path, "部署が見つかりません");
+
+  if (!agreed) {
+    back(path, "削除内容を理解したことへの同意チェックが必要です");
+  }
+  if (confirmName !== tenant.name) {
+    back(path, "部署名の入力が一致しません。削除は行われませんでした");
+  }
+
+  await deleteTenantCompletely(id);
+
+  if (session.tenantId === id) {
+    const another = await prisma.tenant.findFirst({ orderBy: { createdAt: "asc" } });
+    if (another) {
+      await startSession(
+        buildSession({
+          userId: session.userId,
+          tenantId: another.id,
+          role: "group_admin",
+          staffId: null,
+          name: session.name,
+        }),
+      );
+    }
+  }
 
   revalidatePath("/settings", "layout");
   back(path);

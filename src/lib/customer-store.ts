@@ -4,6 +4,8 @@
  * "use server" のファイルから公開すると、外部から直接呼べる入口になってしまうため、
  * 通常のモジュールとして分けておく。
  */
+import { cookies } from "next/headers";
+import { EMAIL_LOGIN_COOKIE } from "./constants";
 import { getCustomerSession } from "./customer-session";
 import { prisma } from "./prisma";
 
@@ -33,6 +35,32 @@ export async function upsertLineCustomer(params: {
   });
 }
 
+/** メールアドレスでお客様を探し、いなければ作る（メールログイン用） */
+export async function upsertEmailCustomer(params: {
+  tenantId: string;
+  email: string;
+  name: string;
+}) {
+  const { tenantId, email, name } = params;
+
+  const existing = await prisma.customer.findFirst({ where: { tenantId, email } });
+  if (existing) {
+    // 名前が変わっていれば追従する（LINEログインと同じ考え方）
+    if (existing.name !== name) {
+      await prisma.customer.updateMany({
+        where: { id: existing.id, tenantId },
+        data: { name },
+      });
+      return { ...existing, name };
+    }
+    return existing;
+  }
+
+  return prisma.customer.create({
+    data: { tenantId, name, email },
+  });
+}
+
 /**
  * ログイン中のお客様を取り出す。
  *
@@ -50,4 +78,21 @@ export async function getActiveCustomer(tenantId: string) {
   if (!customer) return null;
 
   return { customerId: customer.id, tenantId, name: customer.name };
+}
+
+export type EmailLoginPending = { tenantId: string; email: string; name: string };
+
+/** メールログインの「コード入力待ち」状態を、一時Cookieから読む */
+export async function getEmailLoginPending(tenantId: string): Promise<EmailLoginPending | null> {
+  const store = await cookies();
+  const raw = store.get(EMAIL_LOGIN_COOKIE)?.value;
+  if (!raw) return null;
+
+  try {
+    const data = JSON.parse(raw) as Partial<EmailLoginPending>;
+    if (!data.tenantId || data.tenantId !== tenantId || !data.email || !data.name) return null;
+    return { tenantId: data.tenantId, email: data.email, name: data.name };
+  } catch {
+    return null;
+  }
 }

@@ -36,6 +36,15 @@ model Tenant {
   lineLoginChannelSecret   String?
   lineMessagingAccessToken String?
 
+  /// お客様のログイン方法。"line" | "email" | "both" | null（null=自動：
+  /// LINEが使えればLINE、使えなければメール）
+  customerLoginMethod String?
+
+  /// LINEアプリの中で予約ページを開くためのLIFFアプリID。
+  /// 空なら環境変数（NEXT_PUBLIC_LIFF_ID）をシステム全体の既定値として使う。
+  /// LINEログインと同じチャネルの中に登録する（新しいチャネルではない）
+  liffId String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -50,6 +59,7 @@ model Tenant {
   blocks                    Block[]
   changeLogs                ChangeLog[]
   googleCalendarConnections GoogleCalendarConnection[]
+  customerLoginCodes        CustomerLoginCode[]
 }
 
 // ── ログインする人 ─────────────────────
@@ -244,6 +254,24 @@ model ChangeLog {
   tenant Tenant @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId, createdAt])
+}
+
+// ── お客様のメールログイン用ワンタイムコード ──
+// メールアドレスの本人確認だけを目的にした使い捨てコード。
+// 認証（成功・期限切れ）のたびに消し、使い回されないようにする。
+model CustomerLoginCode {
+  id        String   @id @default(uuid())
+  tenantId  String
+  email     String
+  /// 平文のコードは保存しない（HMACでハッシュ化した値だけ持つ）
+  codeHash  String
+  expiresAt DateTime
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, email])
 }
 
 // ── 顧客 ───────────────────────────────

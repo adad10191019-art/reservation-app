@@ -4,12 +4,14 @@ import { requireOwner } from "@/lib/auth";
 import { getTenant } from "@/lib/schedule";
 
 const BASE_TABS = [
+  { href: "/settings/onboarding", label: "セットアップ" },
   { href: "/settings/menus", label: "メニュー" },
   { href: "/settings/staff", label: "スタッフ" },
   { href: "/settings/hours", label: "営業時間" },
   { href: "/settings/days", label: "日付ごと" },
   { href: "/settings/accounts", label: "アカウント" },
   { href: "/settings/store", label: "店舗" },
+  { href: "/settings/analytics", label: "集計" },
   { href: "/settings/history", label: "履歴" },
 ];
 

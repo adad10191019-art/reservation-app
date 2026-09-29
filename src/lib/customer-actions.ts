@@ -5,13 +5,14 @@ import { randomBytes } from "node:crypto";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { bookAsCustomer, cancelOwnReservation } from "./booking";
-import { LINE_LOGIN_COOKIE } from "./constants";
+import { EMAIL_LOGIN_COOKIE, LINE_LOGIN_COOKIE } from "./constants";
 import {
   buildCustomerSession,
   endCustomerSession,
   startCustomerSession,
 } from "./customer-session";
-import { getActiveCustomer, upsertLineCustomer } from "./customer-store";
+import { getActiveCustomer, upsertEmailCustomer, upsertLineCustomer } from "./customer-store";
+import { startEmailLoginCode, verifyEmailLoginCode } from "./email-login";
 import { buildAuthorizeUrl, isDevFallbackAllowed, isLineConfigured } from "./line";
 import {
   notifyReservationCanceled,
@@ -96,6 +97,103 @@ export async function customerLogout(formData: FormData) {
   const tenantId = String(formData.get("tenantId") ?? "");
   await endCustomerSession();
   redirect(bookPath(await handleOf(tenantId)));
+}
+
+// ── メールログイン ────────────────────────
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * メールアドレス宛にコードを送り、「コード入力待ち」の状態を一時Cookieに残す。
+ * このCookieは本人確認そのものではなく、次の画面でどのメール宛のコードかを
+ * 覚えておくためだけのもの（本人確認はコードの一致で行う）。
+ */
+export async function startEmailLogin(formData: FormData) {
+  const tenantId = String(formData.get("tenantId") ?? "");
+  const name = String(formData.get("name") ?? "").trim();
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const next = String(formData.get("next") ?? "");
+
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+  if (!tenant) redirect("/");
+  const handle = tenantHandle(tenant);
+
+  if (!name) redirect(bookPath(handle, { error: "お名前を入力してください" }));
+  if (!EMAIL_PATTERN.test(email)) {
+    redirect(bookPath(handle, { error: "メールアドレスの形式が正しくありません" }));
+  }
+
+  const result = await startEmailLoginCode({ tenantId, email });
+  if (!result.ok) redirect(bookPath(handle, { error: result.message }));
+
+  const store = await cookies();
+  store.set(EMAIL_LOGIN_COOKIE, JSON.stringify({ tenantId, email, name, next }), {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 600, // 10分で切れる（コードの有効期限と揃える）
+  });
+
+  redirect(bookPath(handle, { emailStep: "code" }));
+}
+
+/** 送られてきたコードを確かめ、合っていればログインさせる */
+export async function verifyEmailLogin(formData: FormData) {
+  const tenantId = String(formData.get("tenantId") ?? "");
+  const code = String(formData.get("code") ?? "").trim();
+
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+  if (!tenant) redirect("/");
+  const handle = tenantHandle(tenant);
+
+  const store = await cookies();
+  let pending: { tenantId?: string; email?: string; name?: string; next?: string } = {};
+  try {
+    const raw = store.get(EMAIL_LOGIN_COOKIE)?.value;
+    pending = raw ? JSON.parse(raw) : {};
+  } catch {
+    pending = {};
+  }
+
+  if (pending.tenantId !== tenantId || !pending.email || !pending.name) {
+    store.delete(EMAIL_LOGIN_COOKIE);
+    redirect(bookPath(handle, { error: "手続きをやり直してください" }));
+  }
+  if (!code) redirect(bookPath(handle, { emailStep: "code", error: "コードを入力してください" }));
+
+  const result = await verifyEmailLoginCode({ tenantId, email: pending.email, code });
+  if (!result.ok) {
+    if (result.expired) {
+      store.delete(EMAIL_LOGIN_COOKIE);
+      redirect(bookPath(handle, { error: result.message }));
+    }
+    // コードが違うだけなら、メールアドレスから入力し直させない
+    redirect(bookPath(handle, { emailStep: "code", error: result.message }));
+  }
+
+  const customer = await upsertEmailCustomer({
+    tenantId,
+    email: pending.email,
+    name: pending.name,
+  });
+  store.delete(EMAIL_LOGIN_COOKIE);
+
+  await startCustomerSession(
+    buildCustomerSession({ customerId: customer.id, tenantId, name: customer.name }),
+  );
+  redirect(pending.next || bookPath(handle));
+}
+
+/** メールアドレスを入力し直したいときに、コード入力待ちの状態を取り消す */
+export async function resetEmailLogin(formData: FormData) {
+  const tenantId = String(formData.get("tenantId") ?? "");
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+
+  const store = await cookies();
+  store.delete(EMAIL_LOGIN_COOKIE);
+
+  redirect(bookPath(tenant ? tenantHandle(tenant) : ""));
 }
 
 // ── 予約する ──────────────────────────────
