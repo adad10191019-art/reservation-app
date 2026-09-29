@@ -8,6 +8,7 @@
  */
 import { isEmailConfigured } from "./email";
 import { resolveCustomerLoginMethods } from "./email-login";
+import { resolveLiffId } from "./line";
 import { prisma } from "./prisma";
 
 export type OnboardingStep = {
@@ -84,6 +85,16 @@ export async function buildOnboardingStatus(tenantId: string): Promise<Onboardin
           ? "この部署専用の設定を使用中"
           : "システム共通の設定を使用中"
         : undefined,
+      href: "/settings/store",
+      linkLabel: "店舗設定へ",
+    },
+    {
+      key: "liff",
+      label: "LIFF連携（任意）",
+      description:
+        "LINEアプリの中で予約ページが自動ログインで開けるようにする。LINEログインチャネルの「LIFF」タブから作成する（新しいチャネルは不要）。",
+      done: Boolean(resolveLiffId(tenant)),
+      note: resolveLiffId(tenant) ? "設定済み" : "未設定でも、通常のLINE/メールログインは使えます",
       href: "/settings/store",
       linkLabel: "店舗設定へ",
     },
