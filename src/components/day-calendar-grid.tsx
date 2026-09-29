@@ -22,7 +22,12 @@ type Reservation = {
   endMinutes: number;
   menuName: string;
   customerName: string;
+  createdAt: Date;
+  updatedAt: Date;
 };
+
+/** この時間より最近に更新された予約には「移動済み」の印を付ける */
+const RECENTLY_MOVED_MS = 30 * 60 * 1000;
 
 type Block = {
   id: string;
@@ -228,14 +233,18 @@ export function DayCalendarGrid({
 
                 {col.reservations.map((r) => {
                   const draggable = canDragReservation(r.staffId);
+                  const wasModified =
+                    new Date(r.updatedAt).getTime() > new Date(r.createdAt).getTime();
+                  const justMoved =
+                    wasModified && Date.now() - new Date(r.updatedAt).getTime() < RECENTLY_MOVED_MS;
                   return (
                     <Link
                       key={r.id}
                       href={`/reservations/${r.id}`}
                       title={
-                        draggable
-                          ? `${toHm(r.startMinutes)}–${toHm(r.endMinutes)} ${r.menuName} ${r.customerName}様（ドラッグで移動できます）`
-                          : `${toHm(r.startMinutes)}–${toHm(r.endMinutes)} ${r.menuName} ${r.customerName}様`
+                        `${toHm(r.startMinutes)}–${toHm(r.endMinutes)} ${r.menuName} ${r.customerName}様` +
+                        (justMoved ? "（直前に移動されました）" : "") +
+                        (draggable ? "（ドラッグで移動できます）" : "")
                       }
                       draggable={draggable}
                       onDragStart={draggable ? (e) => handleDragStart(e, r) : undefined}
@@ -244,14 +253,23 @@ export function DayCalendarGrid({
                         // ドラッグの直後にクリック扱いで詳細画面へ飛ばないようにする
                         if (draggingId) e.preventDefault();
                       }}
-                      className={`absolute inset-x-1 block overflow-hidden rounded border border-sky-300 bg-sky-100 px-1.5 py-1 text-xs leading-none shadow-sm transition-colors hover:border-sky-400 hover:bg-sky-200 ${
-                        draggable ? "cursor-grab active:cursor-grabbing" : ""
-                      } ${draggingId === r.id ? "opacity-30" : ""}`}
+                      className={`absolute inset-x-1 block overflow-hidden rounded border px-1.5 py-1 text-xs leading-none shadow-sm transition-colors ${
+                        justMoved
+                          ? "border-amber-400 bg-sky-100 ring-2 ring-amber-400 hover:bg-sky-200"
+                          : "border-sky-300 bg-sky-100 hover:border-sky-400 hover:bg-sky-200"
+                      } ${draggable ? "cursor-grab active:cursor-grabbing" : ""} ${
+                        draggingId === r.id ? "opacity-30" : ""
+                      }`}
                       style={{
                         top: top(r.startMinutes),
                         height: (r.endMinutes - r.startMinutes) * PX_PER_MIN - 2,
                       }}
                     >
+                      {justMoved && (
+                        <span className="absolute right-1 top-1 rounded-full bg-amber-400 px-1 text-[9px] font-bold leading-tight text-white">
+                          移動済
+                        </span>
+                      )}
                       <div className="truncate font-medium text-sky-900">{r.menuName}</div>
                       <div className="mt-0.5 tabular-nums text-sky-800">
                         {toHm(r.startMinutes)}–{toHm(r.endMinutes)}

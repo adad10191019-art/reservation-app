@@ -1,10 +1,9 @@
 import Link from "next/link";
 import { AppHeader } from "@/components/app-header";
+import { WeekCalendarGrid } from "@/components/week-calendar-grid";
 import { requireSession } from "@/lib/auth";
 import { getTenant, getWeekSchedule } from "@/lib/schedule";
-import { addDays, dayOfWeekOf, sanitizeDate, startOfWeek, todayString } from "@/lib/time";
-
-const WEEKDAY_JA = ["日", "月", "火", "水", "木", "金", "土"];
+import { addDays, sanitizeDate, startOfWeek, todayString } from "@/lib/time";
 
 export default async function CalendarWeekPage({
   searchParams,
@@ -73,85 +72,20 @@ export default async function CalendarWeekPage({
           在籍中のスタッフがいません。設定 → スタッフ から登録してください。
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
-          <table className="w-full min-w-[720px] border-collapse text-sm">
-            <thead>
-              <tr className="border-b border-neutral-200 bg-neutral-50">
-                <th className="w-28 shrink-0 border-r border-neutral-200 px-3 py-2 text-left font-medium text-neutral-600">
-                  スタッフ
-                </th>
-                {schedule.dates.map((date) => {
-                  const isToday = date === today;
-                  const [, , d] = date.split("-");
-                  return (
-                    <th
-                      key={date}
-                      className={`min-w-32 border-l border-neutral-200 px-2 py-2 text-center font-medium ${
-                        isToday ? "bg-sky-50 text-sky-800" : "text-neutral-600"
-                      }`}
-                    >
-                      <Link href={`/calendar?date=${date}`} className="hover:underline">
-                        {Number(d)}日({WEEKDAY_JA[dayOfWeekOf(date)]})
-                      </Link>
-                    </th>
-                  );
-                })}
-              </tr>
-            </thead>
-            <tbody>
-              {schedule.staffRows.map((row) => (
-                <tr key={row.staffId} className="border-b border-neutral-100 last:border-b-0">
-                  <td className="border-r border-neutral-200 px-3 py-2 align-top font-medium">
-                    {row.staffName}
-                  </td>
-                  {row.days.map((day) => (
-                    <td
-                      key={day.date}
-                      className={`border-l border-neutral-200 px-2 py-2 align-top ${
-                        day.isOff ? "bg-neutral-50" : ""
-                      }`}
-                    >
-                      {day.isOff ? (
-                        <span className="text-xs text-neutral-400">休</span>
-                      ) : day.reservations.length === 0 ? (
-                        <span className="text-xs text-neutral-300">—</span>
-                      ) : (
-                        <ul className="space-y-1">
-                          {day.reservations.map((r) => (
-                            <li key={r.id}>
-                              <Link
-                                href={`/reservations/${r.id}`}
-                                className="block rounded border border-sky-200 bg-sky-50 px-1.5 py-1 text-xs leading-tight text-sky-900 hover:border-sky-400 hover:bg-sky-100"
-                              >
-                                <span className="tabular-nums font-medium">
-                                  {toHmShort(r.startMinutes)}
-                                </span>
-                                <span className="ml-1 truncate">{r.customerName}様</span>
-                              </Link>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <WeekCalendarGrid
+          dates={schedule.dates}
+          staffRows={schedule.staffRows}
+          today={today}
+          actor={{ role: session.role, staffId: session.staffId }}
+        />
       )}
 
       <p className="mt-3 text-xs text-neutral-500">
         「休」はその日の勤務時間が無いスタッフ。日付の見出しから、その日の日表示（分単位）に移れます。
+        予約はドラッグして別の日・別の担当に動かせます（時刻は変わりません。お客様への通知は送られません）。
       </p>
     </main>
   );
-}
-
-function toHmShort(minutes: number): string {
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return `${h}:${String(m).padStart(2, "0")}`;
 }
 
 function WeekLink({

@@ -4,16 +4,19 @@ import { prisma } from "@/lib/prisma";
 const ENTITY_LABEL: Record<string, string> = {
   block: "予定（ブロック枠）",
   dateOverride: "日付ごとの勤務時間",
+  reservation: "予約",
 };
 
 const ACTION_STYLE: Record<string, string> = {
   created: "border-sky-300 bg-sky-50 text-sky-800",
   deleted: "border-red-300 bg-red-50 text-red-800",
+  moved: "border-amber-300 bg-amber-50 text-amber-800",
 };
 
 const ACTION_LABEL: Record<string, string> = {
   created: "追加",
   deleted: "削除",
+  moved: "移動",
 };
 
 /** 件数が多くなりすぎないよう、直近の分だけ見せる */
@@ -33,8 +36,9 @@ export default async function HistorySettingsPage() {
       <div>
         <h2 className="font-semibold">予定の変更履歴</h2>
         <p className="mt-1 text-xs leading-relaxed text-neutral-500">
-          スタッフが自分の予定（ブロック枠・日付ごとの勤務時間）を
-          追加・削除するたびに記録されます。間違って消してしまったときの手がかりに使ってください。
+          スタッフが自分の予定（ブロック枠・日付ごとの勤務時間）を追加・削除したときや、
+          カレンダーで予約をドラッグして移動したときに記録されます。
+          間違って消してしまった・動かしてしまったときの手がかりに使ってください。
           記録は消さずに残しています。
         </p>
       </div>

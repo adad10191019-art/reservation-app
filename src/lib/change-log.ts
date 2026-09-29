@@ -10,8 +10,8 @@
  */
 import { prisma } from "./prisma";
 
-export type ChangeEntity = "block" | "dateOverride";
-export type ChangeAction = "created" | "deleted";
+export type ChangeEntity = "block" | "dateOverride" | "reservation";
+export type ChangeAction = "created" | "deleted" | "moved";
 
 export async function logChange(params: {
   tenantId: string;
