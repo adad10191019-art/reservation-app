@@ -8,6 +8,7 @@ import {
   startOfWeek,
   subtract,
   toHm,
+  toJstDateString,
 } from "./time";
 
 describe("時刻の変換", () => {
@@ -22,6 +23,20 @@ describe("時刻の変換", () => {
   it("形式が不正なら例外になる", () => {
     expect(() => hm("10時30分")).toThrow();
     expect(() => hm("1030")).toThrow();
+  });
+});
+
+describe("日本時間での日付判定（サーバーのタイムゾーンに左右されないか）", () => {
+  it("UTCの瞬間から、日本時間の日付を正しく出す", () => {
+    // UTC 2026-09-23 15:30 = 日本時間 2026-09-24 00:30
+    expect(toJstDateString(new Date(Date.UTC(2026, 8, 23, 15, 30)))).toBe("2026-09-24");
+  });
+
+  it("日本時間の日付が変わる直前・直後で境界がずれない", () => {
+    // UTC 2026-09-23 14:59 = 日本時間 2026-09-23 23:59（日付はまだ変わらない）
+    expect(toJstDateString(new Date(Date.UTC(2026, 8, 23, 14, 59)))).toBe("2026-09-23");
+    // UTC 2026-09-23 15:00 = 日本時間 2026-09-24 00:00（ちょうど変わる）
+    expect(toJstDateString(new Date(Date.UTC(2026, 8, 23, 15, 0)))).toBe("2026-09-24");
   });
 });
 

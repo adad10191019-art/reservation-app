@@ -65,6 +65,26 @@ describe("受付できるかの判定", () => {
   });
 });
 
+describe("サーバーのタイムゾーンに左右されないか", () => {
+  // UTC 2026-09-21 01:00 = 日本時間 2026-09-21 10:00（BASEのNOWと同じ瞬間）
+  const NOW_AS_UTC_INSTANT = new Date(Date.UTC(2026, 8, 21, 1, 0, 0, 0));
+
+  it("UTCで表した同じ瞬間でも、日本時間で判定した結果と一致する", () => {
+    const withLocalNow = checkBookingWindow({
+      ...BASE,
+      date: "2026-09-21",
+      startMinutes: hm("11:45"),
+    });
+    const withUtcInstant = checkBookingWindow({
+      ...BASE,
+      now: NOW_AS_UTC_INSTANT,
+      date: "2026-09-21",
+      startMinutes: hm("11:45"),
+    });
+    expect(withUtcInstant).toEqual(withLocalNow);
+  });
+});
+
 describe("選べる枠だけを残す", () => {
   it("当日は締め切りより後の枠だけ残る", () => {
     const starts = [hm("09:00"), hm("11:00"), hm("12:00"), hm("15:00")];

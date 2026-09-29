@@ -127,6 +127,22 @@ export function dateMinutesToUtcIso(date: string, minutes: number): string {
   return new Date(utcMs).toISOString();
 }
 
+/**
+ * ある瞬間（Date）を、日本時間で見たときの "YYYY-MM-DD" にする。
+ *
+ * サーバーが動いているタイムゾーン（本番はUTC）に左右されないよう、
+ * ローカル時刻のgetterは使わず、UTCの経過ミリ秒にJSTのぶんだけ足してから
+ * UTCのgetterで読む（DST無しのJST固定なので、これで常に正しい）。
+ */
+export function toJstDateString(instant: Date): string {
+  const jst = new Date(instant.getTime() + JST_OFFSET_MS);
+  return [
+    jst.getUTCFullYear(),
+    String(jst.getUTCMonth() + 1).padStart(2, "0"),
+    String(jst.getUTCDate()).padStart(2, "0"),
+  ].join("-");
+}
+
 // ── 日付文字列（"YYYY-MM-DD"）の操作 ──────────────
 
 /** Date を "YYYY-MM-DD" にする（ローカル時間で） */
@@ -138,9 +154,9 @@ export function toDateString(d: Date): string {
   ].join("-");
 }
 
-/** 今日の "YYYY-MM-DD" */
+/** 今日の "YYYY-MM-DD"（日本時間で判定する。サーバーのタイムゾーンには左右されない） */
 export function todayString(): string {
-  return toDateString(new Date());
+  return toJstDateString(new Date());
 }
 
 /** "YYYY-MM-DD" に日数を足す */

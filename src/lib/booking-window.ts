@@ -7,24 +7,20 @@
  * 店舗側の画面からは当日の直前でも入れられる必要があるため、
  * この制限はお客様向けの経路にだけ掛ける。
  *
+ * 日付・時刻は「日本時間」の前提で来る（date文字列・startMinutesとも）。
+ * サーバーが実際にどのタイムゾーンで動いていても正しく比べられるよう、
+ * 実時刻との比較はすべてUTCの瞬間（ミリ秒）に揃えてから行う。
+ *
  * DBを触らない純粋な計算。そのままテストできる。
  */
+import { addDays, dateMinutesToUtcIso, toJstDateString } from "./time";
 
 export type WindowCheck = { ok: true } | { ok: false; message: string };
 
-/** "YYYY-MM-DD" と 0時からの経過分から、その時刻の Date を作る（ローカル時間） */
+/** "YYYY-MM-DD" と 0時からの経過分（日本時間）から、その瞬間を表す Date を作る */
 export function slotDateTime(date: string, startMinutes: number): Date {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
-  if (!m) throw new Error(`日付の形式が不正です: ${date}`);
-  return new Date(
-    Number(m[1]),
-    Number(m[2]) - 1,
-    Number(m[3]),
-    Math.floor(startMinutes / 60),
-    startMinutes % 60,
-    0,
-    0,
-  );
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`日付の形式が不正です: ${date}`);
+  return new Date(dateMinutesToUtcIso(date, startMinutes));
 }
 
 export function checkBookingWindow(params: {
@@ -50,9 +46,10 @@ export function checkBookingWindow(params: {
     return { ok: false, message: `開始の${label}前を過ぎているため、お電話でご相談ください` };
   }
 
-  // 受付の上限：今日から windowDays 日後の終わりまで
-  const limit = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  limit.setDate(limit.getDate() + windowDays + 1); // 当日の終わりまで含める
+  // 受付の上限：今日（日本時間）から windowDays 日後の終わりまで
+  const todayJst = toJstDateString(now);
+  const limitDate = addDays(todayJst, windowDays + 1); // 当日の終わりまで含める
+  const limit = new Date(dateMinutesToUtcIso(limitDate, 0));
   if (slot.getTime() >= limit.getTime()) {
     return { ok: false, message: `予約は${windowDays}日先までお受けしています` };
   }
