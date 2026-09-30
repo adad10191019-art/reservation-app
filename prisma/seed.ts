@@ -17,6 +17,8 @@
  *     admin@example.com … 内勤（バックアップ）
  */
 import "dotenv/config";
+// 本番の DB を向いていたら、下の deleteMany に進む前に止める
+import "../scripts/guard-not-production";
 import { hashPassword } from "../src/lib/password";
 import { prisma } from "../src/lib/prisma";
 

@@ -11,7 +11,12 @@
   ログインは LINE／メールのワンタイムコード／LIFF から店舗ごとに選択
 - 通知：LINE（予約完了・キャンセル・前日リマインド）、LINE未連携の店舗側にはメール
 - マルチテナント（全テーブルに `tenantId`）。役割は owner / staff / group_admin
-- 公開先は Vercel。**開発と本番は同じ Neon DB を共有している**（seed やマイグレーションは本番にも効く）
+- 公開先は Vercel。**開発用と本番用の DB は Neon のブランチで分離済み（2026-09-28）**。
+  本番＝`production` ブランチ（ホスト `ep-orange-pond-b3d859bd`、Vercel の Production）、
+  開発＝`development` ブランチ（ホスト `ep-calm-truth-b3uxvk62`、手元の `.env`）。
+  **DB 分離の作業はもう不要。** 手元の `.env` で調べた結果は本番の状態ではない
+  （本番を見るときは Neon の production の接続文字列を一時ファイルで使い、終わったら消す）。
+  本番を向いた `db:seed`・`db:reset` は `scripts/guard-not-production.ts` が止める
 
 設計上の判断や詳しい手順は README.md を参照。
 
@@ -48,12 +53,14 @@ LINE・Google・メールは未設定でも動く（仮ログイン／機能非�
 
 ## 次にやることの候補（2026-09-30 時点）
 
-0. **（ユーザーの作業）** Vercel の環境変数に `CRON_SECRET` を登録し、main を push する。
-   翌日以降、Vercel の Cron Jobs → View Logs に `[前日リマインド]` が出ているか確認
-1. 本番の安全対策：ダミーアカウント（`password123`）の削除、Vercel の二要素認証、開発用と本番用のDB分離
-2. DB を使う処理（`booking.ts`、`calendar-actions.ts`、`notify.ts` の `sendRemindersFor` など）の自動テスト追加
-3. 予約登録画面（`src/app/booking/page.tsx`）で全顧客を読み込んでいるのを、検索欄に変える
-4. LINE 公式アカウント名をテスト名「竹」から変更（LINE 側の設定作業）
-5. メール送信ドメインの認証（LINE 以外のクライアントが出てきたとき）。
+0. **（ユーザーの作業）** Vercel の Cron Jobs → View Logs に `[前日リマインド]` が出ているか確認（401 なら `CRON_SECRET` の設定不良）
+1. **（ユーザーの作業）** Vercel と Neon のアカウントに二要素認証を設定（リカバリーコードも保存）
+2. **（ユーザーの作業）** 本番のスタッフ「担当者A〜C」（就活のイロハ・youth光回線案内）を 設定→スタッフ で無効にする。
+   就活のイロハの担当者Aには予約2件があるので、中身を確認してから
+3. DB を使う処理（`booking.ts`、`calendar-actions.ts`、`notify.ts` の `sendRemindersFor` など）の自動テスト追加。
+   開発用ブランチがあるので、テストは development 側で流せる
+4. 予約登録画面（`src/app/booking/page.tsx`）で全顧客を読み込んでいるのを、検索欄に変える
+5. LINE 公式アカウント名をテスト名「竹」から変更（LINE 側の設定作業）
+6. メール送信ドメインの認証（LINE 以外のクライアントが出てきたとき）。
    あわせて確認コードの送信に店舗全体の上限を付ける
-6. 店舗ごとの LINE 認証情報の暗号化（外部に販売する段階で）
+7. 店舗ごとの LINE 認証情報の暗号化（外部に販売する段階で）
