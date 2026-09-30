@@ -1,31 +1,18 @@
 /**
  * DB を丸ごと作り直すコマンド（db:seed / db:reset）の前に走らせる安全装置。
  *
- * 開発用と本番用は Neon の別ブランチに分けてあり、手元の .env は開発用
- * （development ブランチ）を向いている。本番の接続先を読み込んだまま seed を
- * 流すと、最初の deleteMany で本番の予約・顧客がすべて消えるため、
- * 接続先が本番のホストなら何もせずに止める。
- *
- * 本番ブランチのコンピュートを作り直してホスト名が変わったら、ここも直す。
+ * 本番の接続先を読み込んだまま seed を流すと、最初の deleteMany で本番の
+ * 予約・顧客がすべて消えるため、接続先が本番のホストなら何もせずに止める。
+ * 本番かどうかの判定は src/lib/db-target.ts（DB テストと共通）。
  */
 import "dotenv/config";
+import { productionTargets } from "../src/lib/db-target";
 
-const PRODUCTION_HOST_PREFIX = "ep-orange-pond-b3d859bd";
-
-for (const name of ["DATABASE_URL", "DIRECT_URL"]) {
-  const url = process.env[name];
-  if (!url) continue;
-
-  let host: string;
-  try {
-    host = new URL(url).hostname;
-  } catch {
-    continue;
-  }
-
-  if (host.startsWith(PRODUCTION_HOST_PREFIX)) {
+const hits = productionTargets(process.env);
+if (hits.length > 0) {
+  for (const { name, host } of hits) {
     console.error(`${name} が本番の DB（${host}）を向いているので中止しました。`);
-    console.error("seed / reset は開発用の DB でだけ実行してください。");
-    process.exit(1);
   }
+  console.error("seed / reset は開発用の DB でだけ実行してください。");
+  process.exit(1);
 }

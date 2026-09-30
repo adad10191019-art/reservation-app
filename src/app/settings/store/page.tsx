@@ -129,7 +129,7 @@ export default async function StoreSettingsPage({
       <section className="rounded-lg border border-neutral-200 bg-white p-4">
         <h2 className="mb-1 font-semibold">この店舗専用のLINE連携</h2>
         <p className="mb-4 text-xs leading-relaxed text-neutral-500">
-          空欄のままなら、システム全体の既定値（環境変数）を使います。
+          空欄のままなら、システム全体の既定値を使います。
           複数の公式LINEアカウントを店舗ごとに使い分けたいときだけ、ここに入れてください。
         </p>
 
@@ -258,7 +258,7 @@ export default async function StoreSettingsPage({
         </div>
         {!isEmailConfigured() && (
           <p className="mt-2 text-xs leading-relaxed text-amber-700">
-            メール送信（RESEND_API_KEY）が未設定です。「メール」「両方」を選んでも、
+            メール送信が未設定です。「メール」「両方」を選んでも、
             お客様にコードが届かず、ログインできません。
           </p>
         )}

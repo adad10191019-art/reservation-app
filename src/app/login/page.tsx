@@ -62,8 +62,9 @@ export default async function LoginPage({
         </button>
       </form>
 
+      {/* 再設定メールは送信ドメインを認証するまで届かないため、当面は管理者が代わりに再設定する */}
       <p className="mt-4 text-xs leading-relaxed text-neutral-500">
-        動作確認用のアカウントは <code>prisma/seed.ts</code> に記載しています。
+        パスワードを忘れた方は、管理者に再設定を依頼してください。
       </p>
     </main>
   );

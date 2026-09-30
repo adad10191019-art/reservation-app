@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:db": "vitest run --config vitest.db.config.mts",
     "check": "tsx scripts/check-availability.ts",
     "postinstall": "prisma generate",
     "check:double": "tsx scripts/check-double-booking.ts",
