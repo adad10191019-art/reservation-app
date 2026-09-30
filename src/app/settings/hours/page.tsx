@@ -106,8 +106,8 @@ export default async function HoursSettingsPage({
 
       <p className="text-xs leading-relaxed text-neutral-500">
         ここで設定するのは<strong>曜日ごとの基本パターン</strong>です。
-        「この日だけ休み」「この日だけ短縮」といった例外は、日付ごとの設定で扱います
-        （画面は今後追加します）。
+        「この日だけ休み」「この日だけ短縮」といった例外は、
+        <Link href="/settings/days" className="underline">日付ごとの設定</Link>で扱います。
       </p>
     </div>
   );

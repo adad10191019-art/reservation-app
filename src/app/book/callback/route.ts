@@ -7,7 +7,7 @@
  */
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { buildCustomerSession, encodeCustomerSession, CUSTOMER_COOKIE, CUSTOMER_MAX_AGE_SECONDS } from "@/lib/customer-session";
+import { buildCustomerSession, encodeCustomerSession, CUSTOMER_COOKIE, CUSTOMER_COOKIE_OPTIONS } from "@/lib/customer-session";
 import { getVerifiedSession } from "@/lib/auth";
 import { LINE_LOGIN_COOKIE } from "@/lib/constants";
 import { upsertLineCustomer } from "@/lib/customer-store";
@@ -119,12 +119,6 @@ export async function GET(request: Request) {
     process.env.APP_URL ?? request.url,
   );
   const response = NextResponse.redirect(destination);
-  response.cookies.set(CUSTOMER_COOKIE, encodeCustomerSession(session), {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: CUSTOMER_MAX_AGE_SECONDS,
-  });
+  response.cookies.set(CUSTOMER_COOKIE, encodeCustomerSession(session), CUSTOMER_COOKIE_OPTIONS);
   return response;
 }

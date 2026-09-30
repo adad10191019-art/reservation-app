@@ -129,28 +129,34 @@ export async function saveStaff(formData: FormData) {
   });
   if (menus.length !== menuIds.length) back(path, "メニューの指定が正しくありません");
 
-  let staffId = id;
+  // スタッフ本体と対応メニューの入れ替えは、1つの取引にまとめる。
+  // 途中で失敗して「対応メニューが全部消えただけ」の状態を残さない
+  const saved = await prisma.$transaction(async (tx) => {
+    let staffId = id;
 
-  if (id) {
-    const updated = await prisma.staff.updateMany({
-      where: { id, tenantId: session.tenantId },
-      data: { name, displayOrder, isActive },
-    });
-    if (updated.count === 0) back(path, "スタッフが見つかりません");
-  } else {
-    const created = await prisma.staff.create({
-      data: { name, displayOrder, isActive, tenantId: session.tenantId },
-    });
-    staffId = created.id;
-  }
+    if (id) {
+      const updated = await tx.staff.updateMany({
+        where: { id, tenantId: session.tenantId },
+        data: { name, displayOrder, isActive },
+      });
+      if (updated.count === 0) return false;
+    } else {
+      const created = await tx.staff.create({
+        data: { name, displayOrder, isActive, tenantId: session.tenantId },
+      });
+      staffId = created.id;
+    }
 
-  // 対応メニューは毎回入れ替える
-  await prisma.staffMenu.deleteMany({ where: { staffId, tenantId: session.tenantId } });
-  if (menuIds.length > 0) {
-    await prisma.staffMenu.createMany({
-      data: menuIds.map((menuId) => ({ tenantId: session.tenantId, staffId, menuId })),
-    });
-  }
+    // 対応メニューは毎回入れ替える
+    await tx.staffMenu.deleteMany({ where: { staffId, tenantId: session.tenantId } });
+    if (menuIds.length > 0) {
+      await tx.staffMenu.createMany({
+        data: menuIds.map((menuId) => ({ tenantId: session.tenantId, staffId, menuId })),
+      });
+    }
+    return true;
+  });
+  if (!saved) back(path, "スタッフが見つかりません");
 
   refreshAll();
   back(path);

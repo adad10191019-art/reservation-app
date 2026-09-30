@@ -11,6 +11,7 @@ import {
   rescheduleReservation,
   setReservationStatus,
 } from "./booking";
+import { logReservationMoved } from "./change-log";
 import { LINE_LOGIN_COOKIE } from "./constants";
 import { buildAuthorizeUrl, isLineConfigured } from "./line";
 import { isLocked, recordFailure, recordSuccess } from "./login-attempts";
@@ -22,6 +23,7 @@ import { sanitizeDate } from "./time";
 
 function refresh() {
   revalidatePath("/calendar");
+  revalidatePath("/calendar/week");
   revalidatePath("/booking");
 }
 
@@ -231,6 +233,12 @@ export async function moveReservation(formData: FormData) {
     backTo("時間の指定が正しくありません");
   }
 
+  // 履歴に残すため、動かす前の状態を先に控えておく
+  const before = await prisma.reservation.findFirst({
+    where: { id: reservationId, tenantId: session.tenantId },
+    include: { staff: true, customer: true },
+  });
+
   const result = await rescheduleReservation({
     actor: session,
     tenantId: session.tenantId,
@@ -242,6 +250,15 @@ export async function moveReservation(formData: FormData) {
 
   refresh();
   if (!result.ok) backTo(result.message);
+
+  if (before) {
+    await logReservationMoved({
+      tenantId: session.tenantId,
+      actorName: session.name,
+      before,
+      after: { date, startMinutes, staffId },
+    });
+  }
   redirect(`/reservations/${reservationId}?done=1`);
 }
 

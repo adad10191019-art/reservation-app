@@ -9,14 +9,13 @@
  *
  * こちらの都合（担当の割り振り直しなど）で動かすことが多いため、
  * お客様への通知は送らない（rescheduleReservation 自体が通知を送らない）。
- * その代わり、あとで誰でも確認できるよう変更履歴には残す。
+ * その代わり、あとで誰でも確認できるよう変更履歴には残す（フォームからの移動と同じ）。
  */
 import { revalidatePath } from "next/cache";
 import { rescheduleReservation } from "./booking";
 import { requireSession } from "./auth";
-import { logChange } from "./change-log";
+import { logReservationMoved } from "./change-log";
 import { prisma } from "./prisma";
-import { formatDateLabel, toHm } from "./time";
 
 export type DragMoveResult = { ok: true } | { ok: false; message: string };
 
@@ -49,20 +48,11 @@ export async function moveReservationByDrag(params: {
   revalidatePath("/calendar/week");
 
   if (before) {
-    const staffChanged = before.staffId !== params.staffId;
-    const newStaffName = staffChanged
-      ? (await prisma.staff.findUnique({ where: { id: params.staffId } }))?.name ?? "不明"
-      : before.staff.name;
-
-    const fromText = `${formatDateLabel(before.date)} ${toHm(before.startMinutes)}（${before.staff.name}）`;
-    const toText = `${formatDateLabel(params.date)} ${toHm(params.startMinutes)}（${newStaffName}）`;
-
-    await logChange({
+    await logReservationMoved({
       tenantId: session.tenantId,
       actorName: session.name,
-      entity: "reservation",
-      action: "moved",
-      summary: `${before.menuNameSnapshot}（${before.customer.name} 様）を ${fromText} → ${toText} に移動`,
+      before,
+      after: { date: params.date, startMinutes: params.startMinutes, staffId: params.staffId },
     });
   }
 

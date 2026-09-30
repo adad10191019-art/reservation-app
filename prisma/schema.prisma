@@ -5,7 +5,7 @@
 //  - 日付は "YYYY-MM-DD" の文字列で持つ（タイムゾーン由来のズレを避けるため）
 //  - 全テーブルに tenantId を持たせる（マルチテナント）
 //  - 予約は消さず status を変える（論理削除）
-//  - 列挙は String + コメントで表現する（SQLite でも PostgreSQL でも動く）
+//  - 列挙は String + コメントで表現する
 
 generator client {
   provider = "prisma-client"

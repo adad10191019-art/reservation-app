@@ -97,8 +97,11 @@ export async function startEmailLoginCode(params: {
   // 送れたかどうかに関わらず、送信の試み1回として数える
   await recordFailure(sendKey);
 
-  // 古いコードが残っていても、新しいものだけを有効にする（使い回し防止）
-  await prisma.customerLoginCode.deleteMany({ where: { tenantId, email } });
+  // 古いコードが残っていても、新しいものだけを有効にする（使い回し防止）。
+  // ついでに、この店舗で期限切れのまま残っているコード（途中でやめた人の分）も消す
+  await prisma.customerLoginCode.deleteMany({
+    where: { tenantId, OR: [{ email }, { expiresAt: { lt: new Date() } }] },
+  });
 
   const code = generateCode();
   await prisma.customerLoginCode.create({

@@ -1,4 +1,9 @@
 import { describe, expect, it } from "vitest";
+import {
+  buildCustomerSession,
+  decodeCustomerSession,
+  encodeCustomerSession,
+} from "./customer-session";
 import { hashPassword, verifyPassword } from "./password";
 import {
   canEditSettings,
@@ -100,6 +105,33 @@ describe("セッション", () => {
       now,
     );
     expect(session.exp).toBe(now + SESSION_MAX_AGE_SECONDS * 1000);
+  });
+});
+
+describe("お客様のセッション", () => {
+  const customer = buildCustomerSession({ customerId: "c1", tenantId: "t1", name: "山田" });
+
+  it("署名して戻すと元に戻り、書き換えや期限切れは無効", () => {
+    const token = encodeCustomerSession(customer, SECRET);
+    expect(decodeCustomerSession(token, SECRET)).toEqual(customer);
+    expect(decodeCustomerSession(token, SECRET, customer.exp + 1)).toBeNull();
+    expect(decodeCustomerSession(token + "x", SECRET)).toBeNull();
+  });
+
+  it("店舗側とお客様側の Cookie は、互いに差し込んでも通らない", () => {
+    process.env.AUTH_SECRET = SECRET;
+    const staffToken = encodeSession({
+      userId: "u1",
+      tenantId: "t1",
+      role: "owner",
+      staffId: null,
+      name: "店長",
+      exp: Date.now() + 60_000,
+    });
+    const customerToken = encodeCustomerSession(customer);
+
+    expect(decodeCustomerSession(staffToken)).toBeNull();
+    expect(decodeSession(customerToken)).toBeNull();
   });
 });
 

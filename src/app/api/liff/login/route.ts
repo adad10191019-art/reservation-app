@@ -6,7 +6,7 @@
  * 画面遷移（OAuthの同意画面）を挟まないので、開いた瞬間にログイン済みにできる。
  */
 import { NextResponse } from "next/server";
-import { CUSTOMER_COOKIE, CUSTOMER_MAX_AGE_SECONDS, buildCustomerSession, encodeCustomerSession } from "@/lib/customer-session";
+import { CUSTOMER_COOKIE, CUSTOMER_COOKIE_OPTIONS, buildCustomerSession, encodeCustomerSession } from "@/lib/customer-session";
 import { upsertLineCustomer } from "@/lib/customer-store";
 import { resolveLiffId, verifyLiffIdToken } from "@/lib/line";
 import { prisma } from "@/lib/prisma";
@@ -52,12 +52,6 @@ export async function POST(request: Request) {
   const session = buildCustomerSession({ customerId: customer.id, tenantId, name: customer.name });
 
   const response = NextResponse.json({ ok: true });
-  response.cookies.set(CUSTOMER_COOKIE, encodeCustomerSession(session), {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: CUSTOMER_MAX_AGE_SECONDS,
-  });
+  response.cookies.set(CUSTOMER_COOKIE, encodeCustomerSession(session), CUSTOMER_COOKIE_OPTIONS);
   return response;
 }

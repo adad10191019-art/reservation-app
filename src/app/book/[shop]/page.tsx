@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import { notFound } from "next/navigation";
-import { findAvailability, findWeekAvailability } from "@/lib/availability";
+import { findAvailabilityForDates } from "@/lib/availability";
 import { resolveBrandPalette } from "@/lib/brand-color";
 import { filterBookableStarts } from "@/lib/booking-window";
 import {
@@ -71,11 +71,21 @@ export default async function PublicBookingPage({
     ).map((s) => [s.id, s.name]),
   );
 
-  // 「誰でもいい」で問い合わせる。担当者ごとの内訳（perStaff）も同時に
-  // 手に入るので、指名したい場合はそこから絞り込む（問い合わせを増やさない）
-  const availability = menu
-    ? await findAvailability({ tenantId, date, menuId: menu.id })
+  // 1週間ぶんの空き状況をまとめて見せる帯。今日から7日分を常に表示する
+  // （選んだ日が7日より先でも、帯自体は今日基準のまま動かさない）
+  const weekDates = Array.from({ length: 7 }, (_, i) => addDays(todayString(), i));
+
+  // 選んだ日と帯の7日分を、「誰でもいい」で1回にまとめて問い合わせる。
+  // 担当者ごとの内訳（perStaff）も同時に手に入るので、指名したい場合は
+  // そこから絞り込む（問い合わせを増やさない）
+  const availabilityByDate = menu
+    ? await findAvailabilityForDates({
+        tenantId,
+        dates: [...new Set([date, ...weekDates])],
+        menuId: menu.id,
+      })
     : null;
+  const availability = availabilityByDate?.get(date) ?? null;
 
   // このメニューに対応できるスタッフだけを選択肢にする
   const eligibleStaff = availability?.perStaff ?? [];
@@ -103,15 +113,13 @@ export default async function PublicBookingPage({
 
   const lastDate = addDays(todayString(), tenant.bookingWindowDays);
 
-  // 1週間ぶんの空き状況をまとめて見せる帯。今日から7日分を常に表示する
-  // （選んだ日が7日より先でも、帯自体は今日基準のまま動かさない）
-  const weekDates = Array.from({ length: 7 }, (_, i) => addDays(todayString(), i));
-  const weekAvailability = menu
-    ? await findWeekAvailability({
-        tenantId,
-        dates: weekDates,
-        menuId: menu.id,
-        staffId: selectedStaffId || undefined,
+  const weekAvailability = availabilityByDate
+    ? weekDates.map((d) => {
+        const day = availabilityByDate.get(d);
+        const starts = selectedStaffId
+          ? (day?.perStaff.find((s) => s.staffId === selectedStaffId)?.starts ?? [])
+          : (day?.merged ?? []).map((s) => s.startMinutes);
+        return { date: d, starts };
       })
     : [];
   const weekSummary = weekAvailability.map((day) => {

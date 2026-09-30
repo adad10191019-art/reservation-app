@@ -5,9 +5,10 @@
  * ただし中身をそのまま入れると書き換えられてしまうので、
  * サーバーの秘密鍵で署名を付け、改ざんされていないかを毎回確かめる。
  *
- * 署名の作成・検証はDBもCookieも触らない純粋な処理なので、そのままテストできる。
+ * 署名の仕組みは signed-token.ts にある（お客様側と共通）。
+ * DBもCookieも触らない純粋な処理なので、そのままテストできる。
  */
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { getAuthSecret, readSignedToken, signToken } from "./signed-token";
 
 export type Role = "owner" | "staff" | "group_admin";
 
@@ -30,23 +31,8 @@ export type SessionData = {
 export const SESSION_COOKIE = "session";
 export const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7; // 7日
 
-function getSecret(): string {
-  const secret = process.env.AUTH_SECRET;
-  if (!secret || secret.length < 16) {
-    throw new Error(
-      "AUTH_SECRET が設定されていません（16文字以上）。.env.example を参照してください",
-    );
-  }
-  return secret;
-}
-
-function sign(payload: string, secret: string): string {
-  return createHmac("sha256", secret).update(payload).digest("base64url");
-}
-
-export function encodeSession(data: SessionData, secret = getSecret()): string {
-  const payload = Buffer.from(JSON.stringify(data)).toString("base64url");
-  return `${payload}.${sign(payload, secret)}`;
+export function encodeSession(data: SessionData, secret = getAuthSecret()): string {
+  return signToken(data, secret);
 }
 
 /**
@@ -55,33 +41,17 @@ export function encodeSession(data: SessionData, secret = getSecret()): string {
  */
 export function decodeSession(
   token: string | undefined,
-  secret = getSecret(),
+  secret = getAuthSecret(),
   now = Date.now(),
 ): SessionData | null {
-  if (!token) return null;
-
-  const separator = token.lastIndexOf(".");
-  if (separator <= 0) return null;
-
-  const payload = token.slice(0, separator);
-  const signature = token.slice(separator + 1);
-  const expected = sign(payload, secret);
-
-  const a = Buffer.from(signature);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
-
-  try {
-    const data = JSON.parse(Buffer.from(payload, "base64url").toString()) as SessionData;
-    if (typeof data.exp !== "number" || data.exp <= now) return null;
-    if (!data.userId || !data.tenantId) return null;
-    if (data.role !== "owner" && data.role !== "staff" && data.role !== "group_admin") {
-      return null;
-    }
-    return data;
-  } catch {
+  const data = readSignedToken(token, secret) as Partial<SessionData> | null;
+  if (!data || typeof data !== "object") return null;
+  if (typeof data.exp !== "number" || data.exp <= now) return null;
+  if (!data.userId || !data.tenantId) return null;
+  if (data.role !== "owner" && data.role !== "staff" && data.role !== "group_admin") {
     return null;
   }
+  return data as SessionData;
 }
 
 /** 今から有効期限までの SessionData を作る */
