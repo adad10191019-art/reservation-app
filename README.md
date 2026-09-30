@@ -182,7 +182,8 @@ src/lib/
   actions.ts                 フォームの送信先（Server Action）
   prisma.ts                  DB接続
   password.ts                パスワードの保存・照合
-  session.ts                 ログイン状態の署名・検証
+  signed-token.ts            署名付きCookieの作成・照合（店舗側・お客様側で共通）
+  session.ts                 ログイン状態（店舗側）の中身の検証
   auth.ts                    Cookie の読み書きと画面の保護
   permissions.ts             誰が何をしてよいかの判定
   ranges.ts                  "10:00-13:00, 14:00-19:00" の読み書き
@@ -200,6 +201,8 @@ src/lib/
   line-messaging.ts          LINE公式アカウントからの送信
   notify-text.ts             通知の文面（DBもネットワークも触らない）
   notify.ts                  予約に関する通知の組み立てと送信（お客様・店舗側）
+  cron-auth.ts               定時実行（Vercel Cron）からの呼び出しかの確認
+  safe-redirect.ts           ログイン後の戻り先の確認（外部サイトへ飛ばさない）
 src/components/
   app-header.tsx             店舗名・ログイン中の人・ログアウト
   banner.tsx                 保存結果の表示
@@ -215,6 +218,8 @@ src/app/book/
   [shop]/                    お客様向けの予約画面（ログイン不要で閲覧できる）
   [shop]/mine/               ご自分の予約の確認・キャンセル
   callback/                  LINEログインの戻り先
+src/app/api/
+  cron/reminders/            前日リマインドの定時実行（Vercel Cron が毎日呼ぶ）
 scripts/
   check-availability.ts      実データでの目視確認
   check-double-booking.ts    二重予約が防げているかの検証
@@ -477,13 +482,19 @@ https://<プロジェクト名>.vercel.app/book/callback
 - [x] 予約ページのデザイン刷新と、店舗ごとのブランドカラー設定
 - [x] カレンダーで予約をドラッグして時間・担当を変更（日をまたぐ移動、移動履歴、「移動済」の印）
 - [x] 日付・受付の判定をサーバーのタイムゾーンに左右されず日本時間で行う
+- [x] コード全体の見直しと修正（部署の解約が確認コードの残りで失敗するバグ、確認コードの送信回数の上限、ログイン後の戻り先の確認）
+- [x] 前日リマインドの自動実行（Vercel Cron。`CRON_SECRET` で保護、二重呼び出しでも二重送信しない）
+- [x] 細かい整理（署名処理・空き枠計算の重複をまとめる、フォームでの移動も変更履歴に残す、SQLiteの残りを削除）
 
 ### 未完了
 
 - [ ] Vercelアカウントの二要素認証（本番データを預かるため、手が空いたときに設定する）
 - [ ] LINE公式アカウント（Messaging API チャネル）の名前をテスト名「竹」から店舗名へ変更
-- [ ] 前日リマインドの自動実行（今は `npm run remind` を手動で動かすだけ。Vercel Cron などで定時実行する）
+- [ ] Vercel に `CRON_SECRET` を登録して前日リマインドを動かす（登録するまで /api/cron/reminders は401を返すだけ）
 - [ ] メール送信ドメインの認証（送信元が `onboarding@resend.dev` のままで、スタッフ・お客様宛のメールが届かない）
 - [ ] 開発用と本番用のDBを分ける
 - [ ] 本番DBに残っているダミーデータのアカウント（`password123`）を消す
 - [ ] 店舗ごとのLINE認証情報の暗号化（今はDBに平文で保存）
+- [ ] 予約登録画面（/booking）で全顧客を毎回読み込んでいる。顧客が増えたら検索欄に変える
+- [ ] 確認コードのメールは同じアドレスへの回数だけ制限している。アドレスを変えながらの連続送信には、店舗全体の上限が要る
+- [ ] ログイン失敗の記録（LoginAttempt）が消されずに溜まっていく

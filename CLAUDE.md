@@ -48,11 +48,12 @@ LINE・Google・メールは未設定でも動く（仮ログイン／機能非�
 
 ## 次にやることの候補（2026-09-30 時点）
 
+0. **（ユーザーの作業）** Vercel の環境変数に `CRON_SECRET` を登録し、main を push する。
+   翌日以降、Vercel の Cron Jobs → View Logs に `[前日リマインド]` が出ているか確認
 1. 本番の安全対策：ダミーアカウント（`password123`）の削除、Vercel の二要素認証、開発用と本番用のDB分離
-2. 前日リマインドの自動実行（Vercel Cron から呼べる API を作り、秘密のトークンで保護する）
-3. 細かい整理：`NEXT_PUBLIC_LIFF_ID` を `.env.example` に追加、`src/app/settings/hours/page.tsx` の
-   「日付ごとの設定の画面は今後追加します」という古い文言、`next.config.ts` に残る SQLite 用の指定
+2. DB を使う処理（`booking.ts`、`calendar-actions.ts`、`notify.ts` の `sendRemindersFor` など）の自動テスト追加
+3. 予約登録画面（`src/app/booking/page.tsx`）で全顧客を読み込んでいるのを、検索欄に変える
 4. LINE 公式アカウント名をテスト名「竹」から変更（LINE 側の設定作業）
-5. メール送信ドメインの認証（LINE 以外のクライアントが出てきたとき）
+5. メール送信ドメインの認証（LINE 以外のクライアントが出てきたとき）。
+   あわせて確認コードの送信に店舗全体の上限を付ける
 6. 店舗ごとの LINE 認証情報の暗号化（外部に販売する段階で）
-7. DB を使う処理（`booking.ts`、`calendar-actions.ts` など）の自動テスト追加
