@@ -36,7 +36,7 @@
 
 - Next.js 16（App Router）、React 19、TypeScript
 - PostgreSQL（Neon）＋ Prisma 7（`@prisma/adapter-pg`）。生成先は `src/generated/prisma`
-- Tailwind CSS 4、Vitest（`npm test`）、tsx（`scripts/` の検証スクリプト）
+- Tailwind CSS 4、Vitest（`npm test`、DB を使うものは `npm run test:db` で開発用DBに流す）、tsx（`scripts/` の検証スクリプト）
 - Resend（メール）、Sentry（エラー監視）
 - LINE ログイン／Messaging API／LIFF、Google Calendar API
 - デプロイ時は `vercel-build`（`prisma migrate deploy && next build`）が走る
@@ -53,14 +53,15 @@ LINE・Google・メールは未設定でも動く（仮ログイン／機能非�
 
 ## 次にやることの候補（2026-09-30 時点）
 
-0. **（ユーザーの作業）** Vercel の Cron Jobs → View Logs に `[前日リマインド]` が出ているか確認（401 なら `CRON_SECRET` の設定不良）
-1. **（ユーザーの作業）** Vercel と Neon のアカウントに二要素認証を設定（リカバリーコードも保存）
-2. **（ユーザーの作業）** 本番のスタッフ「担当者A〜C」（就活のイロハ・youth光回線案内）を 設定→スタッフ で無効にする。
+0. **（ユーザーの作業）** Vercel の Cron Jobs → View Logs に `[前日リマインド]` が出ているか確認（401 なら `CRON_SECRET` の設定不良）。
+   毎日 18:00（日本時間）に動き、初回は 2026-09-30 18:00。無料プランでログがどれだけ残るかは未確認なので、実行後すぐ見るのが確実
+1. **（ユーザーの作業）** 本番のスタッフ「担当者A〜C」（就活のイロハ・youth光回線案内）を 設定→スタッフ で無効にする。
    就活のイロハの担当者Aには予約2件があるので、中身を確認してから
-3. DB を使う処理（`booking.ts`、`calendar-actions.ts`、`notify.ts` の `sendRemindersFor` など）の自動テスト追加。
-   開発用ブランチがあるので、テストは development 側で流せる
-4. 予約登録画面（`src/app/booking/page.tsx`）で全顧客を読み込んでいるのを、検索欄に変える
-5. LINE 公式アカウント名をテスト名「竹」から変更（LINE 側の設定作業）
-6. メール送信ドメインの認証（LINE 以外のクライアントが出てきたとき）。
-   あわせて確認コードの送信に店舗全体の上限を付ける
-7. 店舗ごとの LINE 認証情報の暗号化（外部に販売する段階で）
+2. **（ユーザーの作業）** LINE 公式アカウント名をテスト名「竹」から変更（LINE 側の設定作業）
+3. ログイン失敗の記録（LoginAttempt）が消されずに溜まっていくのを、古いものから消すようにする
+4. DB テスト（`npm run test:db`）の範囲を広げる（部署の解約 `tenant-offboarding.ts`、お客様のメールログイン `email-login.ts` など）
+5. メール送信ドメインの認証（LINE 以外のクライアントが出てきたとき）。
+   あわせて、確認コードの送信に店舗全体の上限を付け、店舗側の「パスワードを忘れた方」（メールで再設定）を作る
+6. 店舗ごとの LINE 認証情報の暗号化（外部に販売する段階で）
+
+済み（2026-09-30）：二要素認証（GitHub・Neon・Vercel・Google）、DB テストの追加、予約登録画面の顧客検索

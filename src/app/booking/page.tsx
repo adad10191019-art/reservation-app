@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { AppHeader } from "@/components/app-header";
+import { CustomerPicker } from "@/components/customer-picker";
 import { requireSession } from "@/lib/auth";
 import { createReservation } from "@/lib/actions";
 import { findAvailability } from "@/lib/availability";
@@ -22,7 +23,7 @@ export default async function BookingPage({
   const session = await requireSession();
   const tenant = await getTenant(session.tenantId);
 
-  const [menus, staffs, customers] = await Promise.all([
+  const [menus, staffs] = await Promise.all([
     prisma.menu.findMany({
       where: { tenantId: tenant.id, isActive: true },
       orderBy: { durationMinutes: "asc" },
@@ -30,10 +31,6 @@ export default async function BookingPage({
     prisma.staff.findMany({
       where: { tenantId: tenant.id, isActive: true },
       orderBy: [{ displayOrder: "asc" }, { name: "asc" }],
-    }),
-    prisma.customer.findMany({
-      where: { tenantId: tenant.id },
-      orderBy: { name: "asc" },
     }),
   ]);
 
@@ -199,24 +196,12 @@ export default async function BookingPage({
               <fieldset className="grid gap-3 sm:grid-cols-2">
                 <legend className="mb-2 text-sm font-medium">顧客</legend>
 
-                <label className="block sm:col-span-2">
+                <div className="sm:col-span-2">
                   <span className="mb-1 block text-xs font-medium text-neutral-600">
-                    既存の顧客から選ぶ
+                    既存の顧客から選ぶ（選ばなければ新規のお客様）
                   </span>
-                  <select
-                    name="customerId"
-                    defaultValue=""
-                    className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
-                  >
-                    <option value="">（新規のお客様）</option>
-                    {customers.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                        {c.phone ? `（${c.phone}）` : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                  <CustomerPicker />
+                </div>
 
                 <label className="block">
                   <span className="mb-1 block text-xs font-medium text-neutral-600">

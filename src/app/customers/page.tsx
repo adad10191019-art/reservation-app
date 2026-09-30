@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AppHeader } from "@/components/app-header";
 import { requireSession } from "@/lib/auth";
+import { customerSearchWhere } from "@/lib/customer-search";
 import { getTenant } from "@/lib/schedule";
 import { prisma } from "@/lib/prisma";
 import { formatDateLabel } from "@/lib/time";
@@ -20,18 +21,7 @@ export default async function CustomersPage({
   const tenant = await getTenant(session.tenantId);
 
   const customers = await prisma.customer.findMany({
-    where: {
-      tenantId: session.tenantId,
-      ...(q
-        ? {
-            OR: [
-              { name: { contains: q, mode: "insensitive" } },
-              { phone: { contains: q } },
-              { email: { contains: q, mode: "insensitive" } },
-            ],
-          }
-        : {}),
-    },
+    where: customerSearchWhere(session.tenantId, q),
     include: {
       // 件数はここでJS側で数える。「done」と「booked」で別々に絞り込んだ
       // _count を1つの relation に対して同時には持てないため
