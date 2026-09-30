@@ -21,6 +21,7 @@ import {
   notifyStaffNewReservation,
 } from "./notify";
 import { prisma } from "./prisma";
+import { safeNextPath } from "./safe-redirect";
 import { handleOf, tenantHandle } from "./tenant";
 import { sanitizeDate } from "./time";
 
@@ -90,7 +91,7 @@ export async function devLogin(formData: FormData) {
   await startCustomerSession(
     buildCustomerSession({ customerId: customer.id, tenantId, name: customer.name }),
   );
-  redirect(next || bookPath(handle));
+  redirect(safeNextPath(next, bookPath(handle)));
 }
 
 export async function customerLogout(formData: FormData) {
@@ -182,7 +183,7 @@ export async function verifyEmailLogin(formData: FormData) {
   await startCustomerSession(
     buildCustomerSession({ customerId: customer.id, tenantId, name: customer.name }),
   );
-  redirect(pending.next || bookPath(handle));
+  redirect(safeNextPath(pending.next, bookPath(handle)));
 }
 
 /** メールアドレスを入力し直したいときに、コード入力待ちの状態を取り消す */

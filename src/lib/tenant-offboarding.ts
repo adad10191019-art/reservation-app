@@ -107,6 +107,8 @@ export async function deleteTenantCompletely(tenantId: string): Promise<void> {
     prisma.dateOverride.deleteMany({ where: { tenantId } }),
     prisma.block.deleteMany({ where: { tenantId } }),
     prisma.changeLog.deleteMany({ where: { tenantId } }),
+    // メールログインを途中でやめた人のコードが残っていると、Tenant を消せない
+    prisma.customerLoginCode.deleteMany({ where: { tenantId } }),
     prisma.customer.deleteMany({ where: { tenantId } }),
     prisma.menu.deleteMany({ where: { tenantId } }),
     prisma.user.deleteMany({ where: { tenantId } }),

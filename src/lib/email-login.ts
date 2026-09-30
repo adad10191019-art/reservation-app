@@ -8,6 +8,11 @@
  * コードは平文で保存せず、HMACでハッシュ化した値だけを持つ。
  * 総当たりを防ぐため、既存の login-attempts.ts（ログイン失敗のロック機構）を
  * 「customer-otp:テナントID:メールアドレス」というキーで間借りして使う。
+ *
+ * コードの送信回数も同じ仕組みで数える（キーは「customer-otp-send:…」）。
+ * 上限が無いと、他人のアドレス宛に何通でも送らせることができ、
+ * 迷惑メールの踏み台になるうえ、メール送信の枠も使い切られてしまう。
+ * ログインに成功したら数え直す。
  */
 import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
 import { isEmailConfigured, sendNotificationEmail } from "./email";
@@ -48,6 +53,11 @@ function otpLockKey(tenantId: string, email: string): string {
   return `customer-otp:${tenantId}:${email.toLowerCase()}`;
 }
 
+/** 送信回数を数えるキー。ログインに成功しないまま上限まで送ると、しばらく送れなくなる */
+function otpSendKey(tenantId: string, email: string): string {
+  return `customer-otp-send:${tenantId}:${email.toLowerCase()}`;
+}
+
 function generateCode(): string {
   // 000000〜999999 を、先頭0埋めの6桁文字列にする
   return String(randomInt(0, 10 ** CODE_LENGTH)).padStart(CODE_LENGTH, "0");
@@ -76,12 +86,16 @@ export async function startEmailLoginCode(params: {
   }
 
   const lockKey = otpLockKey(tenantId, email);
-  if (await isLocked(lockKey)) {
+  const sendKey = otpSendKey(tenantId, email);
+  if ((await isLocked(lockKey)) || (await isLocked(sendKey))) {
     return {
       ok: false,
       message: "試行回数が多すぎます。しばらくしてからもう一度お試しください",
     };
   }
+
+  // 送れたかどうかに関わらず、送信の試み1回として数える
+  await recordFailure(sendKey);
 
   // 古いコードが残っていても、新しいものだけを有効にする（使い回し防止）
   await prisma.customerLoginCode.deleteMany({ where: { tenantId, email } });
@@ -176,5 +190,6 @@ export async function verifyEmailLoginCode(params: {
 
   await prisma.customerLoginCode.deleteMany({ where: { id: record.id } });
   await recordSuccess(lockKey);
+  await recordSuccess(otpSendKey(tenantId, email));
   return { ok: true };
 }

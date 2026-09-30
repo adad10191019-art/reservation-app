@@ -13,6 +13,7 @@ import { LINE_LOGIN_COOKIE } from "@/lib/constants";
 import { upsertLineCustomer } from "@/lib/customer-store";
 import { fetchLineProfile } from "@/lib/line";
 import { prisma } from "@/lib/prisma";
+import { safeNextPath } from "@/lib/safe-redirect";
 import { handleOf, tenantHandle } from "@/lib/tenant";
 
 async function errorRedirect(request: Request, tenantId: string | null, message: string) {
@@ -81,7 +82,7 @@ export async function GET(request: Request) {
     });
 
     const destination = new URL(
-      pending.next || "/notify",
+      safeNextPath(pending.next, "/notify"),
       process.env.APP_URL ?? request.url,
     );
     if (taken) {
@@ -114,7 +115,7 @@ export async function GET(request: Request) {
   });
 
   const destination = new URL(
-    pending.next || `/book/${tenantHandle(tenant)}`,
+    safeNextPath(pending.next, `/book/${tenantHandle(tenant)}`),
     process.env.APP_URL ?? request.url,
   );
   const response = NextResponse.redirect(destination);
