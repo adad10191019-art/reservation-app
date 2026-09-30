@@ -84,6 +84,10 @@ export type ReminderOutcome = {
  *
  * すでに送った予約は飛ばす。送信に失敗したものは「送信済み」にしないので、
  * 次の実行でもう一度試される。
+ *
+ * 定時実行（Vercel Cron）は同じ回を二重に呼ぶことがあるため、
+ * 送る前に「送信済み」の印を取り合う。印を付けられた実行だけが送り、
+ * 送れなかったら印を外して次回に回す。
  */
 export async function sendRemindersFor(date: string): Promise<ReminderOutcome[]> {
   const reservations = await prisma.reservation.findMany({
@@ -111,17 +115,25 @@ export async function sendRemindersFor(date: string): Promise<ReminderOutcome[]>
       continue;
     }
 
+    // 印がまだ付いていないときだけ付けられる。同時に走った別の実行が
+    // 先に付けていれば count は 0 になるので、こちらは送らない
+    const claimed = await prisma.reservation.updateMany({
+      where: { id: reservation.id, tenantId: reservation.tenantId, reminderSentAt: null },
+      data: { reminderSentAt: new Date() },
+    });
+    if (claimed.count === 0) continue;
+
     const result = await pushTextMessage({
       tenant: target.tenant,
       to: target.to,
       text: reservationReminderText(target.summary),
     });
 
-    // 送れたときだけ記録する。失敗は次回もう一度試す
-    if (result.ok && result.sent) {
+    // 送れなかったら印を外す。次回もう一度試す
+    if (!(result.ok && result.sent)) {
       await prisma.reservation.updateMany({
         where: { id: reservation.id, tenantId: reservation.tenantId },
-        data: { reminderSentAt: new Date() },
+        data: { reminderSentAt: null },
       });
     }
 
@@ -129,7 +141,7 @@ export async function sendRemindersFor(date: string): Promise<ReminderOutcome[]>
       reservationId: reservation.id,
       customerName: reservation.customer.name,
       sent: result.ok && result.sent,
-      reason: result.ok ? result.reason : result.reason,
+      reason: result.reason,
     });
   }
 
