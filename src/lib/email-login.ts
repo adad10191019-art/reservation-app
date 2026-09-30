@@ -36,16 +36,19 @@ export function resolveCustomerLoginMethods(tenant: {
       (tenant.lineLoginChannelSecret || process.env.LINE_LOGIN_CHANNEL_SECRET),
   );
 
+  // メールが届かない間は、選ばれていても入力欄を出さない（届かないコードを待たせないため）
+  const emailAvailable = isEmailConfigured();
+
   switch (tenant.customerLoginMethod) {
     case "line":
       return { line: lineAvailable, email: false };
     case "email":
-      return { line: false, email: true };
+      return { line: false, email: emailAvailable };
     case "both":
-      return { line: lineAvailable, email: true };
+      return { line: lineAvailable, email: emailAvailable };
     default:
       // 自動：LINEが使えるならLINEを優先し、使えなければメールにする
-      return { line: lineAvailable, email: !lineAvailable };
+      return { line: lineAvailable, email: !lineAvailable && emailAvailable };
   }
 }
 

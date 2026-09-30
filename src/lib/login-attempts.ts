@@ -50,3 +50,27 @@ export async function recordFailure(email: string): Promise<void> {
 export async function recordSuccess(email: string): Promise<void> {
   await prisma.loginAttempt.deleteMany({ where: { email } });
 }
+
+/** 最後の失敗からこの時間たった記録は、掃除で消してよい */
+const STALE_HOURS = 24;
+
+/**
+ * 古い失敗記録を消す（前日リマインドと同じ定時実行から毎日呼ぶ）。
+ *
+ * ログインに成功しないまま放っておかれた記録は、そのままだと消えずに
+ * 溜まり続けるので、最後の失敗から時間がたったものをまとめて消す。
+ * ロック中の記録は、どれだけ古くても残す（総当たり対策を弱めないため）。
+ *
+ * お客様の確認コードの送信回数（email-login.ts）もここに間借りしているので、
+ * 送信回数の数え直しもこの掃除の間隔になる。
+ */
+export async function deleteStaleLoginAttempts(now: Date = new Date()): Promise<number> {
+  const cutoff = new Date(now.getTime() - STALE_HOURS * 60 * 60 * 1000);
+  const { count } = await prisma.loginAttempt.deleteMany({
+    where: {
+      updatedAt: { lt: cutoff },
+      OR: [{ lockedUntil: null }, { lockedUntil: { lte: now } }],
+    },
+  });
+  return count;
+}

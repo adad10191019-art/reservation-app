@@ -6,7 +6,6 @@
  * ここでは、その一連の流れを「今どこまで終わっているか」として一箇所にまとめ、
  * 抜け漏れなく型どおりに導入できるようにする。
  */
-import { isEmailConfigured } from "./email";
 import { resolveCustomerLoginMethods } from "./email-login";
 import { resolveLiffId } from "./line";
 import { prisma } from "./prisma";
@@ -42,11 +41,10 @@ export async function buildOnboardingStatus(tenantId: string): Promise<Onboardin
   ]);
 
   const methods = resolveCustomerLoginMethods(tenant);
-  // methods.line は resolveCustomerLoginMethods の中ですでに「実際にLINE設定が
-  // あるか」まで見ている。メールは、選ばれていても RESEND_API_KEY が無ければ
-  // お客様にコードが届かないので、ここで確かめる
+  // resolveCustomerLoginMethods の中で、LINE・メールとも「実際に使えるか」
+  // （LINEの設定があるか、お客様にメールが届く設定か）まで見ている
   const lineUsable = methods.line;
-  const emailUsable = methods.email && isEmailConfigured();
+  const emailUsable = methods.email;
   const customerLoginReady = lineUsable || emailUsable;
   const customerLoginMethodLabel =
     lineUsable && emailUsable ? "LINE・メール" : lineUsable ? "LINE" : emailUsable ? "メール" : "未設定";
