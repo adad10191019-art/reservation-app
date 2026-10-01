@@ -98,12 +98,12 @@ export async function buildOnboardingStatus(tenantId: string): Promise<Onboardin
     },
     {
       key: "staff",
-      label: "スタッフの登録",
-      description: "予約を受け付ける担当者を、最低1人登録する。",
+      label: "メンバーの登録",
+      description: "予約を受け付けるメンバーを、最低1人登録する。",
       done: staffCount > 0,
       note: `在籍中 ${staffCount}人`,
-      href: "/settings/staff",
-      linkLabel: "スタッフ設定へ",
+      href: "/settings/members",
+      linkLabel: "メンバー設定へ",
     },
     {
       key: "menu",
@@ -124,12 +124,12 @@ export async function buildOnboardingStatus(tenantId: string): Promise<Onboardin
     },
     {
       key: "ownerAccount",
-      label: "オーナー用ログインアカウント",
+      label: "オーナーの登録",
       description: "クライアント企業の担当者が、自分でログインして運用できるようにする。",
       done: ownerAccountCount > 0,
       note: `オーナー権限 ${ownerAccountCount}件`,
-      href: "/settings/accounts",
-      linkLabel: "アカウント設定へ",
+      href: "/settings/members",
+      linkLabel: "メンバー設定へ",
     },
   ];
 

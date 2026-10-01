@@ -6,10 +6,9 @@ import { getTenant } from "@/lib/schedule";
 const BASE_TABS = [
   { href: "/settings/onboarding", label: "セットアップ" },
   { href: "/settings/menus", label: "メニュー" },
-  { href: "/settings/staff", label: "スタッフ" },
+  { href: "/settings/members", label: "メンバー" },
   { href: "/settings/hours", label: "営業時間" },
   { href: "/settings/days", label: "日付ごと" },
-  { href: "/settings/accounts", label: "アカウント" },
   { href: "/settings/store", label: "店舗" },
   { href: "/settings/analytics", label: "集計" },
   { href: "/settings/history", label: "履歴" },
@@ -21,14 +20,10 @@ export default async function SettingsLayout({ children }: LayoutProps<"/setting
   const session = await requireOwner();
   const tenant = await getTenant(session.tenantId);
 
-  // 部署の追加・編集と社員名簿は、全部署を横断できる全社管理者だけが扱う
+  // 部署の追加・編集は、全部署を横断できる全社管理者だけが扱う
   const tabs =
     session.role === "group_admin"
-      ? [
-          ...BASE_TABS,
-          { href: "/settings/tenants", label: "部署" },
-          { href: "/settings/employees", label: "社員名簿" },
-        ]
+      ? [...BASE_TABS, { href: "/settings/tenants", label: "部署" }]
       : BASE_TABS;
 
   return (

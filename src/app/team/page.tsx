@@ -144,19 +144,19 @@ export default async function TeamDayPage({
         </form>
       ) : (
         <p className="mb-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          このアカウントは社員名簿とひも付いていないため、予定を入れられません（見ることはできます）。
-          全社管理者に、名簿とのひも付けを依頼してください。
+          このアカウントはメンバーとして整っていないため、予定を入れられません（見ることはできます）。
+          オーナーか全社管理者に「設定 → メンバー」で整えてもらってください。
         </p>
       )}
 
       {columns.length === 0 ? (
         <p className="rounded-md border border-neutral-200 bg-white px-3 py-6 text-center text-sm text-neutral-500">
-          社員名簿がまだ空です。
+          メンバーがまだいません。
           {viewer.isAdmin && (
             <>
               {" "}
-              <Link href="/settings/employees" className="text-sky-700 underline">
-                設定 → 社員名簿
+              <Link href="/settings/members" className="text-sky-700 underline">
+                設定 → メンバー
               </Link>
               から登録してください。
             </>
