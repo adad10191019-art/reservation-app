@@ -1,7 +1,7 @@
 /**
  * 顧客の検索。顧客一覧と予約登録画面の顧客選択で、同じ条件を使う。
  *
- * 名前・メールは大文字小文字を区別せず、電話番号はそのままの部分一致。
+ * 名前・LINEの表示名・メールは大文字小文字を区別せず、電話番号はそのままの部分一致。
  * tenantId は必ず条件に入れる（他の店舗の顧客を出さない）。
  */
 import type { Prisma } from "@/generated/prisma/client";
@@ -15,6 +15,7 @@ export function customerSearchWhere(tenantId: string, q: string): Prisma.Custome
       ? {
           OR: [
             { name: { contains: query, mode: "insensitive" } },
+            { lineDisplayName: { contains: query, mode: "insensitive" } },
             { phone: { contains: query } },
             { email: { contains: query, mode: "insensitive" } },
           ],

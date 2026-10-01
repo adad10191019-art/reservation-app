@@ -63,7 +63,31 @@ export default async function CustomerDetailPage({
 
         <dl className="grid grid-cols-[6rem_1fr] gap-y-2 text-sm">
           <dt className="text-neutral-500">電話番号</dt>
-          <dd>{customer.phone || <span className="text-neutral-300">未登録</span>}</dd>
+          <dd className="tabular-nums">
+            {customer.phone ? (
+              <a href={`tel:${customer.phone}`} className="text-sky-700 hover:underline">
+                {customer.phone}
+              </a>
+            ) : (
+              <span className="text-neutral-300">未登録</span>
+            )}
+          </dd>
+
+          {customer.lineDisplayName && (
+            <>
+              <dt className="text-neutral-500">LINEの表示名</dt>
+              <dd>{customer.lineDisplayName}</dd>
+            </>
+          )}
+
+          {customer.lineUserId && !customer.nameEnteredAt && (
+            <>
+              <dt className="text-neutral-500">お名前</dt>
+              <dd className="text-amber-700">
+                まだLINEの表示名のままです。次のご予約のときに本名を入力していただきます。
+              </dd>
+            </>
+          )}
 
           <dt className="text-neutral-500">メール</dt>
           <dd>{customer.email || <span className="text-neutral-300">未登録</span>}</dd>

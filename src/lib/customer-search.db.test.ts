@@ -24,6 +24,7 @@ beforeAll(async () => {
       { tenantId: shop.tenantId, name: "山田 花子", phone: "090-1111-2222" },
       { tenantId: shop.tenantId, name: "山田 太郎", email: "Taro@Example.com" },
       { tenantId: shop.tenantId, name: "佐藤 一郎", phone: "080-3333-4444" },
+      { tenantId: shop.tenantId, name: "鈴木 次郎", lineDisplayName: "じろー★" },
       { tenantId: other.tenantId, name: "山田 別店舗" },
     ],
   });
@@ -49,6 +50,10 @@ describe("searchCustomerCandidates", () => {
     expect(names(await searchCustomerCandidates(shop.tenantId, "taro@example"))).toEqual([
       "山田 太郎",
     ]);
+  });
+
+  it("LINE の表示名でも探せる（本名に変わった後も見つけられる）", async () => {
+    expect(names(await searchCustomerCandidates(shop.tenantId, "じろー"))).toEqual(["鈴木 次郎"]);
   });
 
   it("空の検索語では何も返さない（全件を流さない）", async () => {

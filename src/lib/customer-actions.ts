@@ -11,7 +11,13 @@ import {
   endCustomerSession,
   startCustomerSession,
 } from "./customer-session";
-import { getActiveCustomer, upsertEmailCustomer, upsertLineCustomer } from "./customer-store";
+import { validateCustomerProfile } from "./customer-profile";
+import {
+  getActiveCustomer,
+  saveCustomerProfile,
+  upsertEmailCustomer,
+  upsertLineCustomer,
+} from "./customer-store";
 import { startEmailLoginCode, verifyEmailLoginCode } from "./email-login";
 import { buildAuthorizeUrl, isDevFallbackAllowed, isLineConfigured } from "./line";
 import {
@@ -216,6 +222,25 @@ export async function createCustomerReservation(formData: FormData) {
   const [startText, staffId] = slot.split("|");
   const startMinutes = Number(startText);
   if (!Number.isInteger(startMinutes) || !staffId) back("時間の指定が正しくありません");
+
+  // お名前・電話番号は確認画面に戻して直してもらう。
+  // 入力した値は URL に載せない（個人情報をアドレスバーや履歴に残さないため）
+  const profile = validateCustomerProfile({
+    name: String(formData.get("name") ?? ""),
+    phone: String(formData.get("phone") ?? ""),
+  });
+  if (!profile.ok) {
+    const query = new URLSearchParams({ date, menuId, slot, error: profile.message });
+    redirect(`${bookPath(handle)}/confirm?${query}`);
+  }
+
+  // 予約より先に保存する（予約の通知に、入力された名前を使うため）
+  await saveCustomerProfile({
+    tenantId,
+    customerId: session.customerId,
+    name: profile.value.name,
+    phone: profile.value.phone,
+  });
 
   const result = await bookAsCustomer({
     tenantId,

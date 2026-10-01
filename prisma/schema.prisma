@@ -280,15 +280,19 @@ model CustomerLoginCode {
 
 // ── 顧客 ───────────────────────────────
 model Customer {
-  id         String   @id @default(uuid())
-  tenantId   String
-  name       String
-  phone      String?
-  email      String?
-  lineUserId String? // LINEログインで得られる利用者ID
-  note       String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id              String    @id @default(uuid())
+  tenantId        String
+  name            String
+  phone           String?
+  email           String?
+  lineUserId      String? // LINEログインで得られる利用者ID
+  /// LINE の表示名。ログインのたびに最新に追従する（name は上書きしない）
+  lineDisplayName String?
+  /// お客様が自分で名前を入力した日時。空なら name は LINE の表示名のまま
+  nameEnteredAt   DateTime?
+  note            String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   tenant       Tenant        @relation(fields: [tenantId], references: [id])
   reservations Reservation[]

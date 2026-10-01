@@ -57,7 +57,7 @@ export default async function CustomersPage({
           type="text"
           name="q"
           defaultValue={q}
-          placeholder="名前・電話番号・メールアドレスで検索"
+          placeholder="名前・LINEの表示名・電話番号・メールで検索"
           className="w-full max-w-sm rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
         />
         <button
@@ -106,9 +106,22 @@ export default async function CustomersPage({
                         LINE連携
                       </span>
                     )}
+                    {c.lineDisplayName && c.lineDisplayName !== c.name && (
+                      <div className="text-xs text-neutral-500">LINE：{c.lineDisplayName}</div>
+                    )}
+                    {c.lineUserId && !c.nameEnteredAt && (
+                      <div className="text-xs text-amber-700">本名は次のご予約で入力されます</div>
+                    )}
                   </td>
                   <td className="px-4 py-2 text-neutral-600">
-                    {c.phone || c.email || <span className="text-neutral-300">—</span>}
+                    {c.phone || c.email ? (
+                      <>
+                        {c.phone && <div className="tabular-nums">{c.phone}</div>}
+                        {c.email && <div className="text-xs text-neutral-500">{c.email}</div>}
+                      </>
+                    ) : (
+                      <span className="text-neutral-300">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-2 tabular-nums text-neutral-600">
                     {c.visitCount}回

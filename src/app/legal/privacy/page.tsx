@@ -23,6 +23,8 @@ export default function PrivacyPolicyPage() {
           <p>本サービスでは、予約のために以下の情報を取得することがあります。</p>
           <ul className="mt-1 list-disc space-y-0.5 pl-5">
             <li>お名前</li>
+            <li>電話番号（ご入力いただいた場合）</li>
+            <li>メールアドレス（メールでのログインをご利用の場合）</li>
             <li>LINEアカウントの識別情報（LINEログインをご利用の場合）</li>
             <li>予約内容（日時、メニュー、担当者等）</li>
           </ul>

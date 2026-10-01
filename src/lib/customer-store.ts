@@ -9,7 +9,13 @@ import { EMAIL_LOGIN_COOKIE } from "./constants";
 import { getCustomerSession } from "./customer-session";
 import { prisma } from "./prisma";
 
-/** LINEの利用者IDでお客様を探し、いなければ作る */
+/**
+ * LINEの利用者IDでお客様を探し、いなければ作る。
+ *
+ * LINE の表示名は lineDisplayName に取っておき、ログインのたびに追従する。
+ * name は、お客様が確認画面で自分の名前を入力するまでは表示名を仮に入れておき、
+ * 入力した後（nameEnteredAt あり）は上書きしない。
+ */
 export async function upsertLineCustomer(params: {
   tenantId: string;
   lineUserId: string;
@@ -19,19 +25,17 @@ export async function upsertLineCustomer(params: {
 
   const existing = await prisma.customer.findFirst({ where: { tenantId, lineUserId } });
   if (existing) {
-    // 表示名が変わっていれば追従する
-    if (existing.name !== displayName) {
-      await prisma.customer.updateMany({
-        where: { id: existing.id, tenantId },
-        data: { name: displayName },
-      });
-      return { ...existing, name: displayName };
-    }
-    return existing;
+    const data: { lineDisplayName?: string; name?: string } = {};
+    if (existing.lineDisplayName !== displayName) data.lineDisplayName = displayName;
+    if (!existing.nameEnteredAt && existing.name !== displayName) data.name = displayName;
+    if (Object.keys(data).length === 0) return existing;
+
+    await prisma.customer.updateMany({ where: { id: existing.id, tenantId }, data });
+    return { ...existing, ...data };
   }
 
   return prisma.customer.create({
-    data: { tenantId, name: displayName, lineUserId },
+    data: { tenantId, name: displayName, lineDisplayName: displayName, lineUserId },
   });
 }
 
@@ -43,21 +47,23 @@ export async function upsertEmailCustomer(params: {
 }) {
   const { tenantId, email, name } = params;
 
+  // メールログインでは、お客様が自分で名前を入力している
+  const now = new Date();
   const existing = await prisma.customer.findFirst({ where: { tenantId, email } });
   if (existing) {
-    // 名前が変わっていれば追従する（LINEログインと同じ考え方）
-    if (existing.name !== name) {
+    // 名前が変わっていれば、新しく入力された方に合わせる
+    if (existing.name !== name || !existing.nameEnteredAt) {
       await prisma.customer.updateMany({
         where: { id: existing.id, tenantId },
-        data: { name },
+        data: { name, nameEnteredAt: now },
       });
-      return { ...existing, name };
+      return { ...existing, name, nameEnteredAt: now };
     }
     return existing;
   }
 
   return prisma.customer.create({
-    data: { tenantId, name, email },
+    data: { tenantId, name, email, nameEnteredAt: now },
   });
 }
 
@@ -77,7 +83,33 @@ export async function getActiveCustomer(tenantId: string) {
   // 画面の描画中は Cookie を書き換えられないので、消さずに未ログイン扱いにする
   if (!customer) return null;
 
-  return { customerId: customer.id, tenantId, name: customer.name };
+  return {
+    customerId: customer.id,
+    tenantId,
+    name: customer.name,
+    phone: customer.phone,
+    /** 確認画面で自分の名前を入力したことがあるか（無ければ入力欄を空で出す） */
+    nameEntered: customer.nameEnteredAt !== null,
+  };
+}
+
+/**
+ * 予約の確認画面で入力された名前・電話番号を保存する。
+ * 電話番号を空にして送られたら、登録済みの番号も消す（任意の項目のため）。
+ */
+export async function saveCustomerProfile(params: {
+  tenantId: string;
+  customerId: string;
+  name: string;
+  phone: string | null;
+  now?: Date;
+}) {
+  const { tenantId, customerId, name, phone, now = new Date() } = params;
+  const result = await prisma.customer.updateMany({
+    where: { id: customerId, tenantId },
+    data: { name, phone, nameEnteredAt: now },
+  });
+  return result.count === 1;
 }
 
 export type EmailLoginPending = { tenantId: string; email: string; name: string };
