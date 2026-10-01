@@ -26,11 +26,6 @@ describe("isEmailConfigured", () => {
     expect(isEmailConfigured()).toBe(true);
   });
 
-  it("送信元が Resend のテスト用アドレスのままなら使えない", () => {
-    stubEmail("予約 <onboarding@resend.dev>");
-    expect(isEmailConfigured()).toBe(false);
-  });
-
   it("送信元が無ければ使えない", () => {
     stubEmail(undefined);
     expect(isEmailConfigured()).toBe(false);
@@ -52,8 +47,8 @@ describe("resolveCustomerLoginMethods", () => {
     });
   });
 
-  it("送信元がテスト用のままなら、「メールのみ」「両方」でもメール欄を出さない", () => {
-    stubEmail("onboarding@resend.dev");
+  it("メールが届かない設定なら、「メールのみ」「両方」でもメール欄を出さない", () => {
+    stubEmail(undefined);
     expect(resolveCustomerLoginMethods({ ...LINE, customerLoginMethod: "email" })).toEqual({
       line: false,
       email: false,
@@ -70,7 +65,7 @@ describe("resolveCustomerLoginMethods", () => {
       line: false,
       email: true,
     });
-    stubEmail("onboarding@resend.dev");
+    stubEmail(undefined);
     expect(resolveCustomerLoginMethods({ ...NO_LINE, customerLoginMethod: null })).toEqual({
       line: false,
       email: false,

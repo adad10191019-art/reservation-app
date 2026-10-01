@@ -258,7 +258,7 @@ export default async function StoreSettingsPage({
         </div>
         {!isEmailConfigured() && (
           <p className="mt-2 text-xs leading-relaxed text-amber-700">
-            メール送信が未設定です（送信元がテスト用のアドレスのままの場合も含みます）。
+            メール送信が未設定です。
             「メール」「両方」を選んでも、予約画面にメールでのログインは表示されません。
           </p>
         )}
