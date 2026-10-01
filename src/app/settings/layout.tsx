@@ -21,10 +21,14 @@ export default async function SettingsLayout({ children }: LayoutProps<"/setting
   const session = await requireOwner();
   const tenant = await getTenant(session.tenantId);
 
-  // 部署の追加・編集は、全部署を横断できる全社管理者だけができる
+  // 部署の追加・編集と社員名簿は、全部署を横断できる全社管理者だけが扱う
   const tabs =
     session.role === "group_admin"
-      ? [...BASE_TABS, { href: "/settings/tenants", label: "部署" }]
+      ? [
+          ...BASE_TABS,
+          { href: "/settings/tenants", label: "部署" },
+          { href: "/settings/employees", label: "社員名簿" },
+        ]
       : BASE_TABS;
 
   return (

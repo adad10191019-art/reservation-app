@@ -5,6 +5,7 @@
 import { prisma } from "./prisma";
 import { computeStarts, resolveWorkingIntervals } from "./availability-core";
 import { fetchGoogleBusyByDate, isGoogleCalendarConfigured } from "./google-calendar";
+import { fetchPersonBusy } from "./person-busy";
 import { dayOfWeekOf } from "./time";
 
 /**
@@ -114,7 +115,7 @@ export async function findAvailabilityForDates(params: {
   const staffIds = staffs.map((s) => s.id);
   const daysOfWeek = [...new Set(dates.map(dayOfWeekOf))];
 
-  const [businessHours, dateOverrides, reservations, blocks, googleBusyByStaff] =
+  const [businessHours, dateOverrides, reservations, blocks, googleBusyByStaff, personBusy] =
     await Promise.all([
       prisma.businessHour.findMany({
         where: {
@@ -150,6 +151,9 @@ export async function findAvailabilityForDates(params: {
       // 本人のGoogleカレンダーにある予定（連携している人だけ）。
       // 対象の日付をまとめて1回のAPI呼び出しで済ませる
       fetchGoogleBusyByStaff(staffIds, dates),
+      // 兼任先の部署での予約・予定と、その人自身の予定（社員名簿でひも付いている人だけ）。
+      // 時間帯だけが返り、他部署の中身はここには来ない
+      fetchPersonBusy(prisma, { staffIds, dates, excludeReservationId, includeGoogle: true }),
     ]);
 
   for (const date of dates) {
@@ -163,7 +167,7 @@ export async function findAvailabilityForDates(params: {
         businessHours: hoursOfDay,
         dateOverrides: overridesOfDay,
       });
-      // 予約・予約以外のブロック枠・Googleカレンダーの予定、すべてが枠を塞ぐ。
+      // 予約・予約以外のブロック枠・Googleカレンダーの予定・他部署を含めたその人の予定、すべてが枠を塞ぐ。
       // staffId が null のブロックは全スタッフに掛かる。
       const busy = [
         ...reservations
@@ -173,6 +177,7 @@ export async function findAvailabilityForDates(params: {
           .filter((b) => (b.staffId === null || b.staffId === staff.id) && b.date === date)
           .map((b) => ({ start: b.startMinutes, end: b.endMinutes })),
         ...(googleBusyByStaff.get(staff.id)?.get(date) ?? []),
+        ...(personBusy.get(staff.id)?.get(date) ?? []),
       ];
 
       return {

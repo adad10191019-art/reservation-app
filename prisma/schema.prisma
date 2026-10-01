@@ -115,7 +115,12 @@ model Staff {
   // ログイン無しでURLだけを鍵にするため、漏れたら再発行して失効させる
   calendarToken String? @unique
 
+  /// 会社全体の社員名簿のどの人か。兼任なら、複数の部署のスタッフが同じ社員を指す。
+  /// 空ならまだ名簿とひも付けていない（その部署の中だけで今まで通り動く）
+  employeeId String?
+
   tenant                   Tenant                    @relation(fields: [tenantId], references: [id])
+  employee                 Employee?                 @relation(fields: [employeeId], references: [id])
   user                     User?
   staffMenus               StaffMenu[]
   businessHours            BusinessHour[]
@@ -125,6 +130,50 @@ model Staff {
   googleCalendarConnection GoogleCalendarConnection?
 
   @@index([tenantId])
+  @@index([employeeId])
+}
+
+// ── 社員名簿（会社全体） ─────────────────
+// 部署（Tenant）の上に置く、会社全体で1つの名簿。社員1人につき1行。
+// 部署のスタッフはここにひも付く（兼任なら複数の部署のスタッフが同じ社員を指す）。
+// 予約を受けない社員（事務など）は、スタッフを持たず名簿だけに載る。
+//
+// 全社管理者（group_admin）が全部署を横断するのと同じく、
+// このシステム1つ＝会社1つという前提で、tenantId を持たない。
+model Employee {
+  id           String   @id @default(uuid())
+  name         String
+  displayOrder Int      @default(0)
+  isActive     Boolean  @default(true) // 退職しても過去の予定を残すため削除しない
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  staffs Staff[]
+  events EmployeeEvent[]
+}
+
+// ── 社員の予定（人に付く予定） ───────────
+// どの部署から入れても、その人がスタッフとして属する全部署の空き枠で
+// 「空いていない時間」になる。部署のブロック枠（Block）は部署の中の道具、
+// こちらは人そのものの予定、という分け方。
+model EmployeeEvent {
+  id           String  @id @default(uuid())
+  employeeId   String
+  date         String // "YYYY-MM-DD"
+  startMinutes Int
+  endMinutes   Int
+  title        String
+  /// true なら本人以外には件名を出さず「予定あり」とだけ見せる
+  isPrivate    Boolean @default(false)
+  /// 誰が入れたか（本人か、管理者の代理入力か）。消えても分かるよう表示名を複製して残す
+  createdByName String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@index([employeeId, date])
+  @@index([date])
 }
 
 // ── Googleカレンダーとの双方向連携 ─────

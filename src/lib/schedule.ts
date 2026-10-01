@@ -3,7 +3,8 @@
  */
 import { prisma } from "./prisma";
 import { resolveWorkingIntervals } from "./availability-core";
-import { addDays, type Interval, dayOfWeekOf } from "./time";
+import { fetchPersonBusy } from "./person-busy";
+import { addDays, type Interval, dayOfWeekOf, normalize } from "./time";
 
 export type ScheduledReservation = {
   id: string;
@@ -33,6 +34,11 @@ export type StaffColumn = {
   working: Interval[];
   reservations: ScheduledReservation[];
   blocks: ScheduledBlock[];
+  /**
+   * 兼任先の部署での予約・予定や、その人自身の予定で塞がっている時間。
+   * 他部署の中身は見せないので、時間帯だけを持つ（重なりはまとめてある）
+   */
+  otherBusy: Interval[];
 };
 
 export type DaySchedule = {
@@ -66,7 +72,7 @@ export async function getDaySchedule(params: {
   });
   const staffIds = staffs.map((s) => s.id);
 
-  const [businessHours, dateOverrides, reservations, blocks] = await Promise.all([
+  const [businessHours, dateOverrides, reservations, blocks, personBusy] = await Promise.all([
     prisma.businessHour.findMany({
       where: { tenantId, dayOfWeek, OR: [{ staffId: null }, { staffId: { in: staffIds } }] },
     }),
@@ -82,6 +88,7 @@ export async function getDaySchedule(params: {
       where: { tenantId, date, OR: [{ staffId: null }, { staffId: { in: staffIds } }] },
       orderBy: { startMinutes: "asc" },
     }),
+    fetchPersonBusy(prisma, { staffIds, dates: [date] }),
   ]);
 
   const columns: StaffColumn[] = staffs.map((staff) => ({
@@ -111,6 +118,7 @@ export async function getDaySchedule(params: {
         reason: b.reason,
         wholeShop: b.staffId === null,
       })),
+    otherBusy: normalize(personBusy.get(staff.id)?.get(date) ?? []),
   }));
 
   // 勤務時間と予約が全部収まるように表示範囲を決める
@@ -118,6 +126,7 @@ export async function getDaySchedule(params: {
     ...c.working.flatMap((w) => [w.start, w.end]),
     ...c.reservations.flatMap((r) => [r.startMinutes, r.endMinutes]),
     ...c.blocks.flatMap((b) => [b.startMinutes, b.endMinutes]),
+    ...c.otherBusy.flatMap((b) => [b.start, b.end]),
   ]);
 
   const viewStart =

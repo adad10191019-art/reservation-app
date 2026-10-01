@@ -42,6 +42,8 @@ type Column = {
   working: Interval[];
   reservations: Reservation[];
   blocks: Block[];
+  /** 兼任先の部署や、その人自身の予定で塞がっている時間（中身は見せない） */
+  otherBusy: Interval[];
 };
 
 const PX_PER_MIN = 1.4;
@@ -212,6 +214,23 @@ export function DayCalendarGrid({
                     className="absolute inset-x-0 border-t border-neutral-100"
                     style={{ top: top(m) }}
                   />
+                ))}
+
+                {col.otherBusy.map((b) => (
+                  <div
+                    key={`other-${b.start}-${b.end}`}
+                    title="兼任先の部署やご本人の予定があります（内容は全社の1日で確認できます）"
+                    className="absolute inset-x-1 overflow-hidden rounded border border-dashed border-neutral-400 bg-neutral-200/70 px-1.5 py-1 text-xs leading-tight text-neutral-600"
+                    style={{
+                      top: top(b.start),
+                      height: (b.end - b.start) * PX_PER_MIN - 2,
+                    }}
+                  >
+                    <div className="truncate font-medium">別の予定</div>
+                    <div className="tabular-nums text-neutral-500">
+                      {toHm(b.start)}–{toHm(b.end)}
+                    </div>
+                  </div>
                 ))}
 
                 {col.blocks.map((b) => (

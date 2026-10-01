@@ -12,6 +12,7 @@ import { prisma } from "./prisma";
 import { isWithinWorking, resolveWorkingIntervals } from "./availability-core";
 import { type Actor, canManageStaffReservation, denyMessage } from "./permissions";
 import { checkBookingWindow } from "./booking-window";
+import { isPersonBusy } from "./person-busy";
 import { dayOfWeekOf } from "./time";
 
 /** トランザクションの中で使えるクライアント */
@@ -143,6 +144,18 @@ async function ensureSlotUsable(
     },
   });
   if (block) throw new Error(`その時間は「${block.reason}」で塞がっています`);
+
+  // 兼任先の部署での予約・予定や、その人自身の予定と重なっていないか。
+  // 同じ取引の中で読むので、別の部署で同時に同じ人を押さえた場合も片方が中断される。
+  // 他部署の中身は伝えない（どの部署の何の予定かは、この部署の人には見せない）
+  const personBusy = await isPersonBusy(tx, {
+    staffId,
+    date,
+    startMinutes,
+    endMinutes,
+    excludeReservationId: params.excludeReservationId,
+  });
+  if (personBusy) throw new Error(`${staff.name} はその時間、別の予定が入っています`);
 }
 
 // ── 新規登録 ──────────────────────────────

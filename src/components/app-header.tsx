@@ -79,6 +79,13 @@ export async function AppHeader({
           </span>
         </span>
 
+        <Link
+          href="/team"
+          className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50"
+        >
+          全社の1日
+        </Link>
+
         {session.staffId && (
           <Link
             href="/my-schedule"

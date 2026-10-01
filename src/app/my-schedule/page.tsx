@@ -11,7 +11,8 @@ import { addDays, formatDateLabel, sanitizeDate, toHm, todayString } from "@/lib
 type AgendaItem =
   | { kind: "reservation"; id: string; startMinutes: number; endMinutes: number; menuName: string; customerName: string }
   | { kind: "block"; id: string; startMinutes: number; endMinutes: number; reason: string; wholeShop: boolean }
-  | { kind: "google"; startMinutes: number; endMinutes: number };
+  | { kind: "google"; startMinutes: number; endMinutes: number }
+  | { kind: "other"; startMinutes: number; endMinutes: number };
 
 export default async function MySchedulePage({
   searchParams,
@@ -89,6 +90,10 @@ export default async function MySchedulePage({
         ),
         ...googleBusy.map(
           (g): AgendaItem => ({ kind: "google", startMinutes: g.start, endMinutes: g.end }),
+        ),
+        // 兼任先の部署での予約・予定や、全社の1日で入れた自分の予定
+        ...myColumn.otherBusy.map(
+          (o): AgendaItem => ({ kind: "other", startMinutes: o.start, endMinutes: o.end }),
         ),
       ].sort((a, b) => a.startMinutes - b.startMinutes)
     : [];
@@ -182,6 +187,25 @@ export default async function MySchedulePage({
                       {item.endMinutes - item.startMinutes}分
                     </span>
                   </span>
+                </li>
+              ) : item.kind === "other" ? (
+                <li key={`o-${item.startMinutes}`}>
+                  <Link
+                    href={`/team?date=${date}`}
+                    className="flex items-center gap-3 rounded-lg border border-dashed border-neutral-300 bg-neutral-100 px-3 py-2.5 hover:bg-neutral-200"
+                  >
+                    <span className="w-11 shrink-0 text-sm font-medium tabular-nums text-neutral-700">
+                      {toHm(item.startMinutes)}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium text-neutral-800">
+                        別の予定（他の部署・全社の予定）
+                      </span>
+                      <span className="block truncate text-xs text-neutral-600">
+                        {item.endMinutes - item.startMinutes}分・内容は「全社の1日」で確認できます
+                      </span>
+                    </span>
+                  </Link>
                 </li>
               ) : (
                 <li

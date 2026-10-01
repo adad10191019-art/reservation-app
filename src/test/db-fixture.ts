@@ -85,11 +85,30 @@ export async function deleteTestShop(tenantId: string) {
   await prisma.tenant.delete({ where: { id: tenantId } });
 }
 
-/** 前回のテストが途中で落ちて残った店舗を消す（名前の印で見分ける） */
+/** 前回のテストが途中で落ちて残った店舗・社員を消す（名前の印で見分ける） */
 export async function deleteLeftoverTestShops() {
   const leftovers = await prisma.tenant.findMany({
     where: { name: { startsWith: "[自動テスト] " } },
     select: { id: true },
   });
   for (const t of leftovers) await deleteTestShop(t.id);
+  await deleteTestEmployees();
+}
+
+/** テスト用の社員（名簿の行）を作る。店舗とは別に、名前の印で見分けて消す */
+export async function createTestEmployee(label: string) {
+  return prisma.employee.create({ data: { name: `[自動テスト] ${label}` } });
+}
+
+/** テスト用の社員と、その予定を消す。スタッフからのひも付けは先に外す */
+export async function deleteTestEmployees() {
+  const employees = await prisma.employee.findMany({
+    where: { name: { startsWith: "[自動テスト] " } },
+    select: { id: true },
+  });
+  const ids = employees.map((e) => e.id);
+  if (ids.length === 0) return;
+  await prisma.staff.updateMany({ where: { employeeId: { in: ids } }, data: { employeeId: null } });
+  await prisma.employeeEvent.deleteMany({ where: { employeeId: { in: ids } } });
+  await prisma.employee.deleteMany({ where: { id: { in: ids } } });
 }
