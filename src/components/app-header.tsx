@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { DropdownMenu } from "@/components/dropdown-menu";
 import { logout, switchTenant } from "@/lib/actions";
 import { prisma } from "@/lib/prisma";
 import type { AnySession } from "@/lib/session";
@@ -100,11 +101,11 @@ export async function AppHeader({
           </Link>
         )}
 
-        <details className="group relative">
-          <summary
-            aria-label="設定"
-            className="flex size-8 cursor-pointer list-none items-center justify-center rounded-md border border-neutral-200 bg-white text-neutral-500 marker:content-none hover:bg-neutral-50"
-          >
+        <DropdownMenu
+          className="group relative"
+          summaryLabel="設定"
+          summaryClassName="flex size-8 cursor-pointer list-none items-center justify-center rounded-md border border-neutral-200 bg-white text-neutral-500 marker:content-none hover:bg-neutral-50"
+          summary={
             <svg
               xmlns="http://www.w3.org/2000/svg"
               viewBox="0 0 24 24"
@@ -118,8 +119,8 @@ export async function AppHeader({
               <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
             </svg>
-          </summary>
-
+          }
+        >
           <div className="absolute right-0 z-10 mt-1 w-40 rounded-md border border-neutral-200 bg-white py-1 shadow-lg">
             {menuLinks?.map((item) => (
               <Link
@@ -153,7 +154,7 @@ export async function AppHeader({
               </button>
             </form>
           </div>
-        </details>
+        </DropdownMenu>
       </div>
     </header>
   );

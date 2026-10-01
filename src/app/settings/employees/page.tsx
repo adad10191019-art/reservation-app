@@ -194,77 +194,84 @@ export default async function EmployeesSettingsPage({
         )}
       </section>
 
-      <section>
-        <h2 className="mb-1 font-semibold">スタッフとのひも付け（個別）</h2>
-        <p className="mb-3 text-xs text-neutral-500">
-          {unlinkedCount > 0
-            ? `ひも付いていない在籍中のスタッフが ${unlinkedCount}名 います。`
-            : "在籍中のスタッフは全員ひも付いています。"}
-          ふだんは上の「所属部署」のチェックで足ります。ここは、部署でのスタッフ名が名簿の名前と違う
-          （例：部署では「竹内」、名簿では「竹内
-          太郎」）などで自動でまとまらない人を、手で結ぶときに使います。
-          兼任の人は「名簿に新しく作る」ではなく、一覧からその人（カッコ内は今の所属部署）を選んでください。
-          1つの部署に同じ社員を2回ひも付けることはできません。
-        </p>
-        <div className="space-y-3">
-          {tenants.map((tenant) => (
-            <div key={tenant.id} className="rounded-lg border border-neutral-200 bg-white">
-              <h3 className="border-b border-neutral-100 px-3 py-2 text-sm font-medium">
-                {tenant.name}
-              </h3>
-              {tenant.staffs.length === 0 ? (
-                <p className="px-3 py-2 text-sm text-neutral-500">スタッフがいません。</p>
-              ) : (
-                <div className="divide-y divide-neutral-100">
-                  {tenant.staffs.map((staff) => (
-                    <form
-                      key={staff.id}
-                      action={linkStaffToEmployee}
-                      className="flex flex-wrap items-center gap-2 px-3 py-2"
-                    >
-                      <input type="hidden" name="staffId" value={staff.id} />
-                      <span className="w-40 truncate text-sm">
-                        {staff.name}
-                        {!staff.isActive && (
-                          <span className="ml-1 text-xs text-neutral-400">（無効）</span>
-                        )}
-                      </span>
-                      <span className="text-xs text-neutral-400">→</span>
-                      <select
-                        name="employeeId"
-                        defaultValue={staff.employeeId ?? ""}
-                        aria-label={`${staff.name} のひも付け先`}
-                        className={`rounded-md border px-2 py-1 text-sm ${
-                          staff.employeeId ? "border-neutral-300" : "border-amber-300 bg-amber-50"
-                        }`}
+      {/* 名前が違うなどで「所属部署」のチェックではまとまらない人を、手で結ぶ補助。ふだんは閉じておく */}
+      <details className="rounded-lg border border-neutral-200 bg-white">
+        <summary className="cursor-pointer px-3 py-2 text-sm text-neutral-600">
+          名前が違うスタッフを手で結ぶ（まれに使う）
+          {unlinkedCount > 0 && (
+            <span className="ml-2 text-xs text-amber-700">
+              名簿とひも付いていない在籍中のスタッフが {unlinkedCount}名
+              います（全社の1日に出ません）
+            </span>
+          )}
+        </summary>
+        <div className="border-t border-neutral-100 p-3">
+          <p className="mb-3 text-xs leading-relaxed text-neutral-500">
+            ふだんは上の「所属部署」のチェックで足ります。ここは、部署でのスタッフ名が名簿の名前と違う
+            （例：部署では「竹内」、名簿では「竹内 太郎」）人を、名前を変えずに結ぶときに使います。
+            兼任の人は「名簿に新しく作る」ではなく、一覧からその人（カッコ内は今の所属部署）を選んでください。
+            1つの部署に同じ社員を2回ひも付けることはできません。
+          </p>
+          <div className="space-y-3">
+            {tenants.map((tenant) => (
+              <div key={tenant.id} className="rounded-lg border border-neutral-200 bg-white">
+                <h3 className="border-b border-neutral-100 px-3 py-2 text-sm font-medium">
+                  {tenant.name}
+                </h3>
+                {tenant.staffs.length === 0 ? (
+                  <p className="px-3 py-2 text-sm text-neutral-500">スタッフがいません。</p>
+                ) : (
+                  <div className="divide-y divide-neutral-100">
+                    {tenant.staffs.map((staff) => (
+                      <form
+                        key={staff.id}
+                        action={linkStaffToEmployee}
+                        className="flex flex-wrap items-center gap-2 px-3 py-2"
                       >
-                        <option value="">（ひも付けない）</option>
-                        <option value="new">＋ 名簿に新しく作る（{staff.name}）</option>
-                        {employees
-                          .filter((e) => e.isActive || e.id === staff.employeeId)
-                          .map((e) => (
-                            <option key={e.id} value={e.id}>
-                              {employeeOptionLabel(
-                                e.name,
-                                e.staffs.map((s) => s.tenant.name),
-                              )}
-                            </option>
-                          ))}
-                      </select>
-                      <button
-                        type="submit"
-                        className="rounded-md border border-neutral-300 bg-white px-3 py-1 text-sm text-neutral-700 hover:bg-neutral-50"
-                      >
-                        保存
-                      </button>
-                    </form>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
+                        <input type="hidden" name="staffId" value={staff.id} />
+                        <span className="w-40 truncate text-sm">
+                          {staff.name}
+                          {!staff.isActive && (
+                            <span className="ml-1 text-xs text-neutral-400">（無効）</span>
+                          )}
+                        </span>
+                        <span className="text-xs text-neutral-400">→</span>
+                        <select
+                          name="employeeId"
+                          defaultValue={staff.employeeId ?? ""}
+                          aria-label={`${staff.name} のひも付け先`}
+                          className={`rounded-md border px-2 py-1 text-sm ${
+                            staff.employeeId ? "border-neutral-300" : "border-amber-300 bg-amber-50"
+                          }`}
+                        >
+                          <option value="">（ひも付けない）</option>
+                          <option value="new">＋ 名簿に新しく作る（{staff.name}）</option>
+                          {employees
+                            .filter((e) => e.isActive || e.id === staff.employeeId)
+                            .map((e) => (
+                              <option key={e.id} value={e.id}>
+                                {employeeOptionLabel(
+                                  e.name,
+                                  e.staffs.map((s) => s.tenant.name),
+                                )}
+                              </option>
+                            ))}
+                        </select>
+                        <button
+                          type="submit"
+                          className="rounded-md border border-neutral-300 bg-white px-3 py-1 text-sm text-neutral-700 hover:bg-neutral-50"
+                        >
+                          保存
+                        </button>
+                      </form>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
-      </section>
+      </details>
     </div>
   );
 }
