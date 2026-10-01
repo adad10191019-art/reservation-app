@@ -9,6 +9,7 @@ import { isValidHexColor } from "./brand-color";
 import { hashPassword } from "./password";
 import { prisma } from "./prisma";
 import { parseRanges } from "./ranges";
+import { addNewStaffToRoster } from "./employee-roster";
 import { buildSession, type Role } from "./session";
 import { deleteTenantCompletely } from "./tenant-offboarding";
 import { formatDateLabel, toHm } from "./time";
@@ -133,6 +134,7 @@ export async function saveStaff(formData: FormData) {
   // 途中で失敗して「対応メニューが全部消えただけ」の状態を残さない
   const saved = await prisma.$transaction(async (tx) => {
     let staffId = id;
+    let notice = "";
 
     if (id) {
       const updated = await tx.staff.updateMany({
@@ -145,6 +147,8 @@ export async function saveStaff(formData: FormData) {
         data: { name, displayOrder, isActive, tenantId: session.tenantId },
       });
       staffId = created.id;
+      // 新しいスタッフは会社全体の社員名簿にも載せる（全社の1日・兼任先の空き時間に反映するため）
+      notice = await addNewStaffToRoster(tx, created);
     }
 
     // 対応メニューは毎回入れ替える
@@ -154,11 +158,13 @@ export async function saveStaff(formData: FormData) {
         data: menuIds.map((menuId) => ({ tenantId: session.tenantId, staffId, menuId })),
       });
     }
-    return true;
+    return { notice };
   });
   if (!saved) back(path, "スタッフが見つかりません");
 
   refreshAll();
+  revalidatePath("/team");
+  if (saved.notice) redirect(`${path}?done=1&notice=${encodeURIComponent(saved.notice)}`);
   back(path);
 }
 

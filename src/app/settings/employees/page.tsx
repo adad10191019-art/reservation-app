@@ -60,12 +60,7 @@ export default async function EmployeesSettingsPage({
 
   return (
     <div className="space-y-5">
-      <Banner error={sp.error} done={sp.done} />
-      {!sp.error && sp.notice && (
-        <p className="-mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-relaxed text-amber-900">
-          {sp.notice}
-        </p>
-      )}
+      <Banner error={sp.error} done={sp.done} notice={sp.notice} />
 
       <p className="text-sm leading-relaxed text-neutral-600">
         会社全体の社員名簿です（全部署で共通）。「全社の1日」には、ここで在籍にしている人が1人1列で並びます。

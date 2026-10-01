@@ -6,7 +6,7 @@ import { deleteStaff, saveStaff } from "@/lib/settings-actions";
 export default async function StaffSettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; done?: string }>;
+  searchParams: Promise<{ error?: string; done?: string; notice?: string }>;
 }) {
   const sp = await searchParams;
   const session = await requireOwner();
@@ -25,7 +25,7 @@ export default async function StaffSettingsPage({
 
   return (
     <div className="space-y-5">
-      <Banner error={sp.error} done={sp.done} />
+      <Banner error={sp.error} done={sp.done} notice={sp.notice} />
 
       <section className="rounded-lg border border-neutral-200 bg-white p-4">
         <h2 className="mb-1 font-semibold">スタッフを追加</h2>
