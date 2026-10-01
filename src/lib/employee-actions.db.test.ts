@@ -32,18 +32,24 @@ const { createEmployee, deleteEmployee, linkStaffToEmployee, updateEmployee } = 
   "./employee-actions"
 );
 
-/** 処理を呼んで、戻り先のエラー文（成功なら null）を返す */
-async function run(action: (f: FormData) => Promise<void>, fields: Record<string, string>) {
+/** 処理を呼んで、戻り先の URL の検索部分を返す（同じ名前の欄が複数なら配列で渡す） */
+async function call(action: (f: FormData) => Promise<void>, fields: Record<string, string | string[]>) {
   const form = new FormData();
-  for (const [k, v] of Object.entries(fields)) form.set(k, v);
+  for (const [k, v] of Object.entries(fields)) {
+    for (const one of Array.isArray(v) ? v : [v]) form.append(k, one);
+  }
   try {
     await action(form);
   } catch (e) {
     if (!(e instanceof Redirected)) throw e;
-    const error = new URL(e.url, "http://x").searchParams.get("error");
-    return error;
+    return new URL(e.url, "http://x").searchParams;
   }
   throw new Error("redirect されませんでした");
+}
+
+/** 処理を呼んで、戻り先のエラー文（成功なら null）を返す */
+async function run(action: (f: FormData) => Promise<void>, fields: Record<string, string | string[]>) {
+  return (await call(action, fields)).get("error");
 }
 
 const NAME = "[自動テスト] 兼任 太郎";
@@ -106,6 +112,63 @@ describe("社員の追加・名前の変更", () => {
     const error = await run(updateEmployee, { id: b.id, name: a.name, displayOrder: "0", isActive: "on" });
     expect(error).toContain("同じ名前");
     expect(await run(updateEmployee, { id: b.id, name: a.name, displayOrder: "0" })).toBeNull();
+  });
+});
+
+describe("所属部署のチェック", () => {
+  it("同じ名前のスタッフがいる部署はひも付け、いない部署にはスタッフを作り、外せばひも付けだけ外す", async () => {
+    const e = await prisma.employee.create({ data: { name: NAME } });
+    const base = { id: e.id, name: NAME, displayOrder: "0", isActive: "on", tenantsShown: "1" };
+
+    // 2つの部署にチェック：どちらにも同じ名前のスタッフがいるので、作らずにひも付く
+    expect(await run(updateEmployee, { ...base, tenantIds: [shop.tenantId, other.tenantId] })).toBeNull();
+    expect(
+      (await prisma.staff.findMany({ where: { employeeId: e.id } })).map((s) => s.id).sort(),
+    ).toEqual([shop.staffA.id, other.staffA.id].sort());
+
+    // 名前を変えて片方の部署だけにする：外した部署はひも付けだけ外れ、スタッフは残る
+    const renamed = "[自動テスト] 兼任 次郎";
+    expect(await run(updateEmployee, { ...base, name: renamed, tenantIds: [shop.tenantId] })).toBeNull();
+    expect((await prisma.staff.findUniqueOrThrow({ where: { id: other.staffA.id } })).employeeId).toBeNull();
+
+    // 外した部署にもう一度チェック：同じ名前（兼任 次郎）のスタッフはいないので作られる
+    const params = await call(updateEmployee, {
+      ...base,
+      name: renamed,
+      tenantIds: [shop.tenantId, other.tenantId],
+    });
+    expect(params.get("notice")).toContain("担当メニュー");
+    const created = await prisma.staff.findFirstOrThrow({
+      where: { tenantId: other.tenantId, employeeId: e.id },
+    });
+    expect(created.name).toBe(renamed);
+    expect(created.id).not.toBe(other.staffA.id);
+  });
+
+  it("重複して作った名簿の行にひも付いたスタッフは、チェックした人へ付け替わる", async () => {
+    const keep = await prisma.employee.create({ data: { name: NAME } });
+    const dup = await prisma.employee.create({ data: { name: "[自動テスト] 兼任 太郎（削除予定）", isActive: false } });
+    await prisma.staff.update({ where: { id: shop.staffA.id }, data: { employeeId: keep.id } });
+    await prisma.staff.update({ where: { id: other.staffA.id }, data: { employeeId: dup.id } });
+
+    const params = await call(updateEmployee, {
+      id: keep.id,
+      name: NAME,
+      displayOrder: "0",
+      isActive: "on",
+      tenantsShown: "1",
+      tenantIds: [shop.tenantId, other.tenantId],
+    });
+    expect(params.get("notice")).toContain("付け替えました");
+    expect((await prisma.staff.findUniqueOrThrow({ where: { id: other.staffA.id } })).employeeId).toBe(keep.id);
+    expect(await run(deleteEmployee, { id: dup.id })).toBeNull();
+  });
+
+  it("チェック欄が出ていない保存（tenantsShown なし）では部署に触らない", async () => {
+    const e = await prisma.employee.create({ data: { name: NAME } });
+    await prisma.staff.update({ where: { id: shop.staffA.id }, data: { employeeId: e.id } });
+    expect(await run(updateEmployee, { id: e.id, name: NAME, displayOrder: "0", isActive: "on" })).toBeNull();
+    expect((await prisma.staff.findUniqueOrThrow({ where: { id: shop.staffA.id } })).employeeId).toBe(e.id);
   });
 });
 

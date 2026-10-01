@@ -12,12 +12,13 @@ import { prisma } from "@/lib/prisma";
 
 /**
  * 社員名簿（会社全体で1つ）。全社管理者だけが使える。
- * 上で社員を登録し、下で各部署のスタッフを「名簿のどの人か」にひも付ける。
+ * 上で社員を登録し、各行の「所属部署」のチェックで兼任先を選ぶ。
+ * 下の「スタッフとのひも付け」は、名前が違うなどで自動でまとまらなかったスタッフを手で結ぶ補助。
  */
 export default async function EmployeesSettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; done?: string }>;
+  searchParams: Promise<{ error?: string; done?: string; notice?: string }>;
 }) {
   const sp = await searchParams;
   await requireGroupAdmin();
@@ -51,11 +52,17 @@ export default async function EmployeesSettingsPage({
   return (
     <div className="space-y-5">
       <Banner error={sp.error} done={sp.done} />
+      {!sp.error && sp.notice && (
+        <p className="-mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-relaxed text-amber-900">
+          {sp.notice}
+        </p>
+      )}
 
       <p className="text-sm leading-relaxed text-neutral-600">
         会社全体の社員名簿です（全部署で共通）。「全社の1日」には、ここで在籍にしている人が1人1列で並びます。
-        兼任の人は、各部署のスタッフを同じ社員にひも付けてください。ひも付けると、どの部署の予約・予定も
-        その人の全部署の予約受付で「空いていない時間」になります。
+        各行の「所属部署」で、その人が予約を受ける部署にチェックを入れて保存してください（兼任なら複数）。
+        チェックした部署のどの予約・予定も、その人の全部署の予約受付で「空いていない時間」になります。
+        どの部署にも属さない人（事務など）はチェック無しのままで、全社の1日にだけ並びます。
       </p>
 
       <section className="rounded-lg border border-neutral-200 bg-white p-4">
@@ -78,8 +85,8 @@ export default async function EmployeesSettingsPage({
           </SubmitButton>
         </form>
         <p className="mt-2 text-xs text-neutral-500">
-          部署のスタッフになっている人は、下の「スタッフとのひも付け」で「名簿に新しく作る」を選ぶと、
-          名前を打ち直さずに登録できます。
+          追加したあと、名簿の行の「所属部署」にチェックを入れて保存すると、その部署のスタッフに同じ名前の人が
+          いればひも付け、いなければスタッフとして作ります。
         </p>
       </section>
 
@@ -120,10 +127,7 @@ export default async function EmployeesSettingsPage({
                   在籍
                 </label>
                 <span className="min-w-0 flex-1 truncate text-xs text-neutral-500">
-                  {e.staffs.length > 0
-                    ? e.staffs.map((s) => `${s.tenant.name}（${s.name}）`).join("・")
-                    : "部署なし（名簿のみ）"}
-                  {e._count.events > 0 && `　予定 ${e._count.events}件`}
+                  {e._count.events > 0 && `予定 ${e._count.events}件`}
                 </span>
                 <button
                   type="submit"
@@ -142,6 +146,32 @@ export default async function EmployeesSettingsPage({
                     削除
                   </button>
                 )}
+                <fieldset className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 text-xs text-neutral-600">
+                  <legend className="sr-only">{e.name} の所属部署</legend>
+                  <input type="hidden" name="tenantsShown" value="1" />
+                  <span className="text-neutral-500">所属部署：</span>
+                  {tenants.map((t) => {
+                    const linked = t.staffs.find((s) => s.employeeId === e.id);
+                    return (
+                      <label key={t.id} className="flex items-center gap-1">
+                        <input
+                          type="checkbox"
+                          name="tenantIds"
+                          value={t.id}
+                          defaultChecked={!!linked}
+                        />
+                        {t.name}
+                        {linked && linked.name !== e.name && (
+                          <span className="text-neutral-400">（{linked.name}）</span>
+                        )}
+                        {linked && !linked.isActive && (
+                          <span className="text-neutral-400">（スタッフは無効）</span>
+                        )}
+                      </label>
+                    );
+                  })}
+                  {tenants.length === 0 && <span>部署がありません</span>}
+                </fieldset>
               </form>
             ))}
           </div>
@@ -149,13 +179,15 @@ export default async function EmployeesSettingsPage({
       </section>
 
       <section>
-        <h2 className="mb-1 font-semibold">スタッフとのひも付け</h2>
+        <h2 className="mb-1 font-semibold">スタッフとのひも付け（個別）</h2>
         <p className="mb-3 text-xs text-neutral-500">
           {unlinkedCount > 0
             ? `ひも付いていない在籍中のスタッフが ${unlinkedCount}名 います。`
             : "在籍中のスタッフは全員ひも付いています。"}
-          兼任の人は、2つ目以降の部署では「名簿に新しく作る」ではなく、一覧からその人（カッコ内は今の所属部署）を
-          選んでください。1つの部署に同じ社員を2回ひも付けることはできません。
+          ふだんは上の「所属部署」のチェックで足ります。ここは、部署でのスタッフ名が名簿の名前と違う
+          （例：部署では「竹内」、名簿では「竹内 太郎」）などで自動でまとまらない人を、手で結ぶときに使います。
+          兼任の人は「名簿に新しく作る」ではなく、一覧からその人（カッコ内は今の所属部署）を選んでください。
+          1つの部署に同じ社員を2回ひも付けることはできません。
         </p>
         <div className="space-y-3">
           {tenants.map((tenant) => (

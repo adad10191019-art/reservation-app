@@ -4,6 +4,7 @@
  * 社員名簿の管理。全部署を横断する名簿なので、全社管理者（group_admin）だけが使える。
  *
  *   ・社員の追加、名前・表示順・在籍の変更（退職者は消さずに無効にする）
+ *   ・所属部署のチェック（部署にスタッフを作る／既存のスタッフにひも付ける／外す。employee-tenants.ts）
  *   ・予定もひも付けも無い行の削除（重複して作ってしまった行の後始末用）
  *   ・部署のスタッフを、名簿のどの社員かにひも付ける（兼任なら同じ社員を選ぶ）
  *
@@ -14,12 +15,18 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireGroupAdmin } from "./auth";
 import { employeeOptionLabel, findSameNameEmployee } from "./employee-names";
+import { planEmployeeTenants } from "./employee-tenants";
 import { prisma } from "./prisma";
 
 const PATH = "/settings/employees";
 
 function back(message?: string): never {
   redirect(message ? `${PATH}?error=${encodeURIComponent(message)}` : `${PATH}?done=1`);
+}
+
+/** 保存はできたが、続けてやってほしいことがあるとき */
+function backWithNotice(notice: string): never {
+  redirect(`${PATH}?done=1&notice=${encodeURIComponent(notice)}`);
 }
 
 function revalidateAll() {
@@ -62,27 +69,96 @@ export async function createEmployee(formData: FormData) {
   back();
 }
 
+/**
+ * 名簿の1行を保存する。名前・表示順・在籍に加えて、所属部署のチェックも反映する。
+ * 部署のチェックは、画面にチェック欄が出ているとき（tenantsShown）だけ見る。
+ */
 export async function updateEmployee(formData: FormData) {
   await requireGroupAdmin();
   const id = String(formData.get("id") ?? "");
   const name = String(formData.get("name") ?? "").trim();
   const displayOrder = Number(formData.get("displayOrder") ?? 0);
   const isActive = formData.get("isActive") === "on";
+  const tenantsShown = formData.get("tenantsShown") === "1";
+  const checkedTenantIds = new Set(formData.getAll("tenantIds").map(String));
   if (!name) back("名前を入力してください");
   if (!Number.isInteger(displayOrder)) back("表示順は整数で入力してください");
+
+  const employee = await prisma.employee.findUnique({ where: { id } });
+  if (!employee) back("社員が見つかりません");
 
   if (isActive) {
     const same = await sameNameLabel(name, id);
     if (same) back(`在籍中の「${same}」と同じ名前になります。名前を見分けられるようにしてください`);
   }
 
-  const updated = await prisma.employee.updateMany({
-    where: { id },
-    data: { name, displayOrder, isActive },
+  const tenants = tenantsShown
+    ? await prisma.tenant.findMany({
+        orderBy: { createdAt: "asc" },
+        select: {
+          id: true,
+          name: true,
+          staffs: {
+            orderBy: { displayOrder: "asc" },
+            select: { id: true, name: true, isActive: true, employeeId: true },
+          },
+        },
+      })
+    : [];
+  if ([...checkedTenantIds].some((t) => !tenants.some((x) => x.id === t))) {
+    back("部署の指定が正しくありません");
+  }
+  const plans = tenantsShown ? planEmployeeTenants({ id, name }, checkedTenantIds, tenants) : [];
+
+  // 名前の変更と部署の付け外しは1つの取引にまとめる（途中で失敗して半端な状態を残さない）
+  await prisma.$transaction(async (tx) => {
+    await tx.employee.update({ where: { id }, data: { name, displayOrder, isActive } });
+    for (const plan of plans) {
+      if (plan.kind === "link") {
+        await tx.staff.update({ where: { id: plan.staffId }, data: { employeeId: id } });
+      } else if (plan.kind === "unlink") {
+        await tx.staff.update({ where: { id: plan.staffId }, data: { employeeId: null } });
+      } else {
+        const last = await tx.staff.findFirst({
+          where: { tenantId: plan.tenantId },
+          orderBy: { displayOrder: "desc" },
+        });
+        await tx.staff.create({
+          data: {
+            tenantId: plan.tenantId,
+            name,
+            displayOrder: (last?.displayOrder ?? 0) + 1,
+            employeeId: id,
+          },
+        });
+      }
+    }
   });
-  if (updated.count === 0) back("社員が見つかりません");
 
   revalidateAll();
+
+  const tenantName = (tenantId: string) => tenants.find((t) => t.id === tenantId)?.name ?? "";
+  const notices: string[] = [];
+  const created = plans.filter((p) => p.kind === "create").map((p) => tenantName(p.tenantId));
+  if (created.length > 0) {
+    notices.push(
+      `${created.join("・")} にスタッフ「${name}」を作りました。お客様の予約を受けるには、` +
+        `その部署に切り替えて「設定 → スタッフ」で担当メニューを選んでください（選ぶまでは予約画面に出ません）。`,
+    );
+  }
+  const unlinked = plans.filter((p) => p.kind === "unlink").map((p) => tenantName(p.tenantId));
+  if (unlinked.length > 0) {
+    notices.push(
+      `${unlinked.join("・")} のスタッフとのひも付けを外しました（スタッフ自体は残っています）。` +
+        `その部署で予約を受けないなら、「設定 → スタッフ」で在籍を外してください。`,
+    );
+  }
+  if (plans.some((p) => p.kind === "link" && p.movedFromOther)) {
+    notices.push(
+      "別の名簿の行にひも付いていたスタッフを、この人に付け替えました。予定もひも付けも無くなった行は「削除」で消せます。",
+    );
+  }
+  if (notices.length > 0) backWithNotice(notices.join(" "));
   back();
 }
 
