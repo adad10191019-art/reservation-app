@@ -1,7 +1,13 @@
 import { Banner } from "@/components/banner";
 import { SubmitButton } from "@/components/submit-button";
 import { requireGroupAdmin } from "@/lib/auth";
-import { createEmployee, linkStaffToEmployee, updateEmployee } from "@/lib/employee-actions";
+import {
+  createEmployee,
+  deleteEmployee,
+  linkStaffToEmployee,
+  updateEmployee,
+} from "@/lib/employee-actions";
+import { employeeOptionLabel } from "@/lib/employee-names";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -19,7 +25,10 @@ export default async function EmployeesSettingsPage({
   const [employees, tenants] = await Promise.all([
     prisma.employee.findMany({
       orderBy: [{ isActive: "desc" }, { displayOrder: "asc" }, { name: "asc" }],
-      include: { staffs: { include: { tenant: { select: { name: true } } } } },
+      include: {
+        staffs: { include: { tenant: { select: { name: true } } } },
+        _count: { select: { events: true } },
+      },
     }),
     prisma.tenant.findMany({
       orderBy: { createdAt: "asc" },
@@ -114,6 +123,7 @@ export default async function EmployeesSettingsPage({
                   {e.staffs.length > 0
                     ? e.staffs.map((s) => `${s.tenant.name}（${s.name}）`).join("・")
                     : "部署なし（名簿のみ）"}
+                  {e._count.events > 0 && `　予定 ${e._count.events}件`}
                 </span>
                 <button
                   type="submit"
@@ -121,6 +131,17 @@ export default async function EmployeesSettingsPage({
                 >
                   保存
                 </button>
+                {/* 予定もひも付けも無い行だけ消せる（重複して作った行の後始末用） */}
+                {e.staffs.length === 0 && e._count.events === 0 && (
+                  <button
+                    type="submit"
+                    formAction={deleteEmployee}
+                    formNoValidate
+                    className="rounded-md border border-red-200 bg-white px-3 py-1 text-sm text-red-700 hover:bg-red-50"
+                  >
+                    削除
+                  </button>
+                )}
               </form>
             ))}
           </div>
@@ -133,7 +154,8 @@ export default async function EmployeesSettingsPage({
           {unlinkedCount > 0
             ? `ひも付いていない在籍中のスタッフが ${unlinkedCount}名 います。`
             : "在籍中のスタッフは全員ひも付いています。"}
-          1つの部署に同じ社員を2回ひも付けることはできません。
+          兼任の人は、2つ目以降の部署では「名簿に新しく作る」ではなく、一覧からその人（カッコ内は今の所属部署）を
+          選んでください。1つの部署に同じ社員を2回ひも付けることはできません。
         </p>
         <div className="space-y-3">
           {tenants.map((tenant) => (
@@ -173,7 +195,10 @@ export default async function EmployeesSettingsPage({
                           .filter((e) => e.isActive || e.id === staff.employeeId)
                           .map((e) => (
                             <option key={e.id} value={e.id}>
-                              {e.name}
+                              {employeeOptionLabel(
+                                e.name,
+                                e.staffs.map((s) => s.tenant.name),
+                              )}
                             </option>
                           ))}
                       </select>
