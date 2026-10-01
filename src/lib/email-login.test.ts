@@ -3,7 +3,7 @@
  * メールが届く設定かの判定（isEmailConfigured）を確かめる。
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isEmailConfigured } from "./email";
+import { isEmailConfigured, withSenderName } from "./email";
 import { resolveCustomerLoginMethods } from "./email-login";
 
 vi.mock("./prisma", () => ({ prisma: {} }));
@@ -70,5 +70,32 @@ describe("resolveCustomerLoginMethods", () => {
       line: false,
       email: false,
     });
+  });
+});
+
+describe("withSenderName（差出人の表示名の差し替え）", () => {
+  const FROM = "予約のお知らせ <notify@notify.youth-personnel.com>";
+
+  it("表示名だけを店舗名に替え、アドレスはそのまま", () => {
+    expect(withSenderName(FROM, "サンプルヘアサロン")).toBe(
+      '"サンプルヘアサロン" <notify@notify.youth-personnel.com>',
+    );
+  });
+
+  it("EMAIL_FROM がアドレスだけでも使える", () => {
+    expect(withSenderName("notify@notify.youth-personnel.com", "サロン")).toBe(
+      '"サロン" <notify@notify.youth-personnel.com>',
+    );
+  });
+
+  it("ヘッダーを崩す文字は除く", () => {
+    expect(withSenderName(FROM, 'A"B<C>\r\nD\\E')).toBe(
+      '"A B C D E" <notify@notify.youth-personnel.com>',
+    );
+  });
+
+  it("名前が空なら EMAIL_FROM のまま", () => {
+    expect(withSenderName(FROM, "")).toBe(FROM);
+    expect(withSenderName(FROM, undefined)).toBe(FROM);
   });
 });

@@ -1,5 +1,9 @@
 /**
- * 予約に関するLINE通知。
+ * 予約に関する通知（LINE・メール）。
+ *
+ * お客様へは、LINEに紐づいていればLINEで、そうでなくメールアドレスがあれば
+ * メールで送る（メールアドレスはメールの確認コードでログインした人だけが持つ）。
+ * 両方あってもLINEだけに送り、同じ知らせが2通届かないようにする。
  *
  * 通知は「できたら送る」もの。送れなくても予約は成立させたいので、
  * ここでは例外を投げず、結果を返すだけにする。
@@ -8,16 +12,32 @@ import { sendNotificationEmail } from "./email";
 import { pushTextMessage, type PushResult } from "./line-messaging";
 import {
   type ReservationSummary,
+  reservationCanceledSubject,
   reservationCanceledText,
+  reservationCreatedSubject,
   reservationCreatedText,
+  reservationReminderSubject,
   reservationReminderText,
   staffCanceledSubject,
   staffCanceledText,
   staffNewReservationSubject,
   staffNewReservationText,
+  withSendOnlyNotice,
 } from "./notify-text";
 import { prisma } from "./prisma";
 import { tenantHandle } from "./tenant";
+
+/** お客様への送り先。LINEを優先し、無ければメール */
+type CustomerChannel = { kind: "line"; to: string } | { kind: "email"; to: string };
+
+function customerChannel(customer: {
+  lineUserId: string | null;
+  email: string | null;
+}): CustomerChannel | null {
+  if (customer.lineUserId) return { kind: "line", to: customer.lineUserId };
+  if (customer.email) return { kind: "email", to: customer.email };
+  return null;
+}
 
 /** 予約1件から、文面に必要な情報と送り先を集める */
 async function loadTarget(reservationId: string) {
@@ -26,7 +46,8 @@ async function loadTarget(reservationId: string) {
     include: { tenant: true, staff: true, customer: true },
   });
   if (!reservation) return null;
-  if (!reservation.customer.lineUserId) return null;
+  const channel = customerChannel(reservation.customer);
+  if (!channel) return null;
 
   const tenant = reservation.tenant;
   const base = process.env.APP_URL?.replace(/\/$/, "");
@@ -43,33 +64,50 @@ async function loadTarget(reservationId: string) {
       : undefined,
   };
 
-  return { to: reservation.customer.lineUserId, summary, tenant };
+  return { channel, summary, tenant };
 }
+
+type Target = NonNullable<Awaited<ReturnType<typeof loadTarget>>>;
+
+/**
+ * お客様に1通送る。メールの差出人名は店舗名にする（送信元のアドレスは自社ドメインのまま）。
+ * 店舗名は送るたびにDBから読むので、設定で名前を変えれば次の通知から反映される
+ */
+function sendToCustomer(
+  target: Target,
+  build: (summary: ReservationSummary) => string,
+  buildSubject: (summary: ReservationSummary) => string,
+): Promise<PushResult> {
+  const text = build(target.summary);
+  if (target.channel.kind === "line") {
+    return pushTextMessage({ tenant: target.tenant, to: target.channel.to, text });
+  }
+  return sendNotificationEmail({
+    to: target.channel.to,
+    subject: buildSubject(target.summary),
+    text: withSendOnlyNotice(text, target.summary.shopName),
+    fromName: target.summary.shopName,
+  });
+}
+
+const NO_CHANNEL = { ok: true, sent: false, reason: "LINEにもメールにも紐づいていないお客様です" } as const;
 
 export async function notifyReservationCreated(
   reservationId: string,
 ): Promise<PushResult> {
   const target = await loadTarget(reservationId);
-  if (!target) return { ok: true, sent: false, reason: "LINEに紐づいていないお客様です" };
+  if (!target) return NO_CHANNEL;
 
-  return pushTextMessage({
-    tenant: target.tenant,
-    to: target.to,
-    text: reservationCreatedText(target.summary),
-  });
+  return sendToCustomer(target, reservationCreatedText, reservationCreatedSubject);
 }
 
 export async function notifyReservationCanceled(
   reservationId: string,
 ): Promise<PushResult> {
   const target = await loadTarget(reservationId);
-  if (!target) return { ok: true, sent: false, reason: "LINEに紐づいていないお客様です" };
+  if (!target) return NO_CHANNEL;
 
-  return pushTextMessage({
-    tenant: target.tenant,
-    to: target.to,
-    text: reservationCanceledText(target.summary),
-  });
+  return sendToCustomer(target, reservationCanceledText, reservationCanceledSubject);
 }
 
 export type ReminderOutcome = {
@@ -95,7 +133,7 @@ export async function sendRemindersFor(date: string): Promise<ReminderOutcome[]>
       date,
       status: "booked",
       reminderSentAt: null,
-      customer: { lineUserId: { not: null } },
+      customer: { OR: [{ lineUserId: { not: null } }, { email: { not: null } }] },
     },
     include: { customer: true },
     orderBy: { startMinutes: "asc" },
@@ -123,11 +161,11 @@ export async function sendRemindersFor(date: string): Promise<ReminderOutcome[]>
     });
     if (claimed.count === 0) continue;
 
-    const result = await pushTextMessage({
-      tenant: target.tenant,
-      to: target.to,
-      text: reservationReminderText(target.summary),
-    });
+    const result = await sendToCustomer(
+      target,
+      reservationReminderText,
+      reservationReminderSubject,
+    );
 
     // 送れなかったら印を外す。次回もう一度試す
     if (!(result.ok && result.sent)) {

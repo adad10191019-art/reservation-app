@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   type ReservationSummary,
+  reservationCanceledSubject,
   reservationCanceledText,
+  reservationCreatedSubject,
   reservationCreatedText,
+  reservationReminderSubject,
   reservationReminderText,
   staffCanceledSubject,
   staffNewReservationSubject,
+  withSendOnlyNotice,
 } from "./notify-text";
 import { hm } from "./time";
 
@@ -79,5 +83,22 @@ describe("店舗側への通知メールの件名", () => {
     expect(subject).toContain("サンプルヘアサロン");
     expect(subject).toContain("9月24日(木) 11:00");
     expect(subject).toContain("キャンセル");
+  });
+});
+
+describe("お客様へのメールの件名と末尾", () => {
+  it("件名に店舗名・日時と、何の知らせかが入る", () => {
+    expect(reservationCreatedSubject(BASE)).toBe(
+      "【サンプルヘアサロン】ご予約を承りました（9月24日(木) 11:00）",
+    );
+    expect(reservationReminderSubject(BASE)).toContain("明日のご予約");
+    expect(reservationCanceledSubject(BASE)).toContain("キャンセル");
+  });
+
+  it("本文の後ろに、送信専用であることと問い合わせ先を足す", () => {
+    const text = withSendOnlyNotice("本文", "サンプルヘアサロン");
+    expect(text.startsWith("本文\n")).toBe(true);
+    expect(text).toContain("このメールは送信専用です");
+    expect(text).toContain("サンプルヘアサロン へ直接ご連絡ください");
   });
 });

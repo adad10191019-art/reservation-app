@@ -1,5 +1,5 @@
 /**
- * LINEに送る文面の組み立て。
+ * LINE・メールで送る文面の組み立て。
  *
  * 送信そのものとは切り離してある。文面はDBもネットワークも触らない純粋な処理なので、
  * そのままテストできる。
@@ -100,4 +100,36 @@ export function staffNewReservationSubject(r: ReservationSummary): string {
 
 export function staffCanceledSubject(r: ReservationSummary): string {
   return `【${r.shopName}】予約がキャンセルされました（${formatDateLabel(r.date)} ${toHm(r.startMinutes)}）`;
+}
+
+// ── お客様へのメール（件名・末尾の一文） ────
+
+function whenLabel(r: ReservationSummary): string {
+  return `${formatDateLabel(r.date)} ${toHm(r.startMinutes)}`;
+}
+
+export function reservationCreatedSubject(r: ReservationSummary): string {
+  return `【${r.shopName}】ご予約を承りました（${whenLabel(r)}）`;
+}
+
+export function reservationReminderSubject(r: ReservationSummary): string {
+  return `【${r.shopName}】明日のご予約のお知らせ（${whenLabel(r)}）`;
+}
+
+export function reservationCanceledSubject(r: ReservationSummary): string {
+  return `【${r.shopName}】ご予約のキャンセルを承りました（${whenLabel(r)}）`;
+}
+
+/**
+ * メールの末尾に足す一文。送信用のアドレスには受信箱が無く、
+ * 返信しても店舗には届かないため、その旨を書いておく。
+ */
+export function withSendOnlyNotice(text: string, shopName: string): string {
+  return [
+    text,
+    "",
+    "――――",
+    "このメールは送信専用です。ご返信いただいてもお返事できません。",
+    `お問い合わせは ${shopName} へ直接ご連絡ください。`,
+  ].join("\n");
 }

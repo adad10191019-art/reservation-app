@@ -23,7 +23,7 @@ async function main() {
   const outcomes = await sendRemindersFor(date);
 
   if (outcomes.length === 0) {
-    console.log("送る相手がいません（LINEに紐づいた予約がない、または送信済み）");
+    console.log("送る相手がいません（LINEにもメールにも紐づいた予約がない、または送信済み）");
     return;
   }
 
