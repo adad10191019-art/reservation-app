@@ -210,12 +210,15 @@ async function notifyStaff(
   });
   if (!reservation) return { sent: 0, skipped: 0 };
 
-  const recipients = await prisma.user.findMany({
-    where: {
-      tenantId: reservation.tenantId,
-      OR: [{ role: "owner" }, { staffId: reservation.staffId }],
-    },
-  });
+  const recipients = (
+    await prisma.membership.findMany({
+      where: {
+        tenantId: reservation.tenantId,
+        OR: [{ role: "owner" }, { staffId: reservation.staffId }],
+      },
+      select: { lineUserId: true, user: { select: { email: true } } },
+    })
+  ).map((m) => ({ lineUserId: m.lineUserId, email: m.user.email }));
 
   const summary: ReservationSummary = {
     shopName: reservation.tenant.name,

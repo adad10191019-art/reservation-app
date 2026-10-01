@@ -21,14 +21,22 @@ export async function AppHeader({
   /** 歯車メニューに追加する、画面ごとのリンク（通知設定・ログアウトより上に出す） */
   menuLinks?: { href: string; label: string }[];
 }) {
-  // group_admin だけ、部署を切り替えるための一覧を持たせる
+  // 部署を切り替えるための一覧。全社管理者は全部署、兼任の人は自分の担当部署（2つ以上のとき）
   const tenants =
     session.role === "group_admin"
       ? await prisma.tenant.findMany({
           orderBy: { createdAt: "asc" },
           select: { id: true, name: true },
         })
-      : null;
+      : session.role === "member"
+        ? null
+        : await prisma.membership
+            .findMany({
+              where: { userId: session.userId },
+              orderBy: { createdAt: "asc" },
+              select: { tenant: { select: { id: true, name: true } } },
+            })
+            .then((rows) => (rows.length >= 2 ? rows.map((r) => r.tenant) : null));
 
   return (
     <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -42,7 +50,7 @@ export async function AppHeader({
           <form action={switchTenant} className="flex items-center gap-1">
             <select
               name="tenantId"
-              defaultValue={tenants.find((t) => t.name === tenantName)?.id}
+              defaultValue={session.tenantId ?? undefined}
               className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-sm text-amber-900"
             >
               {tenants.map((t) => (

@@ -2,15 +2,16 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { requireGroupAdmin, requireOwner, startSession } from "./auth";
+import { canResetPassword } from "./account-access";
+import { loadAccessUser, requireGroupAdmin, requireOwner, startDeptSession } from "./auth";
 import { logChange } from "./change-log";
 import { SLOT_CHOICES } from "./constants";
 import { isValidHexColor } from "./brand-color";
-import { hashPassword } from "./password";
+import { EMAIL_PATTERN, initialPasswordData } from "./initial-password";
 import { prisma } from "./prisma";
 import { parseRanges } from "./ranges";
 import { addNewStaffToRoster } from "./employee-roster";
-import { buildSession, type Role } from "./session";
+import type { Role } from "./session";
 import { deleteTenantCompletely } from "./tenant-offboarding";
 import { formatDateLabel, toHm } from "./time";
 import { validateSlug } from "./slug";
@@ -196,11 +197,14 @@ export async function deleteStaff(formData: FormData) {
     );
   }
 
-  const linkedAccount = await prisma.user.findFirst({ where: { staffId: id } });
+  const linkedAccount = await prisma.membership.findUnique({
+    where: { staffId: id },
+    select: { user: { select: { email: true } } },
+  });
   if (linkedAccount) {
     back(
       path,
-      `「${staff.name}」にはログインアカウント（${linkedAccount.email}）が紐づいているため削除できません。先にアカウント設定から削除してください`,
+      `「${staff.name}」にはログインアカウント（${linkedAccount.user.email}）が紐づいているため削除できません。先にアカウント設定でこの部署の担当から外してください`,
     );
   }
 
@@ -268,102 +272,158 @@ export async function saveBusinessHours(formData: FormData) {
 
 // ── アカウント ────────────────────────────
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/** 保存はできたが、伝えておきたいことがあるとき */
+function backWithNotice(path: string, notice: string): never {
+  redirect(`${path}?done=1&notice=${encodeURIComponent(notice)}`);
+}
 
+/**
+ * この部署の担当にアカウントを追加する。
+ *   ・新しいメールなら、アカウントを発行する（初期パスワード＝メールアドレス、最初のログインで変更）
+ *   ・別の部署ですでに使われているメールなら、同じ人の兼任として、そのアカウントにこの部署を足す
+ *     （1人1アカウント。パスワードは今のまま）
+ */
 export async function createAccount(formData: FormData) {
   const session = await requireOwner();
   const path = "/settings/accounts";
 
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
-  const password = String(formData.get("password") ?? "");
   const role = String(formData.get("role") ?? "") as Role;
   const staffId = String(formData.get("staffId") ?? "");
 
   if (!EMAIL_PATTERN.test(email)) back(path, "メールアドレスの形式が正しくありません");
-  if (password.length < 8) back(path, "パスワードは8文字以上にしてください");
   if (role !== "owner" && role !== "staff") back(path, "権限の指定が正しくありません");
   if (role === "staff" && !staffId) {
     back(path, "スタッフ権限のアカウントは、担当するスタッフを選んでください");
   }
 
-  // 部署に属さないアカウント（全社管理者・社員）とも重ならないようにする。
-  // ログインはメールで探すので、同じアドレスが2つあると取り違えるおそれがある
-  const existing = await prisma.user.findFirst({
-    where: { email, OR: [{ tenantId: session.tenantId }, { tenantId: null }] },
-  });
-  if (existing) back(path, "このメールアドレスはすでに使われています");
-
+  let staffEmployeeId: string | null = null;
   if (staffId) {
     const staff = await prisma.staff.findFirst({
       where: { id: staffId, tenantId: session.tenantId },
     });
     if (!staff) back(path, "スタッフが見つかりません");
+    staffEmployeeId = staff.employeeId;
 
-    // User.staffId は一意。すでに紐づくアカウントがあれば弾く
-    const taken = await prisma.user.findFirst({ where: { staffId } });
+    // 1人のスタッフに付くアカウントは1つ。すでに紐づくアカウントがあれば弾く
+    const taken = await prisma.membership.findUnique({ where: { staffId } });
     if (taken) back(path, "このスタッフには、すでにアカウントがあります");
+  }
+
+  const existing = await prisma.user.findUnique({
+    where: { email },
+    include: { memberships: { select: { tenantId: true } } },
+  });
+  if (existing?.memberships.some((m) => m.tenantId === session.tenantId)) {
+    back(path, "この人はすでにこの部署の担当です");
+  }
+
+  // スタッフが名簿の人にひも付いていれば、アカウントもその人にひも付ける（「全社の1日」の自分の列）
+  const employeeTaken = staffEmployeeId
+    ? await prisma.user.findUnique({ where: { employeeId: staffEmployeeId }, select: { id: true } })
+    : null;
+  const employeeId =
+    staffEmployeeId && (!employeeTaken || employeeTaken.id === existing?.id) ? staffEmployeeId : null;
+
+  const membership = {
+    tenantId: session.tenantId,
+    role,
+    // オーナーでもスタッフに紐づけてよい。
+    // 「普段はスタッフだが、代理でオーナー権限を持つ」場合に必要。
+    staffId: staffId || null,
+  };
+
+  if (existing) {
+    await prisma.user.update({
+      where: { id: existing.id },
+      data: {
+        memberships: { create: membership },
+        ...(existing.employeeId || !employeeId ? {} : { employeeId }),
+      },
+    });
+    refreshAll();
+    backWithNotice(
+      path,
+      `${email} はほかの部署ですでに使われているので、同じ人の兼任として、そのアカウントにこの部署を追加しました。パスワードは今のままです。`,
+    );
   }
 
   await prisma.user.create({
     data: {
-      tenantId: session.tenantId,
       email,
-      passwordHash: await hashPassword(password),
-      role,
-      // オーナーでもスタッフに紐づけてよい。
-      // 「普段はスタッフだが、代理でオーナー権限を持つ」場合に必要。
-      staffId: staffId || null,
+      ...(await initialPasswordData(email)),
+      employeeId,
+      lastTenantId: session.tenantId,
+      memberships: { create: membership },
     },
   });
 
   refreshAll();
-  back(path);
+  backWithNotice(
+    path,
+    `アカウントを発行しました。最初のパスワードはメールアドレス（${email}）と同じです。本人に伝えてください。最初にログインしたときに、自分のパスワードに変えてもらいます。`,
+  );
 }
 
+/**
+ * アカウントをこの部署の担当から外す。ほかの部署も担当している人は、そちらでは今まで通り使える。
+ * どこの担当でもなくなり、名簿の人にもひも付いていなければ、アカウントごと消す。
+ */
 export async function deleteAccount(formData: FormData) {
   const session = await requireOwner();
   const path = "/settings/accounts";
 
   const id = String(formData.get("id") ?? "");
 
-  if (id === session.userId) back(path, "自分自身のアカウントは削除できません");
+  if (id === session.userId) back(path, "自分自身はこの部署の担当から外せません");
 
-  const target = await prisma.user.findFirst({
-    where: { id, tenantId: session.tenantId },
+  const target = await prisma.membership.findUnique({
+    where: { userId_tenantId: { userId: id, tenantId: session.tenantId } },
   });
   if (!target) back(path, "アカウントが見つかりません");
 
   // オーナーが誰もいなくなると、設定を変えられなくなる
   if (target.role === "owner") {
-    const owners = await prisma.user.count({
+    const owners = await prisma.membership.count({
       where: { tenantId: session.tenantId, role: "owner" },
     });
     if (owners <= 1) back(path, "オーナーのアカウントは最低1つ必要です");
   }
 
-  await prisma.user.deleteMany({ where: { id, tenantId: session.tenantId } });
+  await prisma.$transaction(async (tx) => {
+    await tx.membership.delete({ where: { id: target.id } });
+    await tx.user.deleteMany({
+      where: { id, isGroupAdmin: false, employeeId: null, memberships: { none: {} } },
+    });
+  });
 
   refreshAll();
   back(path);
 }
 
+/** パスワードを初期状態（メールアドレスと同じ）に戻す。本人は次のログインで変えることになる */
 export async function resetAccountPassword(formData: FormData) {
   const session = await requireOwner();
   const path = "/settings/accounts";
 
   const id = String(formData.get("id") ?? "");
-  const password = String(formData.get("password") ?? "");
 
-  if (password.length < 8) back(path, "パスワードは8文字以上にしてください");
-
-  const updated = await prisma.user.updateMany({
-    where: { id, tenantId: session.tenantId },
-    data: { passwordHash: await hashPassword(password) },
+  const target = await prisma.user.findFirst({
+    where: { id, memberships: { some: { tenantId: session.tenantId } } },
+    include: { memberships: { select: { tenantId: true } } },
   });
-  if (updated.count === 0) back(path, "アカウントが見つかりません");
+  if (!target) back(path, "アカウントが見つかりません");
+  if (!canResetPassword(session, target)) {
+    back(path, "ほかの部署も担当している人のパスワードは、全社管理者に戻してもらってください");
+  }
+
+  await prisma.user.update({ where: { id }, data: await initialPasswordData(target.email) });
 
   refreshAll();
-  back(path);
+  backWithNotice(
+    path,
+    `${target.email} のパスワードを初期状態（メールアドレスと同じ）に戻しました。次にログインしたときに、新しいパスワードを決めてもらいます。`,
+  );
 }
 
 // ── 店舗の基本設定 ────────────────────────
@@ -503,8 +563,8 @@ export async function changeAccountRole(formData: FormData) {
 
   if (role !== "owner" && role !== "staff") back(path, "権限の指定が正しくありません");
 
-  const target = await prisma.user.findFirst({
-    where: { id, tenantId: session.tenantId },
+  const target = await prisma.membership.findUnique({
+    where: { userId_tenantId: { userId: id, tenantId: session.tenantId } },
   });
   if (!target) back(path, "アカウントが見つかりません");
   if (target.role === role) back(path, "すでにその権限です");
@@ -516,16 +576,14 @@ export async function changeAccountRole(formData: FormData) {
 
   // オーナーが誰もいなくなると、設定を変えられなくなる
   if (target.role === "owner" && role === "staff") {
-    const owners = await prisma.user.count({
+    const owners = await prisma.membership.count({
       where: { tenantId: session.tenantId, role: "owner" },
     });
     if (owners <= 1) back(path, "オーナーのアカウントは最低1つ必要です");
   }
 
-  await prisma.user.updateMany({
-    where: { id, tenantId: session.tenantId },
-    data: { role },
-  });
+  // 役割は部署ごと。ほかの部署での役割は変わらない
+  await prisma.membership.update({ where: { id: target.id }, data: { role } });
 
   refreshAll();
   back(path);
@@ -751,15 +809,8 @@ export async function createTenant(formData: FormData) {
   const tenant = await prisma.tenant.create({ data: { name, slug } });
 
   // 作ったその場で、その部署の設定を続けられるようにする
-  await startSession(
-    buildSession({
-      userId: session.userId,
-      tenantId: tenant.id,
-      role: "group_admin",
-      staffId: null,
-      name: session.name,
-    }),
-  );
+  const user = await loadAccessUser({ id: session.userId });
+  if (user) await startDeptSession(user, tenant.id);
 
   revalidatePath("/settings", "layout");
   redirect("/settings/onboarding?done=1");
@@ -828,17 +879,8 @@ export async function deleteTenantAction(formData: FormData) {
 
   if (session.tenantId === id) {
     const another = await prisma.tenant.findFirst({ orderBy: { createdAt: "asc" } });
-    if (another) {
-      await startSession(
-        buildSession({
-          userId: session.userId,
-          tenantId: another.id,
-          role: "group_admin",
-          staffId: null,
-          name: session.name,
-        }),
-      );
-    }
+    const user = await loadAccessUser({ id: session.userId });
+    if (another && user) await startDeptSession(user, another.id);
   }
 
   revalidatePath("/settings", "layout");

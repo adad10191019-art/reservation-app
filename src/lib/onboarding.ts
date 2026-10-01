@@ -37,7 +37,7 @@ export async function buildOnboardingStatus(tenantId: string): Promise<Onboardin
     prisma.staff.count({ where: { tenantId, isActive: true } }),
     prisma.menu.count({ where: { tenantId, isActive: true } }),
     prisma.businessHour.count({ where: { tenantId } }),
-    prisma.user.count({ where: { tenantId, role: "owner" } }),
+    prisma.membership.count({ where: { tenantId, role: "owner" } }),
   ]);
 
   const methods = resolveCustomerLoginMethods(tenant);

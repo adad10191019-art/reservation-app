@@ -79,7 +79,11 @@ export async function deleteTestShop(tenantId: string) {
   await prisma.changeLog.deleteMany({ where: { tenantId } });
   await prisma.customerLoginCode.deleteMany({ where: { tenantId } });
   await prisma.googleCalendarConnection.deleteMany({ where: { tenantId } });
-  await prisma.user.deleteMany({ where: { tenantId } });
+  // この店舗だけを担当していたアカウントは一緒に消す（兼任のテストでは別の店舗の担当が残る）
+  await prisma.user.deleteMany({
+    where: { memberships: { some: { tenantId }, every: { tenantId } } },
+  });
+  await prisma.membership.deleteMany({ where: { tenantId } });
   await prisma.menu.deleteMany({ where: { tenantId } });
   await prisma.staff.deleteMany({ where: { tenantId } });
   await prisma.tenant.delete({ where: { id: tenantId } });

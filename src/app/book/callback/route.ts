@@ -76,8 +76,8 @@ export async function GET(request: Request) {
     }
 
     // 同じ店舗で同じLINEを二重に紐づけない（ほかのアカウントが使っていないか）
-    const taken = await prisma.user.findFirst({
-      where: { tenantId, lineUserId: profile.userId, NOT: { id: session.userId } },
+    const taken = await prisma.membership.findFirst({
+      where: { tenantId, lineUserId: profile.userId, NOT: { userId: session.userId } },
       select: { id: true },
     });
 
@@ -93,10 +93,15 @@ export async function GET(request: Request) {
       return NextResponse.redirect(destination);
     }
 
-    await prisma.user.updateMany({
-      where: { id: session.userId, tenantId },
+    // LINE の利用者IDは部署のLINEチャネルごとに違うので、この部署の担当に持たせる
+    const linked = await prisma.membership.updateMany({
+      where: { userId: session.userId, tenantId },
       data: { lineUserId: profile.userId },
     });
+    if (linked.count === 0) {
+      destination.searchParams.set("error", "この部署の担当になっていないため、通知を受け取れません");
+      return NextResponse.redirect(destination);
+    }
 
     destination.searchParams.set("done", "1");
     return NextResponse.redirect(destination);

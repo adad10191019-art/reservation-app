@@ -16,12 +16,16 @@ export default async function NotifySettingsPage({
   const session = await requireSession();
   const tenant = await getTenant(session.tenantId);
 
-  const user = await prisma.user.findFirst({
-    where: { id: session.userId, tenantId: session.tenantId },
-    select: { email: true, lineUserId: true, role: true },
-  });
+  const [user, membership] = await Promise.all([
+    prisma.user.findUnique({ where: { id: session.userId }, select: { email: true } }),
+    // LINE の利用者IDは部署のLINEチャネルごとに違うので、部署ごとに紐づける
+    prisma.membership.findUnique({
+      where: { userId_tenantId: { userId: session.userId, tenantId: session.tenantId } },
+      select: { lineUserId: true },
+    }),
+  ]);
 
-  const linked = Boolean(user?.lineUserId);
+  const linked = Boolean(membership?.lineUserId);
 
   return (
     <main className="mx-auto w-full max-w-2xl p-4 sm:p-6">
@@ -55,7 +59,11 @@ export default async function NotifySettingsPage({
           <span className="ml-2 text-xs opacity-70">（{user?.email}）</span>
         </div>
 
-        {!isLineConfigured(tenant) ? (
+        {!membership ? (
+          <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            この部署の担当になっていないため、この部署の通知は届きません。
+          </p>
+        ) : !isLineConfigured(tenant) ? (
           <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
             LINEログインの設定がまだのため、紐づけできません。
           </p>

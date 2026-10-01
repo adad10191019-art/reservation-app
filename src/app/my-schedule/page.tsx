@@ -3,6 +3,7 @@ import { AppHeader } from "@/components/app-header";
 import { Banner } from "@/components/banner";
 import { requireSession } from "@/lib/auth";
 import { fetchGoogleBusyByDate, isGoogleCalendarConfigured } from "@/lib/google-calendar";
+import { type ElsewhereItem, fetchMyElsewhere } from "@/lib/my-elsewhere";
 import { prisma } from "@/lib/prisma";
 import { getDaySchedule, getTenant } from "@/lib/schedule";
 import { createOwnBlock, deleteOwnBlock } from "@/lib/staff-schedule-actions";
@@ -12,7 +13,7 @@ type AgendaItem =
   | { kind: "reservation"; id: string; startMinutes: number; endMinutes: number; menuName: string; customerName: string }
   | { kind: "block"; id: string; startMinutes: number; endMinutes: number; reason: string; wholeShop: boolean }
   | { kind: "google"; startMinutes: number; endMinutes: number }
-  | { kind: "other"; startMinutes: number; endMinutes: number };
+  | ElsewhereItem;
 
 export default async function MySchedulePage({
   searchParams,
@@ -44,7 +45,7 @@ export default async function MySchedulePage({
 
   const staffId = session.staffId;
 
-  const [schedule, ownBlocks, googleConnection] = await Promise.all([
+  const [schedule, ownBlocks, googleConnection, elsewhere] = await Promise.all([
     getDaySchedule({ tenantId: tenant.id, date }),
     prisma.block.findMany({
       where: { tenantId: tenant.id, date, staffId },
@@ -53,6 +54,7 @@ export default async function MySchedulePage({
     isGoogleCalendarConfigured()
       ? prisma.googleCalendarConnection.findUnique({ where: { staffId } })
       : null,
+    fetchMyElsewhere({ userId: session.userId, tenantId: tenant.id, staffId, date }),
   ]);
 
   // 連携していれば、Googleカレンダーの予定も「見るだけ」の項目として混ぜる。
@@ -65,38 +67,34 @@ export default async function MySchedulePage({
   // （どのメニューにも対応していない等）場合は列自体が無いこともある
   const myColumn = schedule.columns.find((c) => c.staffId === staffId) ?? null;
 
-  // 予約と自分の予定（ブロック枠）を、時刻順の1本のリストにまとめる
-  const agenda: AgendaItem[] = myColumn
-    ? [
-        ...myColumn.reservations.map(
-          (r): AgendaItem => ({
-            kind: "reservation",
-            id: r.id,
-            startMinutes: r.startMinutes,
-            endMinutes: r.endMinutes,
-            menuName: r.menuName,
-            customerName: r.customerName,
-          }),
-        ),
-        ...myColumn.blocks.map(
-          (b): AgendaItem => ({
-            kind: "block",
-            id: b.id,
-            startMinutes: b.startMinutes,
-            endMinutes: b.endMinutes,
-            reason: b.reason,
-            wholeShop: b.wholeShop,
-          }),
-        ),
-        ...googleBusy.map(
-          (g): AgendaItem => ({ kind: "google", startMinutes: g.start, endMinutes: g.end }),
-        ),
-        // 兼任先の部署での予約・予定や、全社の1日で入れた自分の予定
-        ...myColumn.otherBusy.map(
-          (o): AgendaItem => ({ kind: "other", startMinutes: o.start, endMinutes: o.end }),
-        ),
-      ].sort((a, b) => a.startMinutes - b.startMinutes)
-    : [];
+  // この部署の予約・ブロック枠に、兼任先の部署の分・全社の1日で入れた予定・Googleカレンダーの予定を
+  // 合わせて、時刻順の1本のリストにまとめる
+  const agenda: AgendaItem[] = [
+    ...(myColumn?.reservations ?? []).map(
+      (r): AgendaItem => ({
+        kind: "reservation",
+        id: r.id,
+        startMinutes: r.startMinutes,
+        endMinutes: r.endMinutes,
+        menuName: r.menuName,
+        customerName: r.customerName,
+      }),
+    ),
+    ...(myColumn?.blocks ?? []).map(
+      (b): AgendaItem => ({
+        kind: "block",
+        id: b.id,
+        startMinutes: b.startMinutes,
+        endMinutes: b.endMinutes,
+        reason: b.reason,
+        wholeShop: b.wholeShop,
+      }),
+    ),
+    ...elsewhere,
+    ...googleBusy.map(
+      (g): AgendaItem => ({ kind: "google", startMinutes: g.start, endMinutes: g.end }),
+    ),
+  ].sort((a, b) => a.startMinutes - b.startMinutes);
 
   return (
     <main className="mx-auto w-full max-w-2xl p-4 sm:p-6">
@@ -138,11 +136,12 @@ export default async function MySchedulePage({
 
       {/* 今日の予定（時刻順のカードリスト） */}
       <section className="mb-5">
-        {!myColumn ? (
-          <p className="rounded-lg border border-neutral-200 bg-white px-4 py-8 text-center text-sm text-neutral-500">
-            この日は対応できるメニューが無いため、予定を表示できません。
+        {!myColumn && (
+          <p className="mb-2 rounded-lg border border-neutral-200 bg-white px-4 py-3 text-center text-sm text-neutral-500">
+            この日は{tenant.name}で対応できるメニューが無いため、{tenant.name}の予定は表示できません。
           </p>
-        ) : agenda.length === 0 ? (
+        )}
+        {!myColumn && agenda.length === 0 ? null : agenda.length === 0 ? (
           <p className="rounded-lg border border-neutral-200 bg-white px-4 py-8 text-center text-sm text-neutral-500">
             この日の予定はありません。
           </p>
@@ -188,8 +187,45 @@ export default async function MySchedulePage({
                     </span>
                   </span>
                 </li>
-              ) : item.kind === "other" ? (
-                <li key={`o-${item.startMinutes}`}>
+              ) : item.kind === "elsewhere-reservation" ? (
+                // 兼任先の部署の予約。詳しく見る・動かすのはその部署に切り替えてから
+                <li
+                  key={`er-${item.id}`}
+                  className="flex items-center gap-3 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2.5"
+                >
+                  <span className="w-11 shrink-0 text-sm font-medium tabular-nums text-teal-800">
+                    {toHm(item.startMinutes)}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-teal-900">
+                      {item.menuName}
+                      <span className="ml-1 font-normal text-teal-700">（{item.tenantName}）</span>
+                    </span>
+                    <span className="block truncate text-xs text-teal-700">
+                      {item.customerName} 様・{item.endMinutes - item.startMinutes}分
+                    </span>
+                  </span>
+                </li>
+              ) : item.kind === "elsewhere-block" ? (
+                <li
+                  key={`eb-${item.id}`}
+                  className="flex items-center gap-3 rounded-lg border border-dashed border-amber-300 bg-amber-50 px-3 py-2.5"
+                >
+                  <span className="w-11 shrink-0 text-sm font-medium tabular-nums text-amber-800">
+                    {toHm(item.startMinutes)}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-amber-900">
+                      {item.reason}
+                      <span className="ml-1 font-normal text-amber-700">（{item.tenantName}）</span>
+                    </span>
+                    <span className="block truncate text-xs text-amber-700">
+                      {item.endMinutes - item.startMinutes}分
+                    </span>
+                  </span>
+                </li>
+              ) : item.kind === "event" ? (
+                <li key={`ev-${item.id}`}>
                   <Link
                     href={`/team?date=${date}`}
                     className="flex items-center gap-3 rounded-lg border border-dashed border-neutral-300 bg-neutral-100 px-3 py-2.5 hover:bg-neutral-200"
@@ -199,10 +235,10 @@ export default async function MySchedulePage({
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium text-neutral-800">
-                        別の予定（他の部署・全社の予定）
+                        {item.title}
                       </span>
                       <span className="block truncate text-xs text-neutral-600">
-                        {item.endMinutes - item.startMinutes}分・内容は「全社の1日」で確認できます
+                        {item.endMinutes - item.startMinutes}分・全社の1日で入れた予定
                       </span>
                     </span>
                   </Link>

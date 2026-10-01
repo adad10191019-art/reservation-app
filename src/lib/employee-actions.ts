@@ -7,7 +7,7 @@
  *   ・所属部署のチェック（部署にスタッフを作る／既存のスタッフにひも付ける／外す。employee-tenants.ts）
  *   ・予定もひも付けも無い行の削除（重複して作ってしまった行の後始末用）
  *   ・部署のスタッフを、名簿のどの社員かにひも付ける（兼任なら同じ社員を選ぶ）
- *   ・部署に属さない社員のログイン（role "member"）の発行・パスワード再設定・取り消し
+ *   ・部署に属さない社員のログイン（担当部署の無いアカウント）の発行・パスワードを戻す・取り消し
  *
  * 同じ名前の在籍者は作らない。兼任の人を部署ごとに作ってしまうと、別人として扱われて
  * 部署をまたいだ二重予約を防げず、「全社の1日」にも2列並んでしまうため。
@@ -17,7 +17,7 @@ import { revalidatePath } from "next/cache";
 import { requireGroupAdmin } from "./auth";
 import { employeeOptionLabel, findSameNameEmployee } from "./employee-names";
 import { planEmployeeTenants } from "./employee-tenants";
-import { hashPassword } from "./password";
+import { EMAIL_PATTERN, initialPasswordData } from "./initial-password";
 import { prisma } from "./prisma";
 
 const PATH = "/settings/employees";
@@ -238,30 +238,29 @@ export async function linkStaffToEmployee(formData: FormData) {
 
 // ── 社員のログイン（部署に属さない人） ────────────────
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
 /**
- * 社員のログインを発行する。全社管理者がメールと初期パスワードを決めて本人に伝え、
- * 本人が「アカウント情報」で変える。部署のアカウントを持つ人は、そちらで「全社の1日」を
- * 使えるので発行しない。
+ * 社員のログインを発行する。最初のパスワードはメールアドレスと同じで、
+ * 本人が最初にログインしたときに自分のパスワードへ変える。
+ * 部署のアカウントを持つ人は、そちらで「全社の1日」を使えるので発行しない。
  */
 export async function issueMemberLogin(formData: FormData) {
   await requireGroupAdmin();
   const id = String(formData.get("id") ?? "");
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
-  const password = String(formData.get("password") ?? "");
 
   if (!EMAIL_PATTERN.test(email)) back("メールアドレスの形式が正しくありません");
-  if (password.length < 8) back("初期パスワードは8文字以上にしてください");
 
   const employee = await prisma.employee.findUnique({
     where: { id },
-    include: { user: true, staffs: { select: { user: { select: { email: true } } } } },
+    include: {
+      user: true,
+      staffs: { select: { membership: { select: { user: { select: { email: true } } } } } },
+    },
   });
   if (!employee) back("社員が見つかりません");
   if (!employee.isActive) back("在籍していない人にはログインを発行できません");
   if (employee.user) back(`${employee.name} さんのログインは発行済みです`);
-  const deptAccount = employee.staffs.find((s) => s.user)?.user;
+  const deptAccount = employee.staffs.find((s) => s.membership)?.membership?.user;
   if (deptAccount) {
     back(
       `${employee.name} さんは部署のアカウント（${deptAccount.email}）で「全社の1日」を使えるので、発行は不要です`,
@@ -269,47 +268,46 @@ export async function issueMemberLogin(formData: FormData) {
   }
 
   // ログインはメールで探すので、どのアカウントとも重ならないアドレスに限る
-  const taken = await prisma.user.findFirst({ where: { email } });
+  const taken = await prisma.user.findUnique({ where: { email } });
   if (taken) back("このメールアドレスは、ほかのアカウントですでに使われています");
 
   await prisma.user.create({
-    data: {
-      tenantId: null,
-      email,
-      passwordHash: await hashPassword(password),
-      role: "member",
-      employeeId: employee.id,
-    },
+    data: { email, ...(await initialPasswordData(email)), employeeId: employee.id },
   });
 
   revalidatePath(PATH);
-  back();
+  backWithNotice(
+    `ログインを発行しました。最初のパスワードはメールアドレス（${email}）と同じです。本人に伝えてください。最初にログインしたときに、自分のパスワードに変えてもらいます。`,
+  );
 }
 
-/** 本人がパスワードを忘れたときなどに、全社管理者が新しいパスワードを決める */
+/** 本人がパスワードを忘れたときなどに、パスワードを初期状態（メールアドレスと同じ）に戻す */
 export async function resetMemberPassword(formData: FormData) {
   await requireGroupAdmin();
   const id = String(formData.get("id") ?? "");
-  const password = String(formData.get("password") ?? "");
-  if (password.length < 8) back("新しいパスワードは8文字以上にしてください");
 
-  const updated = await prisma.user.updateMany({
-    where: { employeeId: id, role: "member" },
-    data: { passwordHash: await hashPassword(password) },
-  });
-  if (updated.count === 0) back("ログインが見つかりません");
+  const user = await prisma.user.findUnique({ where: { employeeId: id } });
+  if (!user) back("ログインが見つかりません");
+  await prisma.user.update({ where: { id: user.id }, data: await initialPasswordData(user.email) });
 
   revalidatePath(PATH);
-  back();
+  backWithNotice(
+    `${user.email} のパスワードを初期状態（メールアドレスと同じ）に戻しました。次にログインしたときに、新しいパスワードを決めてもらいます。`,
+  );
 }
 
-/** 社員のログインを取り消す（予定などの記録は名簿の人に付いているので残る） */
+/**
+ * 社員のログインを取り消す（予定などの記録は名簿の人に付いているので残る）。
+ * 部署の担当があるアカウント・全社管理者は、ここでは消さない（部署の 設定→アカウント で外す）。
+ */
 export async function revokeMemberLogin(formData: FormData) {
   await requireGroupAdmin();
   const id = String(formData.get("id") ?? "");
 
-  const deleted = await prisma.user.deleteMany({ where: { employeeId: id, role: "member" } });
-  if (deleted.count === 0) back("ログインが見つかりません");
+  const deleted = await prisma.user.deleteMany({
+    where: { employeeId: id, isGroupAdmin: false, memberships: { none: {} } },
+  });
+  if (deleted.count === 0) back("取り消せるログインが見つかりません");
 
   revalidatePath(PATH);
   back();

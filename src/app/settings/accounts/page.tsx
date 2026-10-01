@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Banner } from "@/components/banner";
+import { canResetPassword } from "@/lib/account-access";
 import { requireOwner } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
@@ -12,30 +13,41 @@ import {
 export default async function AccountSettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; done?: string }>;
+  searchParams: Promise<{ error?: string; done?: string; notice?: string }>;
 }) {
   const sp = await searchParams;
   const session = await requireOwner();
 
-  const [users, staffs] = await Promise.all([
-    prisma.user.findMany({
+  const [memberships, staffs] = await Promise.all([
+    prisma.membership.findMany({
       where: { tenantId: session.tenantId },
-      orderBy: [{ role: "asc" }, { email: "asc" }],
-      include: { staff: true },
+      orderBy: [{ role: "asc" }, { createdAt: "asc" }],
+      include: {
+        staff: true,
+        user: {
+          select: {
+            id: true,
+            email: true,
+            isGroupAdmin: true,
+            mustChangePassword: true,
+            memberships: { select: { tenantId: true, tenant: { select: { name: true } } } },
+          },
+        },
+      },
     }),
     prisma.staff.findMany({
       where: { tenantId: session.tenantId, isActive: true },
       orderBy: [{ displayOrder: "asc" }, { name: "asc" }],
-      include: { user: true },
+      include: { membership: true },
     }),
   ]);
 
   // すでにアカウントがあるスタッフは選べないようにする
-  const selectableStaffs = staffs.filter((s) => !s.user);
+  const selectableStaffs = staffs.filter((s) => !s.membership);
 
   return (
     <div className="space-y-5">
-      <Banner error={sp.error} done={sp.done} />
+      <Banner error={sp.error} done={sp.done} notice={sp.notice} />
 
       <section className="rounded-lg border border-neutral-200 bg-white p-4">
         <h2 className="mb-1 font-semibold">アカウントを追加</h2>
@@ -46,9 +58,9 @@ export default async function AccountSettingsPage({
         </p>
 
         <form action={createAccount} className="grid gap-3 sm:grid-cols-12">
-          <label className="block sm:col-span-5">
+          <label className="block sm:col-span-6">
             <span className="mb-1 block text-xs font-medium text-neutral-600">
-              メールアドレス
+              メールアドレス（ログインID）
             </span>
             <input
               type="email"
@@ -60,21 +72,6 @@ export default async function AccountSettingsPage({
           </label>
 
           <label className="block sm:col-span-3">
-            <span className="mb-1 block text-xs font-medium text-neutral-600">
-              パスワード
-            </span>
-            <input
-              type="password"
-              name="password"
-              required
-              minLength={8}
-              autoComplete="new-password"
-              placeholder="8文字以上"
-              className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
-            />
-          </label>
-
-          <label className="block sm:col-span-2">
             <span className="mb-1 block text-xs font-medium text-neutral-600">権限</span>
             <select
               name="role"
@@ -86,7 +83,7 @@ export default async function AccountSettingsPage({
             </select>
           </label>
 
-          <label className="block sm:col-span-2">
+          <label className="block sm:col-span-3">
             <span className="mb-1 block text-xs font-medium text-neutral-600">
               担当スタッフ
             </span>
@@ -114,10 +111,20 @@ export default async function AccountSettingsPage({
           </div>
         </form>
 
-        <p className="mt-3 text-xs leading-relaxed text-neutral-500">
-          オーナー権限でも担当スタッフに紐づけられます。
-          「普段はスタッフだが、代理でオーナーを務める」場合に使ってください。
-        </p>
+        <ul className="mt-3 list-disc space-y-1 pl-5 text-xs leading-relaxed text-neutral-500">
+          <li>
+            最初のパスワードは<strong>メールアドレスと同じ</strong>です。本人は最初にログインしたときに、
+            自分のパスワードに変えます。
+          </li>
+          <li>
+            ほかの部署ですでに使われているメールアドレスなら、同じ人の兼任として、そのアカウントに
+            この部署を追加します（1人1アカウント。パスワードは今のまま）。
+          </li>
+          <li>
+            オーナー権限でも担当スタッフに紐づけられます。
+            「普段はスタッフだが、代理でオーナーを務める」場合に使ってください。
+          </li>
+        </ul>
 
         {selectableStaffs.length === 0 && staffs.length > 0 && (
           <p className="mt-3 text-xs text-neutral-500">
@@ -127,44 +134,54 @@ export default async function AccountSettingsPage({
       </section>
 
       <section>
-        <h2 className="mb-3 font-semibold">登録済みのアカウント（{users.length}件）</h2>
+        <h2 className="mb-3 font-semibold">この部署の担当（{memberships.length}件）</h2>
         <div className="space-y-3">
-          {users.map((user) => {
+          {memberships.map((m) => {
+            const user = m.user;
             const isSelf = user.id === session.userId;
+            const otherTenants = user.memberships
+              .filter((x) => x.tenantId !== session.tenantId)
+              .map((x) => x.tenant.name);
+            const resettable = canResetPassword(session, user);
             return (
-              <div
-                key={user.id}
-                className="rounded-lg border border-neutral-200 bg-white p-4"
-              >
+              <div key={m.id} className="rounded-lg border border-neutral-200 bg-white p-4">
                 <div className="mb-3 flex flex-wrap items-center gap-2">
                   <span className="font-medium">{user.email}</span>
                   <span
                     className={`rounded-full border px-2 py-0.5 text-xs ${
-                      user.role === "owner"
+                      m.role === "owner"
                         ? "border-violet-300 bg-violet-50 text-violet-800"
                         : "border-neutral-300 bg-neutral-50 text-neutral-600"
                     }`}
                   >
-                    {user.role === "owner" ? "オーナー" : "スタッフ"}
+                    {m.role === "owner" ? "オーナー" : "スタッフ"}
                   </span>
-                  {user.staff && (
-                    <span className="text-sm text-neutral-500">{user.staff.name}</span>
-                  )}
+                  {m.staff && <span className="text-sm text-neutral-500">{m.staff.name}</span>}
                   <span
                     className={`rounded-full border px-2 py-0.5 text-xs ${
-                      user.lineUserId
+                      m.lineUserId
                         ? "border-emerald-300 bg-emerald-50 text-emerald-800"
                         : "border-amber-300 bg-amber-50 text-amber-800"
                     }`}
                   >
-                    {user.lineUserId ? "LINE通知：紐づけ済み" : "LINE通知：未設定（メールで代替）"}
+                    {m.lineUserId ? "LINE通知：紐づけ済み" : "LINE通知：未設定（メールで代替）"}
                   </span>
+                  {user.mustChangePassword && (
+                    <span className="rounded-full border border-neutral-300 bg-neutral-50 px-2 py-0.5 text-xs text-neutral-600">
+                      まだ最初のパスワードのまま
+                    </span>
+                  )}
                   {isSelf && (
                     <span className="rounded-full border border-sky-300 bg-sky-50 px-2 py-0.5 text-xs text-sky-800">
                       自分
                     </span>
                   )}
                 </div>
+                {otherTenants.length > 0 && (
+                  <p className="-mt-2 mb-3 text-xs text-neutral-500">
+                    兼任：{otherTenants.join("・")} も担当しています
+                  </p>
+                )}
 
                 <div className="flex flex-wrap items-end gap-2">
                   {/* 権限の切り替え。オーナー不在を避けるため、最後の1人は下げられない */}
@@ -173,40 +190,28 @@ export default async function AccountSettingsPage({
                     <input
                       type="hidden"
                       name="role"
-                      value={user.role === "owner" ? "staff" : "owner"}
+                      value={m.role === "owner" ? "staff" : "owner"}
                     />
                     <button
                       type="submit"
-                      disabled={user.role === "staff" && !user.staffId}
+                      disabled={m.role === "staff" && !m.staffId}
                       className="rounded-md border border-violet-300 px-3 py-1.5 text-sm text-violet-800 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      {user.role === "owner" ? "スタッフに戻す" : "オーナーにする"}
+                      {m.role === "owner" ? "スタッフに戻す" : "オーナーにする"}
                     </button>
                   </form>
 
-                  <form action={resetAccountPassword} className="flex items-end gap-2">
-                    <input type="hidden" name="id" value={user.id} />
-                    <label className="block">
-                      <span className="mb-1 block text-xs font-medium text-neutral-600">
-                        新しいパスワード
-                      </span>
-                      <input
-                        type="password"
-                        name="password"
-                        required
-                        minLength={8}
-                        autoComplete="new-password"
-                        placeholder="8文字以上"
-                        className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
-                      />
-                    </label>
-                    <button
-                      type="submit"
-                      className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50"
-                    >
-                      変更する
-                    </button>
-                  </form>
+                  {!isSelf && resettable && (
+                    <form action={resetAccountPassword}>
+                      <input type="hidden" name="id" value={user.id} />
+                      <button
+                        type="submit"
+                        className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50"
+                      >
+                        パスワードを初期状態に戻す
+                      </button>
+                    </form>
+                  )}
 
                   {!isSelf && (
                     <form action={deleteAccount}>
@@ -215,7 +220,7 @@ export default async function AccountSettingsPage({
                         type="submit"
                         className="rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-800 hover:bg-red-50"
                       >
-                        削除する
+                        この部署の担当から外す
                       </button>
                     </form>
                   )}
@@ -235,12 +240,15 @@ export default async function AccountSettingsPage({
         実際には届きません（それはこの画面からは確認できません）。未設定の人には、ログイン用の
         メールアドレス宛にメールで通知が届きます。
         <br />
-        自分自身のアカウントは削除できません。
-        また、オーナーのアカウントは最低1つ必要です。
+        「パスワードを初期状態に戻す」を押すと、パスワードがメールアドレスと同じになり、
+        本人は次のログインで新しいパスワードを決めます。ほかの部署も担当している人は、全社管理者が戻します。
+        自分のパスワードは、歯車の「アカウント情報」から変えられます。
         <br />
+        「この部署の担当から外す」では、ほかの部署の担当はそのまま残ります。
+        どこの担当でもなくなった人のアカウントは消えます（社員名簿に載っている人は「全社の1日」だけ使えるまま残ります）。
+        <br />
+        オーナーのアカウントは最低1つ必要です。
         スタッフ権限のアカウントは、担当するスタッフと1対1で紐づきます。
-        <br />
-        オーナーが1人しかいない場合、そのアカウントをスタッフに戻すことはできません。
       </p>
     </div>
   );

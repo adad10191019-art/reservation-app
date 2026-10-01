@@ -54,10 +54,14 @@ export async function buildTenantExport(tenantId: string): Promise<TenantExport 
       prisma.customer.findMany({ where: { tenantId }, orderBy: { createdAt: "asc" } }),
       prisma.reservation.findMany({ where: { tenantId }, orderBy: { date: "asc" } }),
       prisma.changeLog.findMany({ where: { tenantId }, orderBy: { createdAt: "asc" } }),
-      prisma.user.findMany({
-        where: { tenantId },
-        select: { id: true, email: true, role: true, staffId: true, createdAt: true },
-      }),
+      prisma.membership
+        .findMany({
+          where: { tenantId },
+          select: { userId: true, role: true, staffId: true, createdAt: true, user: { select: { email: true } } },
+        })
+        .then((rows) =>
+          rows.map((m) => ({ id: m.userId, email: m.user.email, role: m.role, staffId: m.staffId, createdAt: m.createdAt })),
+        ),
     ]);
 
   return {
@@ -99,6 +103,17 @@ export async function deleteTenantCompletely(tenantId: string): Promise<void> {
   });
   await Promise.all(connections.map((c) => revokeGoogleToken(c.refreshToken)));
 
+  // この部署だけを担当していたアカウントは、担当を外すと使い道が無くなるので一緒に消す。
+  // 名簿の人にひも付いていれば「全社の1日」を使う社員として残し、全社管理者・兼任の人も残す
+  const onlyHere = await prisma.user.findMany({
+    where: {
+      isGroupAdmin: false,
+      employeeId: null,
+      memberships: { some: { tenantId }, every: { tenantId } },
+    },
+    select: { id: true },
+  });
+
   await prisma.$transaction([
     prisma.reservation.deleteMany({ where: { tenantId } }),
     prisma.googleCalendarConnection.deleteMany({ where: { tenantId } }),
@@ -111,7 +126,8 @@ export async function deleteTenantCompletely(tenantId: string): Promise<void> {
     prisma.customerLoginCode.deleteMany({ where: { tenantId } }),
     prisma.customer.deleteMany({ where: { tenantId } }),
     prisma.menu.deleteMany({ where: { tenantId } }),
-    prisma.user.deleteMany({ where: { tenantId } }),
+    prisma.membership.deleteMany({ where: { tenantId } }),
+    prisma.user.deleteMany({ where: { id: { in: onlyHere.map((u) => u.id) } } }),
     prisma.staff.deleteMany({ where: { tenantId } }),
     prisma.tenant.delete({ where: { id: tenantId } }),
   ]);

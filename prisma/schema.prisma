@@ -52,7 +52,7 @@ model Tenant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users                     User[]
+  memberships               Membership[]
   staffs                    Staff[]
   menus                     Menu[]
   staffMenus                StaffMenu[]
@@ -67,26 +67,47 @@ model Tenant {
 }
 
 // ── ログインする人 ─────────────────────
+// 1人1アカウント。兼任の人も同じアカウントで、担当する部署（Membership）を切り替えて使う。
+// 担当部署が1つも無い人は「全社の1日」だけを使う社員（名簿の人に必ずひも付く）。
 model User {
-  id           String   @id @default(uuid())
-  /// group_admin（全部署を横断できる役割）と member（社員）は特定の部署に属さないため null
-  tenantId     String?
-  email        String
-  passwordHash String
-  role         String // "owner" | "staff" | "group_admin" | "member"
-  staffId      String?  @unique
-  /// member（部署に属さない社員のログイン）だけが使う。名簿のどの人か。「全社の1日」だけを使える
-  employeeId   String?  @unique
-  /// 通知の受け取りに使うLINE利用者ID。未設定なら通知を受け取らない
-  lineUserId   String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                 String   @id @default(uuid())
+  /// ログインID。システム全体で1つだけ（ログインはメールで探すため）
+  email              String   @unique
+  passwordHash       String
+  /// true なら全部署を横断できる全社管理者
+  isGroupAdmin       Boolean  @default(false)
+  /// 名簿のどの人か。担当部署の無い社員は必須（「全社の1日」の自分の列を決めるため）
+  employeeId         String?  @unique
+  /// 発行したまま（初期パスワード＝メールアドレス）の間は true。最初のログインで変えてもらう
+  mustChangePassword Boolean  @default(false)
+  /// 最後に選んでいた部署。次にログインしたときはここを開く
+  lastTenantId       String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  tenant   Tenant?   @relation(fields: [tenantId], references: [id])
-  staff    Staff?    @relation(fields: [staffId], references: [id])
-  employee Employee? @relation(fields: [employeeId], references: [id])
+  employee    Employee?    @relation(fields: [employeeId], references: [id])
+  memberships Membership[]
+}
 
-  @@unique([tenantId, email])
+// ── 担当部署（アカウント × 部署） ─────────
+// 役割（オーナー／スタッフ）は部署ごとに持つ（イロハではオーナー、不動産ではスタッフ、もありうる）。
+model Membership {
+  id         String   @id @default(uuid())
+  userId     String
+  tenantId   String
+  role       String // "owner" | "staff"
+  /// この部署で予約を受けるスタッフ。オーナーは空でもよい
+  staffId    String?  @unique
+  /// 通知の受け取りに使うLINE利用者ID。LINE のIDは部署のLINEチャネルごとに違うので、部署ごとに持つ
+  lineUserId String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  staff  Staff? @relation(fields: [staffId], references: [id])
+
+  @@unique([userId, tenantId])
   @@unique([tenantId, lineUserId])
   @@index([tenantId])
 }
@@ -124,7 +145,7 @@ model Staff {
 
   tenant                   Tenant                    @relation(fields: [tenantId], references: [id])
   employee                 Employee?                 @relation(fields: [employeeId], references: [id])
-  user                     User?
+  membership               Membership?
   staffMenus               StaffMenu[]
   businessHours            BusinessHour[]
   dateOverrides            DateOverride[]
@@ -153,7 +174,7 @@ model Employee {
 
   staffs Staff[]
   events EmployeeEvent[]
-  /// 社員専用ログイン（部署のアカウントを持たない人だけ）
+  /// この人のログイン（1人1つ）
   user   User?
 }
 

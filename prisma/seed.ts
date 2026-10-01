@@ -46,6 +46,7 @@ async function main() {
   await prisma.dateOverride.deleteMany();
   await prisma.businessHour.deleteMany();
   await prisma.staffMenu.deleteMany();
+  await prisma.membership.deleteMany();
   await prisma.user.deleteMany();
   await prisma.customer.deleteMany();
   await prisma.menu.deleteMany();
@@ -91,63 +92,37 @@ async function main() {
   // ── ログインするアカウント ────────
   const passwordHash = await hashPassword("password123");
 
-  await prisma.user.create({
-    data: {
-      tenantId: tenant.id,
-      email: "owner@example.com",
-      passwordHash,
-      role: "owner",
-      staffId: null,
-    },
-  });
-
-  for (const [email, staff] of [
-    ["a@example.com", staffA],
-    ["b@example.com", staffB],
-    ["c@example.com", staffC],
-  ] as const) {
-    await prisma.user.create({
+  // 1人1アカウント。担当する部署と、その部署での役割を Membership に並べる
+  const account = (
+    email: string,
+    tenantId: string,
+    role: "owner" | "staff",
+    staffId: string | null,
+  ) =>
+    prisma.user.create({
       data: {
-        tenantId: tenant.id,
         email,
         passwordHash,
-        role: "staff",
-        staffId: staff.id,
+        lastTenantId: tenantId,
+        memberships: { create: { tenantId, role, staffId } },
       },
     });
-  }
 
-  await prisma.user.create({
-    data: {
-      tenantId: otherTenant.id,
-      email: "owner-b@example.com",
-      passwordHash,
-      role: "owner",
-      staffId: null,
-    },
-  });
+  await account("owner@example.com", tenant.id, "owner", null);
+  await account("a@example.com", tenant.id, "staff", staffA.id);
+  await account("b@example.com", tenant.id, "staff", staffB.id);
+  await account("c@example.com", tenant.id, "staff", staffC.id);
 
-  for (const [email, staff] of [
-    ["sa@example.com", otherStaffA],
-    ["sb@example.com", otherStaffB],
-    ["sc@example.com", otherStaffC],
-  ] as const) {
-    await prisma.user.create({
-      data: {
-        tenantId: otherTenant.id,
-        email,
-        passwordHash,
-        role: "staff",
-        staffId: staff.id,
-      },
-    });
-  }
+  await account("owner-b@example.com", otherTenant.id, "owner", null);
+  await account("sa@example.com", otherTenant.id, "staff", otherStaffA.id);
+  await account("sb@example.com", otherTenant.id, "staff", otherStaffB.id);
+  await account("sc@example.com", otherTenant.id, "staff", otherStaffC.id);
 
-  // ── 全部署を横断できるアカウント（部署に属さない）──
+  // ── 全部署を横断できるアカウント（担当部署は無し）──
   await prisma.user.createMany({
     data: [
-      { tenantId: null, email: "ceo@example.com", passwordHash, role: "group_admin" },
-      { tenantId: null, email: "admin@example.com", passwordHash, role: "group_admin" },
+      { email: "ceo@example.com", passwordHash, isGroupAdmin: true },
+      { email: "admin@example.com", passwordHash, isGroupAdmin: true },
     ],
   });
 

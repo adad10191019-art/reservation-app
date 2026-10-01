@@ -17,12 +17,12 @@ export type SessionData = {
   userId: string;
   /**
    * 今、操作対象として選んでいる部署のID。
-   * owner/staff は自分の所属部署で固定。group_admin だけは
-   * ログイン後に部署を切り替えるたびにここが書き換わる。
+   * 兼任の人と group_admin は、部署を切り替えるたびにここが書き換わる。
    */
   tenantId: string;
+  /** その部署での役割。Cookie の値は使わず、毎回 DB の担当部署から決め直す（auth.ts） */
   role: Role;
-  /** スタッフ本人のアカウントなら、そのスタッフID */
+  /** その部署でのスタッフ本人なら、そのスタッフID */
   staffId: string | null;
   name: string;
   /** 有効期限（ミリ秒） */

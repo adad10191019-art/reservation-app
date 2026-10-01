@@ -33,10 +33,12 @@ export default async function EmployeesSettingsPage({
         staffs: {
           include: {
             tenant: { select: { name: true } },
-            user: { select: { email: true } },
+            membership: { select: { user: { select: { email: true } } } },
           },
         },
-        user: { select: { email: true } },
+        user: {
+          select: { email: true, isGroupAdmin: true, _count: { select: { memberships: true } } },
+        },
         _count: { select: { events: true } },
       },
     }),
@@ -180,8 +182,18 @@ export default async function EmployeesSettingsPage({
                 <MemberLogin
                   employeeId={e.id}
                   isActive={e.isActive}
-                  memberEmail={e.user?.email ?? null}
-                  deptEmail={e.staffs.find((s) => s.user)?.user?.email ?? null}
+                  memberEmail={
+                    e.user && !e.user.isGroupAdmin && e.user._count.memberships === 0
+                      ? e.user.email
+                      : null
+                  }
+                  deptEmail={
+                    (e.user && (e.user.isGroupAdmin || e.user._count.memberships > 0)
+                      ? e.user.email
+                      : null) ??
+                    e.staffs.find((s) => s.membership)?.membership?.user.email ??
+                    null
+                  }
                 />
               </div>
             ))}
@@ -300,20 +312,10 @@ function MemberLogin({
           {memberEmail}（社員用）
           {!isActive && <span className="text-neutral-400">（在籍していないため使えません）</span>}
         </span>
-        <form action={resetMemberPassword} className="flex items-center gap-1">
+        <form action={resetMemberPassword}>
           <input type="hidden" name="id" value={employeeId} />
-          <input
-            type="text"
-            name="password"
-            required
-            minLength={8}
-            autoComplete="off"
-            placeholder="新しいパスワード（8文字以上）"
-            aria-label="新しいパスワード"
-            className={`w-52 ${SMALL_INPUT}`}
-          />
           <button type="submit" className={SMALL_BUTTON}>
-            再設定
+            パスワードを初期状態に戻す
           </button>
         </form>
         <form action={revokeMemberLogin}>
@@ -356,19 +358,10 @@ function MemberLogin({
         aria-label="ログインに使うメールアドレス"
         className={`w-52 ${SMALL_INPUT}`}
       />
-      <input
-        type="text"
-        name="password"
-        required
-        minLength={8}
-        autoComplete="off"
-        placeholder="初期パスワード（8文字以上）"
-        aria-label="初期パスワード"
-        className={`w-48 ${SMALL_INPUT}`}
-      />
       <button type="submit" className={SMALL_BUTTON}>
         ログインを発行
       </button>
+      <span className="text-neutral-400">（最初のパスワードはメールアドレスと同じ）</span>
     </form>
   );
 }

@@ -4,7 +4,15 @@ import { cookies } from "next/headers";
 import { randomBytes } from "node:crypto";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { endSession, requireSession, startSession } from "./auth";
+import { pickLoginTenant, resolveMemberSession } from "./account-access";
+import {
+  FIRST_PASSWORD_PATH,
+  endSession,
+  loadAccessUser,
+  requireSession,
+  startDeptSession,
+  startSession,
+} from "./auth";
 import {
   type ReservationStatus,
   bookReservation,
@@ -18,7 +26,7 @@ import { isLocked, recordFailure, recordSuccess } from "./login-attempts";
 import { verifyPassword } from "./password";
 import { notifyReservationCanceled, notifyReservationCreated } from "./notify";
 import { prisma } from "./prisma";
-import { buildSession, type Role } from "./session";
+import { buildSession } from "./session";
 import { sanitizeDate } from "./time";
 
 function refresh() {
@@ -46,67 +54,44 @@ export async function login(formData: FormData) {
   if (!email || !password) fail();
   if (await isLocked(email)) tooManyAttempts();
 
-  // メールアドレスは店舗ごとに一意なので、同じアドレスが別店舗に
-  // 存在しうる。ここではパスワードまで一致した最初のアカウントを使う。
-  const candidates = await prisma.user.findMany({
-    where: { email },
-    include: { staff: true, tenant: true, employee: true },
-  });
-
-  for (const user of candidates) {
-    if (await verifyPassword(password, user.passwordHash)) {
-      // 社員（部署に属さない人）は「全社の1日」だけを使う。名簿で在籍を外された人は入れない
-      if (user.role === "member") {
-        if (!user.employee?.isActive) continue;
-        await recordSuccess(email);
-        await startSession(
-          buildSession({
-            userId: user.id,
-            tenantId: null,
-            role: "member",
-            staffId: null,
-            name: user.employee.name,
-          }),
-        );
-        redirect("/team");
-      }
-
-      await recordSuccess(email);
-
-      // group_admin はどの部署にも属さないので、ログイン直後は
-      // 一番古い部署を仮に選んでおく（切り替えは switchTenant で行う）。
-      const tenantId =
-        user.role === "group_admin"
-          ? (await prisma.tenant.findFirst({ orderBy: { createdAt: "asc" } }))?.id
-          : (user.tenantId ?? undefined);
-      if (!tenantId) {
-        fail();
-        return;
-      }
-
-      await startSession(
-        buildSession({
-          userId: user.id,
-          tenantId,
-          role: user.role as Role,
-          staffId: user.staffId,
-          name: user.staff?.name ?? user.email,
-        }),
-      );
-      // スタッフは、まず自分の予定が見える画面に着地させる。
-      // 全員分の予約が並ぶカレンダーは「必要なときに見る」もので、
-      // 毎回そこへ着地させると自分の分を探す手間が生まれる。
-      // オーナー・group_admin は全員を把握する必要があるので、これまで通りカレンダーへ。
-      redirect(user.role === "owner" || user.role === "group_admin" || !user.staffId
-        ? "/calendar"
-        : "/my-schedule");
-    }
-  }
+  // メールアドレスはシステム全体で1つだけ（1人1アカウント）
+  const user = await loadAccessUser({ email });
 
   // 「アドレスが無い」と「パスワードが違う」を区別しない。
   // 区別すると、どのアドレスが登録済みかを外から調べられてしまう。
-  await recordFailure(email);
-  fail();
+  if (!user || !(await verifyPassword(password, user.passwordHash))) {
+    await recordFailure(email);
+    fail();
+    return;
+  }
+
+  // 担当部署の無い社員は「全社の1日」だけを使う。名簿で在籍を外された人は入れない
+  const member = resolveMemberSession(user);
+  if (member) {
+    await recordSuccess(email);
+    await startSession(buildSession(member));
+    redirect(user.mustChangePassword ? FIRST_PASSWORD_PATH : "/team");
+  }
+
+  const tenants = user.isGroupAdmin
+    ? await prisma.tenant.findMany({ orderBy: { createdAt: "asc" }, select: { id: true } })
+    : [];
+  const tenantId = pickLoginTenant(user, tenants.map((t) => t.id));
+  if (!tenantId || !(await startDeptSession(user, tenantId))) {
+    await recordFailure(email);
+    fail();
+    return;
+  }
+  await recordSuccess(email);
+
+  if (user.mustChangePassword) redirect(FIRST_PASSWORD_PATH);
+
+  // スタッフは、まず自分の予定が見える画面に着地させる。
+  // 全員分の予約が並ぶカレンダーは「必要なときに見る」もので、
+  // 毎回そこへ着地させると自分の分を探す手間が生まれる。
+  // オーナー・group_admin は全員を把握する必要があるので、これまで通りカレンダーへ。
+  const membership = user.memberships.find((m) => m.tenantId === tenantId);
+  redirect(membership?.role === "staff" && membership.staffId ? "/my-schedule" : "/calendar");
 }
 
 export async function logout() {
@@ -114,28 +99,15 @@ export async function logout() {
   redirect("/login");
 }
 
-/** group_admin が、今操作対象にしている部署を切り替える */
+/** 今操作対象にしている部署を切り替える（全社管理者は全部署、兼任の人は担当部署の中で） */
 export async function switchTenant(formData: FormData) {
   const session = await requireSession();
-  if (session.role !== "group_admin") {
-    redirect(`/calendar?error=${encodeURIComponent("この操作はできません")}`);
-  }
-
   const tenantId = String(formData.get("tenantId") ?? "");
-  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
-  if (!tenant) {
-    redirect(`/calendar?error=${encodeURIComponent("指定された部署が見つかりません")}`);
-  }
 
-  await startSession(
-    buildSession({
-      userId: session.userId,
-      tenantId: tenant.id,
-      role: session.role,
-      staffId: null,
-      name: session.name,
-    }),
-  );
+  const user = await loadAccessUser({ id: session.userId });
+  if (!user || !(await startDeptSession(user, tenantId))) {
+    redirect(`/calendar?error=${encodeURIComponent("その部署には切り替えられません")}`);
+  }
 
   redirect("/calendar");
 }
@@ -323,8 +295,9 @@ export async function startStaffLineLink() {
 export async function unlinkStaffLine() {
   const session = await requireSession();
 
-  await prisma.user.updateMany({
-    where: { id: session.userId, tenantId: session.tenantId },
+  // LINE の利用者IDは部署のLINEチャネルごとに違うので、この部署の担当分だけ外す
+  await prisma.membership.updateMany({
+    where: { userId: session.userId, tenantId: session.tenantId },
     data: { lineUserId: null },
   });
 

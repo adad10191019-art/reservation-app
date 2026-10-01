@@ -11,14 +11,12 @@ import { type TeamColumn, type TeamViewer, buildTeamColumns } from "./team-view"
 /** ログインしている人が、名簿のどの社員か */
 export async function getTeamViewer(session: AnySession): Promise<TeamViewer> {
   const isAdmin = session.role === "group_admin";
-  // 社員（部署に属さない人）は、アカウントが名簿の人を直接指している
-  if (session.role === "member") {
-    const user = await prisma.user.findUnique({
-      where: { id: session.userId },
-      select: { employeeId: true },
-    });
-    return { employeeId: user?.employeeId ?? null, isAdmin: false };
-  }
+  // アカウントが名簿の人を直接指していればそれ（担当部署の無い社員は必ずこちら）
+  const user = await prisma.user.findUnique({
+    where: { id: session.userId },
+    select: { employeeId: true },
+  });
+  if (user?.employeeId) return { employeeId: user.employeeId, isAdmin };
   if (!session.staffId) return { employeeId: null, isAdmin };
 
   const staff = await prisma.staff.findUnique({

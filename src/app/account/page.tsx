@@ -22,7 +22,7 @@ export default async function AccountPage({
 
   const user = await prisma.user.findUnique({
     where: { id: session.userId },
-    select: { email: true, role: true },
+    select: { email: true },
   });
 
   return (
@@ -42,7 +42,7 @@ export default async function AccountPage({
       <section className="rounded-lg border border-neutral-200 bg-white p-4">
         <h2 className="mb-1 font-semibold">ログイン情報</h2>
         <p className="mb-4 text-xs leading-relaxed text-neutral-500">
-          現在: {user?.email}（{user ? ROLE_LABEL[user.role] ?? user.role : ""}）
+          現在: {user?.email}（{ROLE_LABEL[session.role] ?? session.role}）
         </p>
 
         <form action={updateOwnAccount} className="space-y-4">

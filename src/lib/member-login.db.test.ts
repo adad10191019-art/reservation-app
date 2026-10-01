@@ -1,7 +1,8 @@
 /**
- * 部署に属さない社員のログイン（role "member"）を開発用 DB で確かめる。npm run test:db で流す。
+ * 部署に属さない社員のログイン（担当部署の無いアカウント）を開発用 DB で確かめる。npm run test:db で流す。
  *
- *   ・名簿の画面からの発行・再設定・取り消し（employee-actions.ts）
+ *   ・名簿の画面からの発行・パスワードを戻す・取り消し（employee-actions.ts）
+ *   ・最初のパスワードはメールアドレスと同じで、変えるまで変更の画面以外を開けない
  *   ・ログインすると「全社の1日」へ。部署の画面の入口（requireSession）は「全社の1日」へ回す
  *   ・名簿で在籍を外すと、ログイン中でも入れなくなる
  *
@@ -52,7 +53,8 @@ const { issueMemberLogin, resetMemberPassword, revokeMemberLogin, deleteEmployee
   "./employee-actions"
 );
 const { login } = await import("./actions");
-const { requireSession, requireTeamSession } = await import("./auth");
+const { setFirstPassword } = await import("./account-actions");
+const { FIRST_PASSWORD_PATH, requireSession, requireTeamSession } = await import("./auth");
 const { hashPassword } = await import("./password");
 
 /** 処理を呼んで、redirect の行き先を返す */
@@ -101,20 +103,40 @@ afterAll(async () => {
 });
 
 describe("ログインの発行", () => {
-  it("発行した社員はログインすると「全社の1日」へ行き、部署の画面からも「全社の1日」へ回される", async () => {
+  it("最初はメールアドレスで入り、パスワードを変えるまでは変更の画面にしか行けない", async () => {
     const e = await createTestEmployee("事務 花子");
-    expect(await errorOf(issueMemberLogin, { id: e.id, email: EMAIL, password: PASSWORD })).toBeNull();
+    expect(await errorOf(issueMemberLogin, { id: e.id, email: EMAIL })).toBeNull();
 
-    expect(await redirectOf(() => login(form({ email: EMAIL, password: PASSWORD })))).toBe("/team");
+    // 初期パスワード＝メールアドレス
+    expect(await redirectOf(() => login(form({ email: EMAIL, password: EMAIL })))).toBe(FIRST_PASSWORD_PATH);
+    expect(await redirectOf(() => requireTeamSession())).toBe(FIRST_PASSWORD_PATH);
 
+    // メールと同じ・確認と食い違うパスワードは受け付けない
+    const firstError = async (fields: Record<string, string>) =>
+      new URL(await redirectOf(() => setFirstPassword(form(fields))), "http://x").searchParams.get("error");
+    expect(await firstError({ newPassword: EMAIL, confirmPassword: EMAIL })).toContain("メールアドレスと同じ");
+    expect(await firstError({ newPassword: PASSWORD, confirmPassword: "other-password" })).toContain("一致しません");
+
+    expect(await redirectOf(() => setFirstPassword(form({ newPassword: PASSWORD, confirmPassword: PASSWORD })))).toBe(
+      "/team",
+    );
     const session = await requireTeamSession();
     expect(session).toMatchObject({ role: "member", tenantId: null, name: e.name });
     expect(await redirectOf(() => requireSession())).toBe("/team");
+
+    // 変えたあとは、新しいパスワードでだけ入れる
+    jar.clear();
+    expect(await redirectOf(() => login(form({ email: EMAIL, password: EMAIL })))).toContain("error=");
+    expect(await redirectOf(() => login(form({ email: EMAIL, password: PASSWORD })))).toBe("/team");
   });
 
   it("在籍を外すと、ログイン中でも入れなくなり、ログインもできない", async () => {
     const e = await createTestEmployee("退職予定");
-    await errorOf(issueMemberLogin, { id: e.id, email: EMAIL, password: PASSWORD });
+    await errorOf(issueMemberLogin, { id: e.id, email: EMAIL });
+    await prisma.user.update({
+      where: { email: EMAIL },
+      data: { passwordHash: await hashPassword(PASSWORD), mustChangePassword: false },
+    });
     await redirectOf(() => login(form({ email: EMAIL, password: PASSWORD })));
 
     await prisma.employee.update({ where: { id: e.id }, data: { isActive: false } });
@@ -125,40 +147,38 @@ describe("ログインの発行", () => {
     expect(url).toContain("/login?error=");
   });
 
-  it("ほかのアカウントと同じメール・部署のアカウントを持つ人・短いパスワードには発行しない", async () => {
+  it("ほかのアカウントと同じメール・部署のアカウントを持つ人には発行しない", async () => {
     const e = await createTestEmployee("兼任の人");
     await prisma.user.create({
       data: {
-        tenantId: shop.tenantId,
         email: DEPT_EMAIL,
         passwordHash: await hashPassword(PASSWORD),
-        role: "staff",
-        staffId: shop.staffA.id,
+        memberships: { create: { tenantId: shop.tenantId, role: "staff", staffId: shop.staffA.id } },
       },
     });
 
-    expect(await errorOf(issueMemberLogin, { id: e.id, email: DEPT_EMAIL, password: PASSWORD })).toContain(
-      "使われています",
-    );
-    expect(await errorOf(issueMemberLogin, { id: e.id, email: EMAIL, password: "short" })).toContain("8文字");
+    expect(await errorOf(issueMemberLogin, { id: e.id, email: DEPT_EMAIL })).toContain("使われています");
+    expect(await errorOf(issueMemberLogin, { id: e.id, email: "not-an-email" })).toContain("形式");
 
     await prisma.staff.update({ where: { id: shop.staffA.id }, data: { employeeId: e.id } });
-    expect(await errorOf(issueMemberLogin, { id: e.id, email: EMAIL, password: PASSWORD })).toContain(
-      "発行は不要",
-    );
+    expect(await errorOf(issueMemberLogin, { id: e.id, email: EMAIL })).toContain("発行は不要");
+    await prisma.staff.update({ where: { id: shop.staffA.id }, data: { employeeId: null } });
   });
 });
 
-describe("再設定・取り消し", () => {
-  it("再設定すると新しいパスワードで入れ、取り消すと入れない。ログインがある間は名簿の行を消せない", async () => {
+describe("パスワードを戻す・取り消し", () => {
+  it("戻すとメールアドレスで入れて変更の画面へ。取り消すと入れない。ログインがある間は名簿の行を消せない", async () => {
     const e = await createTestEmployee("事務 次郎");
-    await errorOf(issueMemberLogin, { id: e.id, email: EMAIL, password: PASSWORD });
+    await errorOf(issueMemberLogin, { id: e.id, email: EMAIL });
+    await prisma.user.update({
+      where: { email: EMAIL },
+      data: { passwordHash: await hashPassword(PASSWORD), mustChangePassword: false },
+    });
     expect(await errorOf(deleteEmployee, { id: e.id })).toContain("ログインがある");
 
-    const next = "new-password-123";
-    expect(await errorOf(resetMemberPassword, { id: e.id, password: next })).toBeNull();
+    expect(await errorOf(resetMemberPassword, { id: e.id })).toBeNull();
     expect(await redirectOf(() => login(form({ email: EMAIL, password: PASSWORD })))).toContain("error=");
-    expect(await redirectOf(() => login(form({ email: EMAIL, password: next })))).toBe("/team");
+    expect(await redirectOf(() => login(form({ email: EMAIL, password: EMAIL })))).toBe(FIRST_PASSWORD_PATH);
 
     expect(await errorOf(revokeMemberLogin, { id: e.id })).toBeNull();
     expect(await redirectOf(() => requireTeamSession())).toBe("/login");
