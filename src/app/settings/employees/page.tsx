@@ -4,7 +4,10 @@ import { requireGroupAdmin } from "@/lib/auth";
 import {
   createEmployee,
   deleteEmployee,
+  issueMemberLogin,
   linkStaffToEmployee,
+  resetMemberPassword,
+  revokeMemberLogin,
   updateEmployee,
 } from "@/lib/employee-actions";
 import { employeeOptionLabel } from "@/lib/employee-names";
@@ -27,7 +30,13 @@ export default async function EmployeesSettingsPage({
     prisma.employee.findMany({
       orderBy: [{ isActive: "desc" }, { displayOrder: "asc" }, { name: "asc" }],
       include: {
-        staffs: { include: { tenant: { select: { name: true } } } },
+        staffs: {
+          include: {
+            tenant: { select: { name: true } },
+            user: { select: { email: true } },
+          },
+        },
+        user: { select: { email: true } },
         _count: { select: { events: true } },
       },
     }),
@@ -99,80 +108,87 @@ export default async function EmployeesSettingsPage({
         ) : (
           <div className="divide-y divide-neutral-100 rounded-lg border border-neutral-200 bg-white">
             {employees.map((e) => (
-              <form
+              <div
                 key={e.id}
-                action={updateEmployee}
-                className={`flex flex-wrap items-center gap-2 px-3 py-2 ${e.isActive ? "" : "bg-neutral-50"}`}
+                className={`space-y-1.5 px-3 py-2 ${e.isActive ? "" : "bg-neutral-50"}`}
               >
-                <input type="hidden" name="id" value={e.id} />
-                <input
-                  type="text"
-                  name="name"
-                  defaultValue={e.name}
-                  required
-                  aria-label="名前"
-                  className="w-40 rounded-md border border-neutral-300 px-2 py-1 text-sm"
-                />
-                <label className="flex items-center gap-1 text-xs text-neutral-600">
-                  表示順
+                <form action={updateEmployee} className="flex flex-wrap items-center gap-2">
+                  <input type="hidden" name="id" value={e.id} />
                   <input
-                    type="number"
-                    name="displayOrder"
-                    defaultValue={e.displayOrder}
-                    className="w-16 rounded-md border border-neutral-300 px-2 py-1 text-sm"
+                    type="text"
+                    name="name"
+                    defaultValue={e.name}
+                    required
+                    aria-label="名前"
+                    className="w-40 rounded-md border border-neutral-300 px-2 py-1 text-sm"
                   />
-                </label>
-                <label className="flex items-center gap-1 text-xs text-neutral-600">
-                  <input type="checkbox" name="isActive" defaultChecked={e.isActive} />
-                  在籍
-                </label>
-                <span className="min-w-0 flex-1 truncate text-xs text-neutral-500">
-                  {e._count.events > 0 && `予定 ${e._count.events}件`}
-                </span>
-                <button
-                  type="submit"
-                  className="rounded-md border border-neutral-300 bg-white px-3 py-1 text-sm text-neutral-700 hover:bg-neutral-50"
-                >
-                  保存
-                </button>
-                {/* 予定もひも付けも無い行だけ消せる（重複して作った行の後始末用） */}
-                {e.staffs.length === 0 && e._count.events === 0 && (
+                  <label className="flex items-center gap-1 text-xs text-neutral-600">
+                    表示順
+                    <input
+                      type="number"
+                      name="displayOrder"
+                      defaultValue={e.displayOrder}
+                      className="w-16 rounded-md border border-neutral-300 px-2 py-1 text-sm"
+                    />
+                  </label>
+                  <label className="flex items-center gap-1 text-xs text-neutral-600">
+                    <input type="checkbox" name="isActive" defaultChecked={e.isActive} />
+                    在籍
+                  </label>
+                  <span className="min-w-0 flex-1 truncate text-xs text-neutral-500">
+                    {e._count.events > 0 && `予定 ${e._count.events}件`}
+                  </span>
                   <button
                     type="submit"
-                    formAction={deleteEmployee}
-                    formNoValidate
-                    className="rounded-md border border-red-200 bg-white px-3 py-1 text-sm text-red-700 hover:bg-red-50"
+                    className="rounded-md border border-neutral-300 bg-white px-3 py-1 text-sm text-neutral-700 hover:bg-neutral-50"
                   >
-                    削除
+                    保存
                   </button>
-                )}
-                <fieldset className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 text-xs text-neutral-600">
-                  <legend className="sr-only">{e.name} の所属部署</legend>
-                  <input type="hidden" name="tenantsShown" value="1" />
-                  <span className="text-neutral-500">所属部署：</span>
-                  {tenants.map((t) => {
-                    const linked = t.staffs.find((s) => s.employeeId === e.id);
-                    return (
-                      <label key={t.id} className="flex items-center gap-1">
-                        <input
-                          type="checkbox"
-                          name="tenantIds"
-                          value={t.id}
-                          defaultChecked={!!linked}
-                        />
-                        {t.name}
-                        {linked && linked.name !== e.name && (
-                          <span className="text-neutral-400">（{linked.name}）</span>
-                        )}
-                        {linked && !linked.isActive && (
-                          <span className="text-neutral-400">（スタッフは無効）</span>
-                        )}
-                      </label>
-                    );
-                  })}
-                  {tenants.length === 0 && <span>部署がありません</span>}
-                </fieldset>
-              </form>
+                  {/* 予定もひも付けも無い行だけ消せる（重複して作った行の後始末用） */}
+                  {e.staffs.length === 0 && e._count.events === 0 && !e.user && (
+                    <button
+                      type="submit"
+                      formAction={deleteEmployee}
+                      formNoValidate
+                      className="rounded-md border border-red-200 bg-white px-3 py-1 text-sm text-red-700 hover:bg-red-50"
+                    >
+                      削除
+                    </button>
+                  )}
+                  <fieldset className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 text-xs text-neutral-600">
+                    <legend className="sr-only">{e.name} の所属部署</legend>
+                    <input type="hidden" name="tenantsShown" value="1" />
+                    <span className="text-neutral-500">所属部署：</span>
+                    {tenants.map((t) => {
+                      const linked = t.staffs.find((s) => s.employeeId === e.id);
+                      return (
+                        <label key={t.id} className="flex items-center gap-1">
+                          <input
+                            type="checkbox"
+                            name="tenantIds"
+                            value={t.id}
+                            defaultChecked={!!linked}
+                          />
+                          {t.name}
+                          {linked && linked.name !== e.name && (
+                            <span className="text-neutral-400">（{linked.name}）</span>
+                          )}
+                          {linked && !linked.isActive && (
+                            <span className="text-neutral-400">（スタッフは無効）</span>
+                          )}
+                        </label>
+                      );
+                    })}
+                    {tenants.length === 0 && <span>部署がありません</span>}
+                  </fieldset>
+                </form>
+                <MemberLogin
+                  employeeId={e.id}
+                  isActive={e.isActive}
+                  memberEmail={e.user?.email ?? null}
+                  deptEmail={e.staffs.find((s) => s.user)?.user?.email ?? null}
+                />
+              </div>
             ))}
           </div>
         )}
@@ -185,7 +201,8 @@ export default async function EmployeesSettingsPage({
             ? `ひも付いていない在籍中のスタッフが ${unlinkedCount}名 います。`
             : "在籍中のスタッフは全員ひも付いています。"}
           ふだんは上の「所属部署」のチェックで足ります。ここは、部署でのスタッフ名が名簿の名前と違う
-          （例：部署では「竹内」、名簿では「竹内 太郎」）などで自動でまとまらない人を、手で結ぶときに使います。
+          （例：部署では「竹内」、名簿では「竹内
+          太郎」）などで自動でまとまらない人を、手で結ぶときに使います。
           兼任の人は「名簿に新しく作る」ではなく、一覧からその人（カッコ内は今の所属部署）を選んでください。
           1つの部署に同じ社員を2回ひも付けることはできません。
         </p>
@@ -249,5 +266,107 @@ export default async function EmployeesSettingsPage({
         </div>
       </section>
     </div>
+  );
+}
+
+const SMALL_INPUT = "rounded-md border border-neutral-300 px-2 py-1 text-xs";
+const SMALL_BUTTON =
+  "rounded-md border border-neutral-300 bg-white px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50";
+
+/**
+ * 名簿の1行の「ログイン」欄。部署に属さない人（事務など）が「全社の1日」を使うためのもの。
+ * 部署のアカウントを持つ人は、そちらのヘッダーから「全社の1日」を開けるので発行しない。
+ */
+function MemberLogin({
+  employeeId,
+  isActive,
+  memberEmail,
+  deptEmail,
+}: {
+  employeeId: string;
+  isActive: boolean;
+  memberEmail: string | null;
+  deptEmail: string | null;
+}) {
+  const label = <span className="text-neutral-500">ログイン：</span>;
+
+  if (memberEmail) {
+    return (
+      <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-600">
+        {label}
+        <span>
+          {memberEmail}（社員用）
+          {!isActive && <span className="text-neutral-400">（在籍していないため使えません）</span>}
+        </span>
+        <form action={resetMemberPassword} className="flex items-center gap-1">
+          <input type="hidden" name="id" value={employeeId} />
+          <input
+            type="text"
+            name="password"
+            required
+            minLength={8}
+            autoComplete="off"
+            placeholder="新しいパスワード（8文字以上）"
+            aria-label="新しいパスワード"
+            className={`w-52 ${SMALL_INPUT}`}
+          />
+          <button type="submit" className={SMALL_BUTTON}>
+            再設定
+          </button>
+        </form>
+        <form action={revokeMemberLogin}>
+          <input type="hidden" name="id" value={employeeId} />
+          <button
+            type="submit"
+            className="rounded-md border border-red-200 bg-white px-2 py-1 text-xs text-red-700 hover:bg-red-50"
+          >
+            ログインを取り消す
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  if (deptEmail) {
+    return (
+      <p className="text-xs text-neutral-500">
+        {label}部署のアカウント（{deptEmail}）で「全社の1日」を使えます
+      </p>
+    );
+  }
+
+  if (!isActive) return null;
+
+  return (
+    <form
+      action={issueMemberLogin}
+      className="flex flex-wrap items-center gap-1 text-xs text-neutral-600"
+    >
+      <input type="hidden" name="id" value={employeeId} />
+      {label}
+      <span className="text-neutral-400">未発行</span>
+      <input
+        type="email"
+        name="email"
+        required
+        autoComplete="off"
+        placeholder="メールアドレス"
+        aria-label="ログインに使うメールアドレス"
+        className={`w-52 ${SMALL_INPUT}`}
+      />
+      <input
+        type="text"
+        name="password"
+        required
+        minLength={8}
+        autoComplete="off"
+        placeholder="初期パスワード（8文字以上）"
+        aria-label="初期パスワード"
+        className={`w-48 ${SMALL_INPUT}`}
+      />
+      <button type="submit" className={SMALL_BUTTON}>
+        ログインを発行
+      </button>
+    </form>
   );
 }

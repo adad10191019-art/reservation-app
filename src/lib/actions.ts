@@ -50,11 +50,27 @@ export async function login(formData: FormData) {
   // 存在しうる。ここではパスワードまで一致した最初のアカウントを使う。
   const candidates = await prisma.user.findMany({
     where: { email },
-    include: { staff: true, tenant: true },
+    include: { staff: true, tenant: true, employee: true },
   });
 
   for (const user of candidates) {
     if (await verifyPassword(password, user.passwordHash)) {
+      // 社員（部署に属さない人）は「全社の1日」だけを使う。名簿で在籍を外された人は入れない
+      if (user.role === "member") {
+        if (!user.employee?.isActive) continue;
+        await recordSuccess(email);
+        await startSession(
+          buildSession({
+            userId: user.id,
+            tenantId: null,
+            role: "member",
+            staffId: null,
+            name: user.employee.name,
+          }),
+        );
+        redirect("/team");
+      }
+
       await recordSuccess(email);
 
       // group_admin はどの部署にも属さないので、ログイン直後は

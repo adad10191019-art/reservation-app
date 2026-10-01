@@ -69,19 +69,22 @@ model Tenant {
 // ── ログインする人 ─────────────────────
 model User {
   id           String   @id @default(uuid())
-  /// group_admin（全部署を横断できる役割）は特定の部署に属さないため null
+  /// group_admin（全部署を横断できる役割）と member（社員）は特定の部署に属さないため null
   tenantId     String?
   email        String
   passwordHash String
-  role         String // "owner" | "staff" | "group_admin"
+  role         String // "owner" | "staff" | "group_admin" | "member"
   staffId      String?  @unique
+  /// member（部署に属さない社員のログイン）だけが使う。名簿のどの人か。「全社の1日」だけを使える
+  employeeId   String?  @unique
   /// 通知の受け取りに使うLINE利用者ID。未設定なら通知を受け取らない
   lineUserId   String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  tenant Tenant? @relation(fields: [tenantId], references: [id])
-  staff  Staff?  @relation(fields: [staffId], references: [id])
+  tenant   Tenant?   @relation(fields: [tenantId], references: [id])
+  staff    Staff?    @relation(fields: [staffId], references: [id])
+  employee Employee? @relation(fields: [employeeId], references: [id])
 
   @@unique([tenantId, email])
   @@unique([tenantId, lineUserId])
@@ -150,6 +153,8 @@ model Employee {
 
   staffs Staff[]
   events EmployeeEvent[]
+  /// 社員専用ログイン（部署のアカウントを持たない人だけ）
+  user   User?
 }
 
 // ── 社員の予定（人に付く予定） ───────────
@@ -157,18 +162,18 @@ model Employee {
 // 「空いていない時間」になる。部署のブロック枠（Block）は部署の中の道具、
 // こちらは人そのものの予定、という分け方。
 model EmployeeEvent {
-  id           String  @id @default(uuid())
-  employeeId   String
-  date         String // "YYYY-MM-DD"
-  startMinutes Int
-  endMinutes   Int
-  title        String
+  id            String   @id @default(uuid())
+  employeeId    String
+  date          String // "YYYY-MM-DD"
+  startMinutes  Int
+  endMinutes    Int
+  title         String
   /// true なら本人以外には件名を出さず「予定あり」とだけ見せる
-  isPrivate    Boolean @default(false)
+  isPrivate     Boolean  @default(false)
   /// 誰が入れたか（本人か、管理者の代理入力か）。消えても分かるよう表示名を複製して残す
   createdByName String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   employee Employee @relation(fields: [employeeId], references: [id])
 

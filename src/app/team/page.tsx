@@ -2,7 +2,7 @@ import Link from "next/link";
 import { AppHeader } from "@/components/app-header";
 import { Banner } from "@/components/banner";
 import { SubmitButton } from "@/components/submit-button";
-import { requireSession } from "@/lib/auth";
+import { requireTeamSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getTenant } from "@/lib/schedule";
 import { getTeamDay, getTeamViewer } from "@/lib/team";
@@ -29,8 +29,12 @@ export default async function TeamDayPage({
   const date = sanitizeDate(sp.date);
   const today = todayString();
 
-  const session = await requireSession();
-  const [tenant, viewer] = await Promise.all([getTenant(session.tenantId), getTeamViewer(session)]);
+  const session = await requireTeamSession();
+  // 社員（部署に属さない人）には部署が無いので、見出しは「全社」にする
+  const [tenant, viewer] = await Promise.all([
+    session.tenantId ? getTenant(session.tenantId) : { name: "全社" },
+    getTeamViewer(session),
+  ]);
   const columns = await getTeamDay(date, viewer);
   const range = teamViewRange(columns);
   const totalHeight = (range.end - range.start) * PX_PER_MIN;
@@ -51,12 +55,14 @@ export default async function TeamDayPage({
   return (
     <main className="mx-auto w-full max-w-7xl p-4 sm:p-6">
       <AppHeader tenantName={tenant.name} subtitle="全社の1日" session={session}>
-        <Link
-          href={`/calendar?date=${date}`}
-          className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
-        >
-          カレンダーへ
-        </Link>
+        {session.role !== "member" && (
+          <Link
+            href={`/calendar?date=${date}`}
+            className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
+          >
+            カレンダーへ
+          </Link>
+        )}
       </AppHeader>
 
       <Banner error={sp.error} done={sp.done} />

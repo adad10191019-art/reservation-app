@@ -8,7 +8,7 @@
  */
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { requireSession } from "./auth";
+import { requireTeamSession } from "./auth";
 import { parseRanges } from "./ranges";
 import { prisma } from "./prisma";
 import { getTeamViewer } from "./team";
@@ -30,7 +30,7 @@ function revalidateAll() {
 }
 
 export async function createEmployeeEvent(formData: FormData) {
-  const session = await requireSession();
+  const session = await requireTeamSession();
   const viewer = await getTeamViewer(session);
 
   const date = String(formData.get("date") ?? "");
@@ -74,7 +74,7 @@ export async function createEmployeeEvent(formData: FormData) {
 }
 
 export async function deleteEmployeeEvent(formData: FormData) {
-  const session = await requireSession();
+  const session = await requireTeamSession();
   const viewer = await getTeamViewer(session);
   const date = String(formData.get("date") ?? "");
   const id = String(formData.get("id") ?? "");

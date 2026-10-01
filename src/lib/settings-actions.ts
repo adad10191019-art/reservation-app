@@ -280,8 +280,10 @@ export async function createAccount(formData: FormData) {
     back(path, "スタッフ権限のアカウントは、担当するスタッフを選んでください");
   }
 
+  // 部署に属さないアカウント（全社管理者・社員）とも重ならないようにする。
+  // ログインはメールで探すので、同じアドレスが2つあると取り違えるおそれがある
   const existing = await prisma.user.findFirst({
-    where: { tenantId: session.tenantId, email },
+    where: { email, OR: [{ tenantId: session.tenantId }, { tenantId: null }] },
   });
   if (existing) back(path, "このメールアドレスはすでに使われています");
 

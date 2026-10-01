@@ -100,7 +100,7 @@ export async function createTestEmployee(label: string) {
   return prisma.employee.create({ data: { name: `[自動テスト] ${label}` } });
 }
 
-/** テスト用の社員と、その予定を消す。スタッフからのひも付けは先に外す */
+/** テスト用の社員と、その予定・社員用ログインを消す。スタッフからのひも付けは先に外す */
 export async function deleteTestEmployees() {
   const employees = await prisma.employee.findMany({
     where: { name: { startsWith: "[自動テスト] " } },
@@ -110,5 +110,6 @@ export async function deleteTestEmployees() {
   if (ids.length === 0) return;
   await prisma.staff.updateMany({ where: { employeeId: { in: ids } }, data: { employeeId: null } });
   await prisma.employeeEvent.deleteMany({ where: { employeeId: { in: ids } } });
+  await prisma.user.deleteMany({ where: { employeeId: { in: ids } } });
   await prisma.employee.deleteMany({ where: { id: { in: ids } } });
 }

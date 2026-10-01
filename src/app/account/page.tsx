@@ -2,13 +2,14 @@ import Link from "next/link";
 import { AppHeader } from "@/components/app-header";
 import { Banner } from "@/components/banner";
 import { updateOwnAccount } from "@/lib/account-actions";
-import { requireSession } from "@/lib/auth";
+import { requireTeamSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 const ROLE_LABEL: Record<string, string> = {
   owner: "オーナー",
   staff: "スタッフ",
   group_admin: "全社管理者",
+  member: "社員",
 };
 
 export default async function AccountPage({
@@ -17,7 +18,7 @@ export default async function AccountPage({
   searchParams: Promise<{ error?: string; done?: string }>;
 }) {
   const sp = await searchParams;
-  const session = await requireSession();
+  const session = await requireTeamSession();
 
   const user = await prisma.user.findUnique({
     where: { id: session.userId },
@@ -27,11 +28,12 @@ export default async function AccountPage({
   return (
     <main className="mx-auto w-full max-w-2xl p-4 sm:p-6">
       <AppHeader tenantName="アカウント情報" subtitle="ログイン情報の変更" session={session}>
+        {/* 社員（部署に属さない人）はカレンダーを使えないので、全社の1日へ戻す */}
         <Link
-          href="/calendar"
+          href={session.role === "member" ? "/team" : "/calendar"}
           className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
         >
-          カレンダーへ
+          {session.role === "member" ? "全社の1日へ" : "カレンダーへ"}
         </Link>
       </AppHeader>
 

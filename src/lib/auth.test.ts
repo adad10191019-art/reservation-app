@@ -108,6 +108,28 @@ describe("セッション", () => {
   });
 });
 
+describe("社員（部署に属さない人）のセッション", () => {
+  const member = buildSession({
+    userId: "u9",
+    tenantId: null,
+    role: "member",
+    staffId: null,
+    name: "事務 花子",
+  });
+
+  it("署名して戻すと元に戻る", () => {
+    expect(decodeSession(encodeSession(member, SECRET), SECRET)).toEqual(member);
+  });
+
+  it("部署を持つ社員や、部署の無いオーナーという食い違った中身は通さない", () => {
+    const withTenant = { ...member, tenantId: "t1" } as unknown as typeof member;
+    expect(decodeSession(encodeSession(withTenant, SECRET), SECRET)).toBeNull();
+
+    const ownerWithoutTenant = { ...member, role: "owner" } as unknown as typeof member;
+    expect(decodeSession(encodeSession(ownerWithoutTenant, SECRET), SECRET)).toBeNull();
+  });
+});
+
 describe("お客様のセッション", () => {
   const customer = buildCustomerSession({ customerId: "c1", tenantId: "t1", name: "山田" });
 

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { logout, switchTenant } from "@/lib/actions";
 import { prisma } from "@/lib/prisma";
-import type { SessionData } from "@/lib/session";
+import type { AnySession } from "@/lib/session";
 
 /** どの画面にも出る、店舗名とログイン中の人の表示 */
 export async function AppHeader({
@@ -13,7 +13,8 @@ export async function AppHeader({
 }: {
   tenantName: string;
   subtitle: string;
-  session: SessionData;
+  /** 社員ログイン（部署に属さない人）のときは、部署の切り替え・通知設定・自分の予定を出さない */
+  session: AnySession;
   /** 画面ごとの操作ボタン */
   children?: React.ReactNode;
   /** 歯車メニューに追加する、画面ごとのリンク（通知設定・ログアウトより上に出す） */
@@ -68,14 +69,18 @@ export async function AppHeader({
                 ? "border-violet-300 bg-violet-50 text-violet-800"
                 : session.role === "group_admin"
                   ? "border-amber-300 bg-amber-50 text-amber-800"
-                  : "border-neutral-300 bg-neutral-50 text-neutral-600"
+                  : session.role === "member"
+                    ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                    : "border-neutral-300 bg-neutral-50 text-neutral-600"
             }`}
           >
             {session.role === "owner"
               ? "オーナー"
               : session.role === "group_admin"
                 ? "全社管理者"
-                : "スタッフ"}
+                : session.role === "member"
+                  ? "社員"
+                  : "スタッフ"}
           </span>
         </span>
 
@@ -125,12 +130,14 @@ export async function AppHeader({
                 {item.label}
               </Link>
             ))}
-            <Link
-              href="/notify"
-              className="block px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
-            >
-              通知設定
-            </Link>
+            {session.role !== "member" && (
+              <Link
+                href="/notify"
+                className="block px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
+              >
+                通知設定
+              </Link>
+            )}
             <Link
               href="/account"
               className="block px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"

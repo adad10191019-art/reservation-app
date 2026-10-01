@@ -12,6 +12,7 @@ import { getAuthSecret, readSignedToken, signToken } from "./signed-token";
 
 export type Role = "owner" | "staff" | "group_admin";
 
+/** 部署の画面を使う人（オーナー・スタッフ・全社管理者）のログイン状態 */
 export type SessionData = {
   userId: string;
   /**
@@ -28,10 +29,27 @@ export type SessionData = {
   exp: number;
 };
 
+/**
+ * 部署に属さない社員（事務など）のログイン状態。「全社の1日」とアカウント情報だけを使える。
+ * 部署の画面は SessionData を前提に作られているので、型を分けて
+ * 社員のログインがうっかり部署の画面に渡らないようにしている（requireSession は通さない）。
+ */
+export type MemberSessionData = {
+  userId: string;
+  tenantId: null;
+  role: "member";
+  staffId: null;
+  name: string;
+  exp: number;
+};
+
+/** どちらかのログイン状態 */
+export type AnySession = SessionData | MemberSessionData;
+
 export const SESSION_COOKIE = "session";
 export const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7; // 7日
 
-export function encodeSession(data: SessionData, secret = getAuthSecret()): string {
+export function encodeSession(data: AnySession, secret = getAuthSecret()): string {
   return signToken(data, secret);
 }
 
@@ -43,27 +61,28 @@ export function decodeSession(
   token: string | undefined,
   secret = getAuthSecret(),
   now = Date.now(),
-): SessionData | null {
-  const data = readSignedToken(token, secret) as Partial<SessionData> | null;
+): AnySession | null {
+  const data = readSignedToken(token, secret) as Partial<AnySession> | null;
   if (!data || typeof data !== "object") return null;
   if (typeof data.exp !== "number" || data.exp <= now) return null;
-  if (!data.userId || !data.tenantId) return null;
+  if (!data.userId) return null;
+  if (data.role === "member") {
+    if (data.tenantId !== null || data.staffId !== null) return null;
+    return data as MemberSessionData;
+  }
+  if (!data.tenantId) return null;
   if (data.role !== "owner" && data.role !== "staff" && data.role !== "group_admin") {
     return null;
   }
   return data as SessionData;
 }
 
-/** 今から有効期限までの SessionData を作る */
+/** 今から有効期限までのログイン状態を作る */
+export function buildSession(user: Omit<SessionData, "exp">, now?: number): SessionData;
+export function buildSession(user: Omit<MemberSessionData, "exp">, now?: number): MemberSessionData;
 export function buildSession(
-  user: {
-    userId: string;
-    tenantId: string;
-    role: Role;
-    staffId: string | null;
-    name: string;
-  },
+  user: Omit<SessionData, "exp"> | Omit<MemberSessionData, "exp">,
   now = Date.now(),
-): SessionData {
-  return { ...user, exp: now + SESSION_MAX_AGE_SECONDS * 1000 };
+): AnySession {
+  return { ...user, exp: now + SESSION_MAX_AGE_SECONDS * 1000 } as AnySession;
 }

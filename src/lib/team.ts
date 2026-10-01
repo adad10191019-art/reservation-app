@@ -5,12 +5,20 @@
  * 部署をまたいで読むので、予約はお客様・メニューを読まず、時刻の列だけを選ぶ。
  */
 import { prisma } from "./prisma";
-import type { SessionData } from "./session";
+import type { AnySession } from "./session";
 import { type TeamColumn, type TeamViewer, buildTeamColumns } from "./team-view";
 
 /** ログインしている人が、名簿のどの社員か */
-export async function getTeamViewer(session: SessionData): Promise<TeamViewer> {
+export async function getTeamViewer(session: AnySession): Promise<TeamViewer> {
   const isAdmin = session.role === "group_admin";
+  // 社員（部署に属さない人）は、アカウントが名簿の人を直接指している
+  if (session.role === "member") {
+    const user = await prisma.user.findUnique({
+      where: { id: session.userId },
+      select: { employeeId: true },
+    });
+    return { employeeId: user?.employeeId ?? null, isAdmin: false };
+  }
   if (!session.staffId) return { employeeId: null, isAdmin };
 
   const staff = await prisma.staff.findUnique({
