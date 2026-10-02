@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AppHeader } from "@/components/app-header";
 import { Banner } from "@/components/banner";
+import { TimeRangeFields } from "@/components/time-range-fields";
 import { requireSession } from "@/lib/auth";
 import { fetchGoogleBusyByDate, isGoogleCalendarConfigured } from "@/lib/google-calendar";
 import { type ElsewhereItem, fetchMyElsewhere } from "@/lib/my-elsewhere";
@@ -8,6 +9,7 @@ import { prisma } from "@/lib/prisma";
 import { getDaySchedule, getTenant } from "@/lib/schedule";
 import { createOwnBlock, deleteOwnBlock } from "@/lib/staff-schedule-actions";
 import { addDays, formatDateLabel, sanitizeDate, toHm, todayString } from "@/lib/time";
+import { defaultStart } from "@/lib/time-choices";
 
 type AgendaItem =
   | { kind: "reservation"; id: string; startMinutes: number; endMinutes: number; menuName: string; customerName: string }
@@ -280,7 +282,7 @@ export default async function MySchedulePage({
           </details>
         </div>
 
-        <form action={createOwnBlock} className="mb-4 flex flex-wrap items-center gap-2">
+        <form action={createOwnBlock} className="mb-4 flex flex-wrap items-end gap-2">
           <input
             type="date"
             name="date"
@@ -288,21 +290,7 @@ export default async function MySchedulePage({
             defaultValue={date}
             className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
           />
-          <input
-            type="time"
-            name="start"
-            required
-            step={300}
-            className="w-24 rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
-          />
-          <span className="text-sm text-neutral-400">〜</span>
-          <input
-            type="time"
-            name="end"
-            required
-            step={300}
-            className="w-24 rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
-          />
+          <TimeRangeFields key={date} defaultStart={defaultStart(date, new Date())} />
           <input
             type="text"
             name="reason"

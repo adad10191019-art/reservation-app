@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AppHeader } from "@/components/app-header";
 import { Banner } from "@/components/banner";
 import { SubmitButton } from "@/components/submit-button";
+import { TimeRangeFields } from "@/components/time-range-fields";
 import { requireTeamSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getTenant } from "@/lib/schedule";
@@ -9,6 +10,7 @@ import { getTeamDay, getTeamViewer } from "@/lib/team";
 import { createEmployeeEvent, deleteEmployeeEvent } from "@/lib/team-actions";
 import { type TeamItem, layoutLanes, teamViewRange } from "@/lib/team-view";
 import { addDays, formatDateLabel, sanitizeDate, toHm, todayString } from "@/lib/time";
+import { defaultStart } from "@/lib/time-choices";
 
 const PX_PER_MIN = 1.1;
 const COLUMN_WIDTH = 132;
@@ -100,26 +102,7 @@ export default async function TeamDayPage({
               </select>
             </label>
           )}
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-neutral-600">開始</span>
-            <input
-              type="time"
-              name="start"
-              required
-              step={300}
-              className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-neutral-600">終了</span>
-            <input
-              type="time"
-              name="end"
-              required
-              step={300}
-              className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
-            />
-          </label>
+          <TimeRangeFields key={date} defaultStart={defaultStart(date, new Date())} />
           <label className="block min-w-40 flex-1">
             <span className="mb-1 block text-xs font-medium text-neutral-600">件名</span>
             <input
