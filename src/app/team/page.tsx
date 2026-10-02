@@ -208,13 +208,14 @@ export default async function TeamDayPage({
                           <form action={deleteEmployeeEvent}>
                             <input type="hidden" name="id" value={item.deletableEventId} />
                             <input type="hidden" name="date" value={date} />
-                            <button
-                              type="submit"
-                              aria-label={`${item.label} を削除`}
+                            <SubmitButton
+                              pendingText="…"
+                              ariaLabel={`${item.label} を削除`}
+                              confirmText={`「${item.label}」（${toHm(item.startMinutes)}–${toHm(item.endMinutes)}）を消しますか？`}
                               className="rounded px-0.5 text-neutral-500 hover:bg-white hover:text-red-700"
                             >
                               ×
-                            </button>
+                            </SubmitButton>
                           </form>
                         )}
                       </div>

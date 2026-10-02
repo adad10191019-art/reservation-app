@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AppHeader } from "@/components/app-header";
 import { Banner } from "@/components/banner";
+import { SubmitButton } from "@/components/submit-button";
 import { TimeRangeFields } from "@/components/time-range-fields";
 import { requireSession } from "@/lib/auth";
 import { fetchGoogleBusyByDate, isGoogleCalendarConfigured } from "@/lib/google-calendar";
@@ -326,12 +327,13 @@ export default async function MySchedulePage({
                 <form action={deleteOwnBlock}>
                   <input type="hidden" name="id" value={block.id} />
                   <input type="hidden" name="date" value={date} />
-                  <button
-                    type="submit"
+                  <SubmitButton
+                    pendingText="削除中…"
+                    confirmText={`「${block.reason}」（${toHm(block.startMinutes)}–${toHm(block.endMinutes)}）を消しますか？`}
                     className="rounded-md border border-amber-400 px-2.5 py-1 text-xs text-amber-900 hover:bg-amber-100"
                   >
                     削除
-                  </button>
+                  </SubmitButton>
                 </form>
               </li>
             ))}
