@@ -299,12 +299,12 @@ export default async function MySchedulePage({
             placeholder="商談、私用 など"
             className="min-w-32 flex-1 rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
           />
-          <button
-            type="submit"
+          <SubmitButton
+            pendingText="追加中…"
             className="rounded-md bg-neutral-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-700"
           >
             追加
-          </button>
+          </SubmitButton>
         </form>
 
         {ownBlocks.length === 0 ? (
@@ -316,7 +316,7 @@ export default async function MySchedulePage({
             {ownBlocks.map((block) => (
               <li
                 key={block.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-dashed border-amber-400 bg-amber-50 px-3 py-2 text-sm"
+                className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-dashed border-amber-400 bg-amber-50 px-3 py-2 text-sm transition-opacity has-[[aria-busy=true]]:opacity-40"
               >
                 <span className="text-amber-900">
                   <span className="tabular-nums">

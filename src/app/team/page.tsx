@@ -21,6 +21,9 @@ const ITEM_STYLE: Record<TeamItem["kind"], string> = {
   block: "border-dashed border-amber-400 bg-amber-50 text-amber-900",
 };
 
+/** 消している途中（中の送信ボタンが aria-busy）の予定は薄くして、押したことがすぐわかるようにする */
+const BUSY_FADE = "has-[[aria-busy=true]]:pointer-events-none has-[[aria-busy=true]]:opacity-40";
+
 /** 社員全員の1日の予定を、1人1列で並べる画面 */
 export default async function TeamDayPage({
   searchParams,
@@ -194,7 +197,7 @@ export default async function TeamDayPage({
                     <div
                       key={item.key}
                       title={`${toHm(item.startMinutes)}–${toHm(item.endMinutes)} ${item.label}${item.note ? `（${item.note}）` : ""}`}
-                      className={`absolute overflow-hidden rounded border px-1 py-0.5 text-[11px] leading-tight ${ITEM_STYLE[item.kind]}`}
+                      className={`absolute overflow-hidden rounded border px-1 py-0.5 text-[11px] leading-tight transition-opacity ${BUSY_FADE} ${ITEM_STYLE[item.kind]}`}
                       style={{
                         top: top(item.startMinutes),
                         height: Math.max((item.endMinutes - item.startMinutes) * PX_PER_MIN - 2, 14),
