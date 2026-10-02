@@ -3,28 +3,12 @@ import { AppHeader } from "@/components/app-header";
 import { requireOwner } from "@/lib/auth";
 import { getTenant } from "@/lib/schedule";
 
-const BASE_TABS = [
-  { href: "/settings/onboarding", label: "セットアップ" },
-  { href: "/settings/menus", label: "メニュー" },
-  { href: "/settings/members", label: "メンバー" },
-  { href: "/settings/hours", label: "営業時間" },
-  { href: "/settings/days", label: "日付ごと" },
-  { href: "/settings/store", label: "店舗" },
-  { href: "/settings/analytics", label: "集計" },
-  { href: "/settings/history", label: "履歴" },
-];
-
 // LayoutProps は Next.js が生成する型。ルートごとに用意される
+// 設定の各項目（メニュー・メンバー・営業時間など）は、左のサイドバーから選ぶ（lib/sidebar-nav.ts）
 export default async function SettingsLayout({ children }: LayoutProps<"/settings">) {
   // 設定はオーナーのみ。スタッフはカレンダーへ戻される
   const session = await requireOwner();
   const tenant = await getTenant(session.tenantId);
-
-  // 部署の追加・編集は、全部署を横断できる全社管理者だけが扱う
-  const tabs =
-    session.role === "group_admin"
-      ? [...BASE_TABS, { href: "/settings/tenants", label: "部署" }]
-      : BASE_TABS;
 
   return (
     <main className="mx-auto w-full max-w-3xl p-4 sm:p-6">
@@ -36,18 +20,6 @@ export default async function SettingsLayout({ children }: LayoutProps<"/setting
           カレンダーへ
         </Link>
       </AppHeader>
-
-      <nav className="mb-5 flex flex-wrap gap-1 border-b border-neutral-200 pb-px">
-        {tabs.map((tab) => (
-          <Link
-            key={tab.href}
-            href={tab.href}
-            className="rounded-t-md border border-transparent px-3 py-2 text-sm text-neutral-600 hover:bg-neutral-100"
-          >
-            {tab.label}
-          </Link>
-        ))}
-      </nav>
 
       {children}
     </main>

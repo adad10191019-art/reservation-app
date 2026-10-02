@@ -8,3 +8,16 @@
   --font-heading: var(--font-shippori-mincho);
   --font-mono: var(--font-geist-mono);
 }
+
+/* 左のサイドバー（components/app-header.tsx）を出したままの幅では、本文を右へずらす。
+   サイドバーの幅 w-60（15rem）と合わせる。auto＝パソコンの幅から、pinned＝中くらいの幅から */
+@media (min-width: 64rem) {
+  body:has(aside[data-sidebar="auto"]) {
+    padding-left: 15rem;
+  }
+}
+@media (min-width: 48rem) {
+  body:has(aside[data-sidebar="pinned"]) {
+    padding-left: 15rem;
+  }
+}

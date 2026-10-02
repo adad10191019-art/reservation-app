@@ -31,25 +31,11 @@ export default async function CalendarPage({
           週表示へ
         </Link>
         <Link
-          href="/customers"
-          className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
-        >
-          顧客一覧
-        </Link>
-        <Link
           href={`/booking?date=${date}`}
           className="rounded-md bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-700"
         >
           ＋ 予約を追加
         </Link>
-        {(session.role === "owner" || session.role === "group_admin") && (
-          <Link
-            href="/settings/menus"
-            className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
-          >
-            設定
-          </Link>
-        )}
       </AppHeader>
 
       {sp.error && (

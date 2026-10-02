@@ -1,10 +1,42 @@
 import Link from "next/link";
-import { DropdownMenu } from "@/components/dropdown-menu";
-import { logout, switchTenant } from "@/lib/actions";
+import { cookies } from "next/headers";
+import {
+  NavLinks,
+  SettingsGroup,
+  SidebarDrawer,
+  SidebarPinButton,
+  TenantSelect,
+} from "@/components/sidebar-parts";
+import { logout } from "@/lib/actions";
 import { prisma } from "@/lib/prisma";
 import type { AnySession } from "@/lib/session";
+import {
+  SETTINGS_PIN_COOKIE,
+  SIDEBAR_PIN_COOKIE,
+  type SidebarMode,
+  buildNav,
+  sidebarModeOf,
+} from "@/lib/sidebar-nav";
 
-/** どの画面にも出る、店舗名とログイン中の人の表示 */
+/** 左に出したままのサイドバーの見せ方（幅は globals.css の本文の余白と合わせる） */
+const ASIDE_VISIBILITY: Record<SidebarMode, string> = {
+  auto: "hidden lg:flex",
+  pinned: "hidden md:flex",
+  unpinned: "hidden",
+};
+
+const ROLE_LABEL: Record<string, string> = {
+  owner: "オーナー",
+  group_admin: "全社管理者",
+  member: "社員",
+  staff: "一般",
+};
+
+/**
+ * どの画面にも出る、画面の名前と、左のサイドバー（スマホなどでは「≡」で横から出す）。
+ * 毎日使う画面・設定・部署の切り替え・アカウントはサイドバーに、
+ * その画面だけの操作（週表示へ・予約を追加・戻る など）は children として画面の上に出す。
+ */
 export async function AppHeader({
   tenantName,
   subtitle,
@@ -18,7 +50,7 @@ export async function AppHeader({
   session: AnySession;
   /** 画面ごとの操作ボタン */
   children?: React.ReactNode;
-  /** 歯車メニューに追加する、画面ごとのリンク（通知設定・ログアウトより上に出す） */
+  /** 画面ごとの補助のリンク（予定の設定など）。操作ボタンの前に出す */
   menuLinks?: { href: string; label: string }[];
 }) {
   // 部署を切り替えるための一覧。全社管理者は全部署、兼任の人は自分の担当部署（2つ以上のとき）
@@ -38,132 +70,100 @@ export async function AppHeader({
             })
             .then((rows) => (rows.length >= 2 ? rows.map((r) => r.tenant) : null));
 
-  return (
-    <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
+  const store = await cookies();
+  const mode = sidebarModeOf(store.get(SIDEBAR_PIN_COOKIE)?.value);
+  const settingsPinned = store.get(SETTINGS_PIN_COOKIE)?.value === "1";
+  const nav = buildNav(session);
+  const deptName = session.role === "member" ? "全社の1日" : tenantName;
+
+  const sidebarBody = (
+    <div className="flex flex-1 flex-col gap-4 px-3 pb-4">
       <div>
-        <h1 className="text-xl font-bold tracking-tight">{tenantName}</h1>
-        <p className="text-sm text-neutral-500">{subtitle}</p>
+        {tenants ? (
+          <>
+            <p className="mb-1 px-1 text-xs text-neutral-500">部署</p>
+            <TenantSelect tenants={tenants} currentId={session.tenantId} />
+          </>
+        ) : (
+          <p className="px-1 font-bold tracking-tight">{deptName}</p>
+        )}
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        {tenants && (
-          <form action={switchTenant} className="flex items-center gap-1">
-            <select
-              name="tenantId"
-              defaultValue={session.tenantId ?? undefined}
-              className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-sm text-amber-900"
-            >
-              {tenants.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-            <button
-              type="submit"
-              className="rounded-md border border-amber-300 bg-white px-2 py-1.5 text-sm text-amber-700 hover:bg-amber-50"
-            >
-              切替
-            </button>
-          </form>
-        )}
+      <nav aria-label="メニュー" className="space-y-3">
+        <NavLinks items={nav.main} />
+        {nav.settings && <SettingsGroup items={nav.settings} pinned={settingsPinned} />}
+      </nav>
 
-        {children}
-
-        <span className="ml-1 flex items-center gap-1.5 text-sm text-neutral-600">
+      <div className="mt-auto space-y-0.5 border-t border-neutral-200 pt-3">
+        <p className="flex flex-wrap items-center gap-1.5 px-3 pb-1 text-sm text-neutral-700">
           {session.name}
-          <span
-            className={`rounded-full border px-2 py-0.5 text-xs ${
-              session.role === "owner"
-                ? "border-violet-300 bg-violet-50 text-violet-800"
-                : session.role === "group_admin"
-                  ? "border-amber-300 bg-amber-50 text-amber-800"
-                  : session.role === "member"
-                    ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-                    : "border-neutral-300 bg-neutral-50 text-neutral-600"
-            }`}
-          >
-            {session.role === "owner"
-              ? "オーナー"
-              : session.role === "group_admin"
-                ? "全社管理者"
-                : session.role === "member"
-                  ? "社員"
-                  : "スタッフ"}
+          <span className="rounded-full border border-neutral-300 bg-neutral-50 px-2 py-0.5 text-xs text-neutral-600">
+            {ROLE_LABEL[session.role] ?? session.role}
           </span>
-        </span>
-
-        <Link
-          href="/team"
-          className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50"
-        >
-          全社の1日
-        </Link>
-
-        {session.staffId && (
-          <Link
-            href="/my-schedule"
-            className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50"
+        </p>
+        <NavLinks
+          items={[
+            ...(session.role !== "member"
+              ? [{ href: "/notify", label: "通知設定", match: ["/notify"] }]
+              : []),
+            { href: "/account", label: "アカウント情報", match: ["/account"] },
+          ]}
+        />
+        <form action={logout}>
+          <button
+            type="submit"
+            className="block w-full rounded-md px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100"
           >
-            自分の予定
-          </Link>
-        )}
+            ログアウト
+          </button>
+        </form>
+      </div>
+    </div>
+  );
 
-        <DropdownMenu
-          className="group relative"
-          summaryLabel="設定"
-          summaryClassName="flex size-8 cursor-pointer list-none items-center justify-center rounded-md border border-neutral-200 bg-white text-neutral-500 marker:content-none hover:bg-neutral-50"
-          summary={
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="size-4"
-            >
-              <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
-            </svg>
-          }
-        >
-          <div className="absolute right-0 z-10 mt-1 w-40 rounded-md border border-neutral-200 bg-white py-1 shadow-lg">
+  return (
+    <>
+      {/* 左に出したままのサイドバー */}
+      <aside
+        data-sidebar={mode}
+        className={`${ASIDE_VISIBILITY[mode]} fixed inset-y-0 left-0 z-30 w-60 flex-col overflow-y-auto border-r border-neutral-200 bg-white`}
+      >
+        <div className="flex justify-end px-2 pt-2">
+          <SidebarPinButton pinned />
+        </div>
+        {sidebarBody}
+      </aside>
+
+      <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <SidebarDrawer mode={mode}>
+            {/* スマホの幅では固定できないので、固定のボタンは中くらいの幅から出す */}
+            <div className="px-2 pb-1">
+              <SidebarPinButton pinned={false} className="hidden md:inline-flex" />
+            </div>
+            {sidebarBody}
+          </SidebarDrawer>
+          <div className="min-w-0">
+            <h1 className="truncate text-xl font-bold tracking-tight">{tenantName}</h1>
+            <p className="text-sm text-neutral-500">{subtitle}</p>
+          </div>
+        </div>
+
+        {(children || menuLinks) && (
+          <div className="flex flex-wrap items-center gap-2">
             {menuLinks?.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
-                className="block px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
+                className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
               >
                 {item.label}
               </Link>
             ))}
-            {session.role !== "member" && (
-              <Link
-                href="/notify"
-                className="block px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
-              >
-                通知設定
-              </Link>
-            )}
-            <Link
-              href="/account"
-              className="block px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
-            >
-              アカウント情報
-            </Link>
-            <form action={logout}>
-              <button
-                type="submit"
-                className="block w-full px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-50"
-              >
-                ログアウト
-              </button>
-            </form>
+            {children}
           </div>
-        </DropdownMenu>
-      </div>
-    </header>
+        )}
+      </header>
+    </>
   );
 }
