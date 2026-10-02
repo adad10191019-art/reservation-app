@@ -164,7 +164,7 @@ export default async function MemberDetailPage({
             )}
             {isAdmin && (
               <label className="flex items-center gap-2 text-sm">
-                <span className="text-xs text-neutral-600">全社の1日での並び順</span>
+                <span className="text-xs text-neutral-600">全体スケジュールでの並び順</span>
                 <input
                   type="number"
                   name="employeeOrder"

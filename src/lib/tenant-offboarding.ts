@@ -104,7 +104,7 @@ export async function deleteTenantCompletely(tenantId: string): Promise<void> {
   await Promise.all(connections.map((c) => revokeGoogleToken(c.refreshToken)));
 
   // この部署だけを担当していたアカウントは、担当を外すと使い道が無くなるので一緒に消す。
-  // 名簿の人にひも付いていれば「全社の1日」を使う社員として残し、全社管理者・兼任の人も残す
+  // 名簿の人にひも付いていれば「全体スケジュール」を使う社員として残し、全社管理者・兼任の人も残す
   const onlyHere = await prisma.user.findMany({
     where: {
       isGroupAdmin: false,

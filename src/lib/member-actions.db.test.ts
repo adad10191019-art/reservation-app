@@ -5,8 +5,9 @@
  *   ・ほかの部署の人のメールなら同じ人として部署を足す（パスワードは今のまま）
  *   ・同じ名前でまだ誰にもひも付いていない予約担当がいれば、新しく作らずにその人を使う
  *   ・部署の付け替え（異動）。今日以降の予約が残っていれば外さない。最後のオーナー・自分は外せない
- *   ・部署なしの人はログインすると「全社の1日」へ。退職するとログイン中でも入れなくなる
+ *   ・部署なしの人はログインすると「全体スケジュール」へ。退職するとログイン中でも入れなくなる
  *   ・オーナーは、ほかの部署も担当している人の退職・パスワードを扱えない
+ *   ・「まだ整っていない人」のログイン・予約担当を消す。最後のオーナー・自分・今日以降の予約がある人は消さない
  *
  * Cookie・画面移動・再描画は Next.js の外では動かないので差し替える（one-account.db.test.ts と同じ）。
  */
@@ -46,9 +47,15 @@ class Redirected extends Error {
 process.env.AUTH_SECRET ??= "test-secret-at-least-16-chars";
 
 const { login, switchTenant } = await import("./actions");
-const { createMember, deleteMember, resetMemberPassword, retireMember, saveMember } = await import(
-  "./member-actions"
-);
+const {
+  createMember,
+  deleteLooseStaff,
+  deleteLooseUser,
+  deleteMember,
+  resetMemberPassword,
+  retireMember,
+  saveMember,
+} = await import("./member-actions");
 const { requireTeamSession } = await import("./auth");
 const { hashPassword, verifyPassword } = await import("./password");
 
@@ -78,6 +85,15 @@ async function errorOf(
 ) {
   const url = await redirectOf(() => action(form(fields)));
   return new URL(url, "http://x").searchParams.get("error");
+}
+
+/** 戻り先の案内文 */
+async function noticeOf(
+  action: (f: FormData) => Promise<void>,
+  fields: Record<string, string | string[]>,
+) {
+  const url = await redirectOf(() => action(form(fields)));
+  return new URL(url, "http://x").searchParams.get("notice");
 }
 
 const PASSWORD = "password-for-test";
@@ -314,7 +330,7 @@ describe("部署の付け替え", () => {
 });
 
 describe("部署なしの人・退職・パスワード", () => {
-  it("部署なしの人はログインすると全社の1日へ。退職するとログイン中でも入れなくなる", async () => {
+  it("部署なしの人はログインすると全体スケジュールへ。退職するとログイン中でも入れなくなる", async () => {
     await createUser(ADMIN, [], true);
     await loginAs(ADMIN, shopA.tenantId);
     expect(await errorOf(createMember, { name: `${P}事務`, email: NEW })).toBeNull();
@@ -364,5 +380,76 @@ describe("部署なしの人・退職・パスワード", () => {
     expect(await errorOf(deleteMember, { id: onlyA.id })).toBeNull();
     expect(await prisma.user.findUnique({ where: { email: NEW } })).toBeNull();
     expect(await prisma.employee.findUnique({ where: { id: onlyA.id } })).toBeNull();
+  });
+});
+
+describe("まだ整っていない人を消す", () => {
+  it("ログインを消す。自分・全社管理者・最後のオーナー・ほかの部署も担当するログイン（オーナーから）は消さない", async () => {
+    await createUser(ADMIN, [], true);
+    await createUser(OWNER_A, [{ tenantId: shopA.tenantId, role: "owner", staffId: null }]);
+    const other = await createUser(OTHER, [
+      { tenantId: shopA.tenantId, role: "staff", staffId: shopA.staffB.id },
+    ]);
+    const both = await createUser(NEW, [
+      { tenantId: shopA.tenantId, role: "staff", staffId: null },
+      { tenantId: shopB.tenantId, role: "staff", staffId: null },
+    ]);
+    const owner = await prisma.user.findUniqueOrThrow({ where: { email: OWNER_A } });
+    const admin = await prisma.user.findUniqueOrThrow({ where: { email: ADMIN } });
+
+    await loginAs(OWNER_A);
+    expect(await errorOf(deleteLooseUser, { userId: owner.id })).toContain("自分");
+    expect(await errorOf(deleteLooseUser, { userId: admin.id })).toContain("全社管理者");
+    expect(await errorOf(deleteLooseUser, { userId: both.id })).toContain("全社管理者が消します");
+
+    // 消したログインに付いていた予約担当は残る
+    expect(await noticeOf(deleteLooseUser, { userId: other.id })).toContain("テスト担当B");
+    expect(await prisma.user.findUnique({ where: { id: other.id } })).toBeNull();
+    expect(await prisma.membership.count({ where: { userId: other.id } })).toBe(0);
+    expect(await prisma.staff.findUnique({ where: { id: shopA.staffB.id } })).not.toBeNull();
+
+    await loginAs(ADMIN, shopA.tenantId);
+    expect(await errorOf(deleteLooseUser, { userId: owner.id })).toContain("オーナーがいなくなる");
+    expect(await errorOf(deleteLooseUser, { userId: both.id })).toBeNull();
+    expect(await prisma.user.findUnique({ where: { id: both.id } })).toBeNull();
+
+    // 名簿の人につながったログイン（メンバー）は、ここからは消せない
+    await errorOf(createMember, { name: `${P}メンバー`, email: NEW, tenantIds: shopA.tenantId });
+    const member = await prisma.user.findUniqueOrThrow({ where: { email: NEW } });
+    expect(await errorOf(deleteLooseUser, { userId: member.id })).toContain("見つかりません");
+  });
+
+  it("予約担当を消す。今日以降の予約があれば消さず、過去の予約だけなら在籍を外す。ほかの部署の分は消せない", async () => {
+    await createUser(OWNER_A, [{ tenantId: shopA.tenantId, role: "owner", staffId: null }]);
+    const [withPast, empty, inB] = await Promise.all([
+      prisma.staff.create({ data: { tenantId: shopA.tenantId, name: `${P}予約あり` } }),
+      prisma.staff.create({ data: { tenantId: shopA.tenantId, name: `${P}予約なし` } }),
+      prisma.staff.create({ data: { tenantId: shopB.tenantId, name: `${P}ほかの部署` } }),
+    ]);
+    const reservation = await prisma.reservation.create({
+      data: {
+        tenantId: shopA.tenantId,
+        staffId: withPast.id,
+        customerId: shopA.customer.id,
+        menuId: shopA.cut.id,
+        date: TEST_DATE,
+        startMinutes: 600,
+        endMinutes: 675,
+        menuNameSnapshot: "カット",
+        durationSnapshot: 60,
+        priceSnapshot: 4000,
+      },
+    });
+
+    await loginAs(OWNER_A);
+    expect(await errorOf(deleteLooseStaff, { staffId: inB.id })).toContain("見つかりません");
+    expect(await errorOf(deleteLooseStaff, { staffId: withPast.id })).toContain("今日以降の予約が1件");
+
+    await prisma.reservation.update({ where: { id: reservation.id }, data: { date: "2020-01-01" } });
+    expect(await noticeOf(deleteLooseStaff, { staffId: withPast.id })).toContain("在籍を外しました");
+    expect(await prisma.staff.findUnique({ where: { id: withPast.id } })).toMatchObject({ isActive: false });
+
+    expect(await errorOf(deleteLooseStaff, { staffId: empty.id })).toBeNull();
+    expect(await prisma.staff.findUnique({ where: { id: empty.id } })).toBeNull();
   });
 });

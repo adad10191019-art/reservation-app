@@ -67,7 +67,7 @@ export default async function MySchedulePage({
   // （どのメニューにも対応していない等）場合は列自体が無いこともある
   const myColumn = schedule.columns.find((c) => c.staffId === staffId) ?? null;
 
-  // この部署の予約・ブロック枠に、兼任先の部署の分・全社の1日で入れた予定・Googleカレンダーの予定を
+  // この部署の予約・ブロック枠に、兼任先の部署の分・全体スケジュールで入れた予定・Googleカレンダーの予定を
   // 合わせて、時刻順の1本のリストにまとめる
   const agenda: AgendaItem[] = [
     ...(myColumn?.reservations ?? []).map(
@@ -238,7 +238,7 @@ export default async function MySchedulePage({
                         {item.title}
                       </span>
                       <span className="block truncate text-xs text-neutral-600">
-                        {item.endMinutes - item.startMinutes}分・全社の1日で入れた予定
+                        {item.endMinutes - item.startMinutes}分・全体スケジュールで入れた予定
                       </span>
                     </span>
                   </Link>

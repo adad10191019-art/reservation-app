@@ -65,7 +65,7 @@ export async function login(formData: FormData) {
     return;
   }
 
-  // 担当部署の無い社員は「全社の1日」だけを使う。名簿で在籍を外された人は入れない
+  // 担当部署の無い社員は「全体スケジュール」だけを使う。名簿で在籍を外された人は入れない
   const member = resolveMemberSession(user);
   if (member) {
     await recordSuccess(email);

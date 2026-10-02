@@ -28,12 +28,12 @@ export default async function AccountPage({
   return (
     <main className="mx-auto w-full max-w-2xl p-4 sm:p-6">
       <AppHeader tenantName="アカウント情報" subtitle="ログイン情報の変更" session={session}>
-        {/* 社員（部署に属さない人）はカレンダーを使えないので、全社の1日へ戻す */}
+        {/* 社員（部署に属さない人）はカレンダーを使えないので、全体スケジュールへ戻す */}
         <Link
           href={session.role === "member" ? "/team" : "/calendar"}
           className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
         >
-          {session.role === "member" ? "全社の1日へ" : "カレンダーへ"}
+          {session.role === "member" ? "全体スケジュールへ" : "カレンダーへ"}
         </Link>
       </AppHeader>
 

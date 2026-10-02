@@ -4,7 +4,7 @@ import { SubmitButton } from "@/components/submit-button";
 import { requireOwner } from "@/lib/auth";
 import { linkStaffToEmployee } from "@/lib/employee-actions";
 import { managedTenantIds, memberRoleLabel } from "@/lib/member-access";
-import { createMember } from "@/lib/member-actions";
+import { createMember, deleteLooseStaff, deleteLooseUser } from "@/lib/member-actions";
 import { type MemberRow, loadMemberList } from "@/lib/member-list";
 import { prisma } from "@/lib/prisma";
 import { DeptChecks } from "./dept-checks";
@@ -154,7 +154,7 @@ function MemberList({
                 <div className="truncate text-xs text-neutral-500">
                   {depts.length > 0
                     ? depts.map((d) => `${d.tenantName}・${memberRoleLabel(d.role)}`).join(" ／ ")
-                    : "部署なし（全社の1日のみ）"}
+                    : "部署なし（全体スケジュールのみ）"}
                 </div>
               </div>
               <span aria-hidden className="text-neutral-400">
@@ -181,12 +181,13 @@ function Tag({ children, tone }: { children: React.ReactNode; tone?: "sky" | "am
 /**
  * 名簿とつながっていない古いデータ。メールを確かめて「メンバーにする」と、
  * 名簿の人・ログイン・部署の担当がそろった1人のメンバーになる。
+ * 間違えて作ったものは「消す」で消せる（最後のオーナー・今日以降の予約がある人は消さない）。
  */
 function LooseSection({
   looseUsers,
   looseStaffs,
 }: {
-  looseUsers: { email: string; name: string; tenantId: string; tenantName: string; role: string }[];
+  looseUsers: { userId: string; email: string; name: string; tenantId: string; tenantName: string; role: string }[];
   looseStaffs: { id: string; name: string; tenantId: string; tenantName: string }[];
 }) {
   return (
@@ -194,72 +195,87 @@ function LooseSection({
       <h2 className="mb-1 font-semibold">メンバーとしてまだ整っていない人</h2>
       <p className="mb-3 text-xs leading-relaxed text-neutral-600">
         この画面ができる前に、ログインだけ・予約を受ける人だけを作った人です。名前とメールを確かめて
-        「メンバーにする」を押すと、ほかのメンバーと同じ形になります（全社の1日にも並びます）。
+        「メンバーにする」を押すと、ほかのメンバーと同じ形になります（全体スケジュールにも並びます）。
+        間違えて作ったものは「消す」で消せます。
       </p>
       <div className="space-y-2">
         {looseUsers.map((u) => (
-          <form
-            key={`${u.email}-${u.tenantId}`}
-            action={createMember}
-            className="flex flex-wrap items-center gap-2 rounded-md border border-neutral-200 bg-white p-2"
-          >
-            <input type="hidden" name="tenantIds" value={u.tenantId} />
-            <input type="hidden" name={`role_${u.tenantId}`} value={u.role} />
-            <input type="hidden" name="email" value={u.email} />
-            <span className="w-full break-all text-xs text-neutral-600">
-              {u.email}（{u.tenantName}・{memberRoleLabel(u.role)}）
-            </span>
-            <input
-              type="text"
-              name="name"
-              required
-              defaultValue={u.name}
-              placeholder="名前"
-              aria-label={`${u.email} の名前`}
-              className="min-w-0 flex-1 rounded-md border border-neutral-300 px-2 py-1 text-base sm:text-sm"
-            />
-            <button
-              type="submit"
-              className="rounded-md border border-neutral-300 bg-white px-3 py-1 text-sm hover:bg-neutral-50"
-            >
-              メンバーにする
-            </button>
-          </form>
+          <div key={`${u.email}-${u.tenantId}`} className={LOOSE_ROW}>
+            <form action={createMember} className="contents">
+              <input type="hidden" name="tenantIds" value={u.tenantId} />
+              <input type="hidden" name={`role_${u.tenantId}`} value={u.role} />
+              <input type="hidden" name="email" value={u.email} />
+              <span className="w-full break-all text-xs text-neutral-600">
+                {u.email}（{u.tenantName}・{memberRoleLabel(u.role)}）
+              </span>
+              <input
+                type="text"
+                name="name"
+                required
+                defaultValue={u.name}
+                placeholder="名前"
+                aria-label={`${u.email} の名前`}
+                className="min-w-0 flex-1 rounded-md border border-neutral-300 px-2 py-1 text-base sm:text-sm"
+              />
+              <button type="submit" className={LOOSE_BUTTON}>
+                メンバーにする
+              </button>
+            </form>
+            <form action={deleteLooseUser} className="contents">
+              <input type="hidden" name="userId" value={u.userId} />
+              <SubmitButton
+                pendingText="消しています…"
+                confirmText={`ログイン ${u.email} を消します。よろしいですか？`}
+                className={LOOSE_DELETE}
+              >
+                消す
+              </SubmitButton>
+            </form>
+          </div>
         ))}
         {looseStaffs.map((s) => (
-          <form
-            key={s.id}
-            action={createMember}
-            className="flex flex-wrap items-center gap-2 rounded-md border border-neutral-200 bg-white p-2"
-          >
-            <input type="hidden" name="tenantIds" value={s.tenantId} />
-            <input type="hidden" name="name" value={s.name} />
-            <span className="w-full text-sm">
-              {s.name}
-              <span className="ml-1 text-xs text-neutral-500">（{s.tenantName}・ログインなし）</span>
-            </span>
-            <input
-              type="email"
-              name="email"
-              required
-              autoComplete="off"
-              placeholder="ログインに使うメール"
-              aria-label={`${s.name} のメールアドレス`}
-              className="min-w-0 flex-1 rounded-md border border-neutral-300 px-2 py-1 text-base sm:text-sm"
-            />
-            <input type="hidden" name={`role_${s.tenantId}`} value="staff" />
-            <button
-              type="submit"
-              className="rounded-md border border-neutral-300 bg-white px-3 py-1 text-sm hover:bg-neutral-50"
-            >
-              メンバーにする
-            </button>
-          </form>
+          <div key={s.id} className={LOOSE_ROW}>
+            <form action={createMember} className="contents">
+              <input type="hidden" name="tenantIds" value={s.tenantId} />
+              <input type="hidden" name="name" value={s.name} />
+              <span className="w-full text-sm">
+                {s.name}
+                <span className="ml-1 text-xs text-neutral-500">（{s.tenantName}・ログインなし）</span>
+              </span>
+              <input
+                type="email"
+                name="email"
+                required
+                autoComplete="off"
+                placeholder="ログインに使うメール"
+                aria-label={`${s.name} のメールアドレス`}
+                className="min-w-0 flex-1 rounded-md border border-neutral-300 px-2 py-1 text-base sm:text-sm"
+              />
+              <input type="hidden" name={`role_${s.tenantId}`} value="staff" />
+              <button type="submit" className={LOOSE_BUTTON}>
+                メンバーにする
+              </button>
+            </form>
+            <form action={deleteLooseStaff} className="contents">
+              <input type="hidden" name="staffId" value={s.id} />
+              <SubmitButton
+                pendingText="消しています…"
+                confirmText={`${s.tenantName}の予約担当「${s.name}」を消します。よろしいですか？（過去の予約があれば、消さずに在籍を外します）`}
+                className={LOOSE_DELETE}
+              >
+                消す
+              </SubmitButton>
+            </form>
+          </div>
         ))}
       </div>
     </section>
   );
 }
+
+const LOOSE_ROW = "flex flex-wrap items-center gap-2 rounded-md border border-neutral-200 bg-white p-2";
+const LOOSE_BUTTON = "rounded-md border border-neutral-300 bg-white px-3 py-1 text-sm hover:bg-neutral-50";
+const LOOSE_DELETE = "rounded-md border border-red-300 bg-white px-3 py-1 text-sm text-red-800 hover:bg-red-50";
 
 /** 名前が違う予約担当と名簿の人を、名前を変えずに結ぶ（全社管理者だけ。まれに使う） */
 async function ManualLink() {

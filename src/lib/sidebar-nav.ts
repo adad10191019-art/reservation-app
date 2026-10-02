@@ -1,9 +1,9 @@
 /**
  * 左のサイドバーに出す項目（DB も Cookie も使わない判断だけ。画面は components/app-sidebar.tsx）。
  *
- *   ・毎日使うもの：カレンダー・顧客一覧・自分の予定（予約を受ける人だけ）・全社の1日
+ *   ・毎日使うもの：カレンダー・顧客一覧・自分の予定（予約を受ける人だけ）・全体スケジュール
  *   ・設定：オーナーと全社管理者だけ（「部署」は全社管理者だけ）
- *   ・部署に属さない社員（member）は、全社の1日だけ
+ *   ・部署に属さない社員（member）は、全体スケジュールだけ
  * 通知設定・アカウント情報・ログアウトは、サイドバーの下にまとめて出す。
  */
 
@@ -27,7 +27,7 @@ export const SETTINGS_ITEMS: NavItem[] = [
 ];
 
 const TENANTS_ITEM: NavItem = { href: "/settings/tenants", label: "部署", match: ["/settings/tenants"] };
-const TEAM_ITEM: NavItem = { href: "/team", label: "全社の1日", match: ["/team"] };
+const TEAM_ITEM: NavItem = { href: "/team", label: "全体スケジュール", match: ["/team"] };
 
 export function buildNav(session: { role: string; staffId: string | null }): {
   main: NavItem[];

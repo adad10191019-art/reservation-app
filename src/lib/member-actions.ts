@@ -7,7 +7,7 @@
  *                              担当（Membership）を付ける。同じ名前の、まだ誰にもひも付いていない
  *                              在籍スタッフがいれば、新しく作らずにその人を使う
  *   ・チェックを外す         … その部署の在籍を外し、担当も外す。今日以降の予約が残っていれば外さない
- *   ・どの部署にも付けない   … 「全社の1日」だけを使う人
+ *   ・どの部署にも付けない   … 「全体スケジュール」だけを使う人
  * 全社管理者は全部署、オーナーは今の部署の分だけを触れる（member-access.ts）。
  * 最初のパスワードはメールアドレスと同じで、最初のログインで変えてもらう（initial-password.ts）。
  */
@@ -46,7 +46,7 @@ function done(path: string, notices: string[] = []): never {
   redirect(notice ? `${path}?done=1&notice=${encodeURIComponent(notice)}` : `${path}?done=1`);
 }
 
-/** メンバーを変えたら、予約まわり・全社の1日の画面も作り直させる */
+/** メンバーを変えたら、予約まわり・全体スケジュールの画面も作り直させる */
 function refreshAll() {
   revalidatePath("/calendar");
   revalidatePath("/booking");
@@ -678,6 +678,103 @@ export async function deleteMember(formData: FormData) {
 
   refreshAll();
   done(LIST, [`「${person.employee.name}」さんの登録を取り消しました。`]);
+}
+
+// ── メンバーとしてまだ整っていない人（名簿とつながっていない古いデータ）を消す ──
+
+/**
+ * 名簿の人につながっていないログインを消す（間違えて作ったときの後始末）。
+ * 担当（Membership）もいっしょに消える。付いていた予約担当は残す（同じ欄に「予約担当だけ」として出る）。
+ */
+export async function deleteLooseUser(formData: FormData) {
+  const actor = await requireOwner();
+  const userId = String(formData.get("userId") ?? "");
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      email: true,
+      isGroupAdmin: true,
+      employeeId: true,
+      memberships: {
+        select: { tenantId: true, role: true, staff: { select: { name: true, employeeId: true } } },
+      },
+    },
+  });
+  if (!user || user.employeeId || user.memberships.some((m) => m.staff?.employeeId)) {
+    fail(LIST, "そのログインは見つかりません（すでにメンバーになっているかもしれません）");
+  }
+  if (user.id === actor.userId) fail(LIST, "自分のログインは消せません");
+  if (user.isGroupAdmin) fail(LIST, "全社管理者のログインは消せません");
+  if (
+    actor.role !== "group_admin" &&
+    (user.memberships.length === 0 || user.memberships.some((m) => m.tenantId !== actor.tenantId))
+  ) {
+    fail(LIST, "ほかの部署も担当しているログインは、全社管理者が消します");
+  }
+
+  await runOrFail(LIST, () =>
+    prisma.$transaction(async (tx) => {
+      for (const m of user.memberships) {
+        if (m.role === "owner") await assertNotLastOwner(tx, m.tenantId, await tenantName(tx, m.tenantId));
+      }
+      await tx.user.delete({ where: { id: user.id } });
+    }),
+  );
+
+  const leftStaffs = user.memberships.flatMap((m) => (m.staff ? [m.staff.name] : []));
+  refreshAll();
+  done(LIST, [
+    `ログイン ${user.email} を消しました。`,
+    ...(leftStaffs.length > 0
+      ? [`予約担当「${leftStaffs.join("」「")}」は残しています。いらなければ、同じ欄から消してください。`]
+      : []),
+  ]);
+}
+
+/**
+ * 名簿の人にもログインにもつながっていない予約担当を消す。
+ * 今日以降の予約があれば消さない。過去の予約だけなら、記録を残すため在籍を外すだけにする。
+ */
+export async function deleteLooseStaff(formData: FormData) {
+  const actor = await requireOwner();
+  const staffId = String(formData.get("staffId") ?? "");
+
+  const staff = await prisma.staff.findUnique({
+    where: { id: staffId },
+    select: { id: true, name: true, tenantId: true, employeeId: true, isActive: true, membership: { select: { id: true } } },
+  });
+  if (!staff || staff.employeeId || staff.membership || !staff.isActive) {
+    fail(LIST, "その予約担当は見つかりません（すでにメンバーになっているかもしれません）");
+  }
+  if (actor.role !== "group_admin" && staff.tenantId !== actor.tenantId) {
+    fail(LIST, "その予約担当は見つかりません");
+  }
+
+  const [future, all] = await Promise.all([
+    prisma.reservation.count({
+      where: { staffId: staff.id, status: "booked", date: { gte: todayString() } },
+    }),
+    prisma.reservation.count({ where: { staffId: staff.id } }),
+  ]);
+  if (future > 0) {
+    fail(
+      LIST,
+      `「${staff.name}」さんには今日以降の予約が${future}件あります。先にカレンダーでほかのメンバーへ移すか、キャンセルしてから消してください`,
+    );
+  }
+
+  if (all > 0) {
+    await prisma.staff.update({ where: { id: staff.id }, data: { isActive: false } });
+    refreshAll();
+    done(LIST, [`「${staff.name}」さんには過去の予約があるため、消さずに在籍を外しました（予約の記録は残っています）。`]);
+  }
+
+  // 対応メニュー・勤務時間・ブロック枠などはスタッフの削除に連動して消える
+  await prisma.staff.delete({ where: { id: staff.id } });
+  refreshAll();
+  done(LIST, [`予約担当「${staff.name}」さんを消しました。`]);
 }
 
 /** パスワードを初期状態（メールアドレスと同じ）に戻す。本人は次のログインで変えることになる */

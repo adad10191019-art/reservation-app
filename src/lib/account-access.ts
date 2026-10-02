@@ -24,7 +24,7 @@ export type AccessUser = {
   }[];
 };
 
-/** 担当部署が1つも無く、全社管理者でもない人（「全社の1日」だけを使う社員） */
+/** 担当部署が1つも無く、全社管理者でもない人（「全体スケジュール」だけを使う社員） */
 export function isTeamOnly(user: AccessUser): boolean {
   return !user.isGroupAdmin && user.memberships.length === 0;
 }

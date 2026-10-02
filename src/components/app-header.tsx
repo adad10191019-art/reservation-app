@@ -74,7 +74,7 @@ export async function AppHeader({
   const mode = sidebarModeOf(store.get(SIDEBAR_PIN_COOKIE)?.value);
   const settingsPinned = store.get(SETTINGS_PIN_COOKIE)?.value === "1";
   const nav = buildNav(session);
-  const deptName = session.role === "member" ? "全社の1日" : tenantName;
+  const deptName = session.role === "member" ? "全体スケジュール" : tenantName;
 
   const sidebarBody = (
     <div className="flex flex-1 flex-col gap-4 px-3 pb-4">

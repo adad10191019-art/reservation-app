@@ -61,7 +61,7 @@ export function DeptChecks({
       </div>
       {!ownTenantOnly && (
         <p className="mt-1 text-xs text-neutral-500">
-          どこにもチェックしない人は、「全社の1日」だけを使う人になります。
+          どこにもチェックしない人は、「全体スケジュール」だけを使う人になります。
         </p>
       )}
       {others.length > 0 && (

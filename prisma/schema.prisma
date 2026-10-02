@@ -68,7 +68,7 @@ model Tenant {
 
 // ── ログインする人 ─────────────────────
 // 1人1アカウント。兼任の人も同じアカウントで、担当する部署（Membership）を切り替えて使う。
-// 担当部署が1つも無い人は「全社の1日」だけを使う社員（名簿の人に必ずひも付く）。
+// 担当部署が1つも無い人は「全体スケジュール」だけを使う社員（名簿の人に必ずひも付く）。
 model User {
   id                 String   @id @default(uuid())
   /// ログインID。システム全体で1つだけ（ログインはメールで探すため）
@@ -76,7 +76,7 @@ model User {
   passwordHash       String
   /// true なら全部署を横断できる全社管理者
   isGroupAdmin       Boolean  @default(false)
-  /// 名簿のどの人か。担当部署の無い社員は必須（「全社の1日」の自分の列を決めるため）
+  /// 名簿のどの人か。担当部署の無い社員は必須（「全体スケジュール」の自分の列を決めるため）
   employeeId         String?  @unique
   /// 発行したまま（初期パスワード＝メールアドレス）の間は true。最初のログインで変えてもらう
   mustChangePassword Boolean  @default(false)

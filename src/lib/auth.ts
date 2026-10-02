@@ -96,7 +96,7 @@ async function requireVerified(allowInitialPassword = false): Promise<AnySession
 
 /**
  * 部署の画面の入口。ログインしていなければログイン画面へ、
- * 社員ログイン（部署に属さない人）なら使える唯一の画面「全社の1日」へ送る。
+ * 社員ログイン（部署に属さない人）なら使える唯一の画面「全体スケジュール」へ送る。
  */
 export async function requireSession(): Promise<SessionData> {
   const session = await requireVerified();
@@ -104,7 +104,7 @@ export async function requireSession(): Promise<SessionData> {
   return session;
 }
 
-/** 「全社の1日」とアカウント情報の入口。社員ログインも通す */
+/** 「全体スケジュール」とアカウント情報の入口。社員ログインも通す */
 export async function requireTeamSession(): Promise<AnySession> {
   return requireVerified();
 }

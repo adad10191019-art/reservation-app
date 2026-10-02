@@ -219,7 +219,7 @@ export function DayCalendarGrid({
                 {col.otherBusy.map((b) => (
                   <div
                     key={`other-${b.start}-${b.end}`}
-                    title="兼任先の部署やご本人の予定があります（内容は全社の1日で確認できます）"
+                    title="兼任先の部署やご本人の予定があります（内容は全体スケジュールで確認できます）"
                     className="absolute inset-x-1 overflow-hidden rounded border border-dashed border-neutral-400 bg-neutral-200/70 px-1.5 py-1 text-xs leading-tight text-neutral-600"
                     style={{
                       top: top(b.start),

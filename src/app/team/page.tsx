@@ -54,7 +54,7 @@ export default async function TeamDayPage({
 
   return (
     <main className="mx-auto w-full max-w-7xl p-4 sm:p-6">
-      <AppHeader tenantName={tenant.name} subtitle="全社の1日" session={session}>
+      <AppHeader tenantName={tenant.name} subtitle="全体スケジュール" session={session}>
         {session.role !== "member" && (
           <Link
             href={`/calendar?date=${date}`}

@@ -59,7 +59,7 @@ describe("resolveDeptSession", () => {
 });
 
 describe("resolveMemberSession", () => {
-  it("担当部署が無く、名簿で在籍中の人だけ「全社の1日」を使える", () => {
+  it("担当部署が無く、名簿で在籍中の人だけ「全体スケジュール」を使える", () => {
     expect(resolveMemberSession(user({ employee: { name: "事務", isActive: true } }))).toMatchObject({
       role: "member",
       tenantId: null,

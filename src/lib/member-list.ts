@@ -143,6 +143,7 @@ export async function loadMemberList(actor: Actor) {
       .map((u) => {
         const m = u.memberships[0];
         return {
+          userId: u.id,
           email: u.email,
           name: u.memberships.find((x) => x.staff)?.staff?.name ?? "",
           tenantId: m.tenantId,
