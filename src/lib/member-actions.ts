@@ -126,6 +126,17 @@ function canSeePerson(actor: Actor, p: Person): boolean {
   );
 }
 
+/**
+ * その部署の予約担当に、この人とは別のアカウントが付いているとき（1人に2つのアカウントがある古いデータ）。
+ * どちらかが別人なので、結び付きを外してもらう。
+ */
+function otherAccountMessage(deptName: string, staffName: string, email: string): string {
+  return (
+    `${deptName}の「${staffName}」には、別のアカウント（${email}）が付いています。` +
+    `1人に2つのアカウントが結ばれています。全社管理者が一覧の一番下「部署での名前が違う人を手で結ぶ」で、この人ではない方を「（結ばない）」にしてください`
+  );
+}
+
 async function tenantName(tx: Tx, tenantId: string): Promise<string> {
   const t = await tx.tenant.findUnique({ where: { id: tenantId }, select: { name: true } });
   return t?.name ?? "";
@@ -149,14 +160,14 @@ async function addToTenant(
   let staff = await tx.staff.findFirst({
     where: { tenantId: p.tenantId, employeeId: p.employeeId },
     orderBy: { isActive: "desc" },
-    include: { membership: { select: { userId: true } } },
+    include: { membership: { select: { userId: true, user: { select: { email: true } } } } },
   });
 
   if (staff && !staff.isActive) {
     staff = await tx.staff.update({
       where: { id: staff.id },
       data: { isActive: true },
-      include: { membership: { select: { userId: true } } },
+      include: { membership: { select: { userId: true, user: { select: { email: true } } } } },
     });
   }
 
@@ -170,7 +181,7 @@ async function addToTenant(
       staff = await tx.staff.update({
         where: { id: same.id },
         data: { employeeId: p.employeeId },
-        include: { membership: { select: { userId: true } } },
+        include: { membership: { select: { userId: true, user: { select: { email: true } } } } },
       });
     }
   }
@@ -187,7 +198,7 @@ async function addToTenant(
         displayOrder: (last?.displayOrder ?? 0) + 1,
         employeeId: p.employeeId,
       },
-      include: { membership: { select: { userId: true } } },
+      include: { membership: { select: { userId: true, user: { select: { email: true } } } } },
     });
     const menus = await tx.menu.findMany({
       where: { tenantId: p.tenantId, isActive: true },
@@ -207,7 +218,7 @@ async function addToTenant(
 
   if (staff.membership && staff.membership.userId !== p.userId) {
     throw new MemberError(
-      `${deptName}の「${staff.name}」には、別のアカウントが付いています。全社管理者に相談してください`,
+      otherAccountMessage(deptName, staff.name, staff.membership.user.email),
     );
   }
 
@@ -309,7 +320,7 @@ async function updateInTenant(
   const deptName = await tenantName(tx, p.tenantId);
   const staff = await tx.staff.findFirst({
     where: { tenantId: p.tenantId, employeeId: p.employeeId, isActive: true },
-    include: { membership: { select: { userId: true } } },
+    include: { membership: { select: { userId: true, user: { select: { email: true } } } } },
   });
   let membership = await tx.membership.findUnique({
     where: { userId_tenantId: { userId: p.userId, tenantId: p.tenantId } },
@@ -319,7 +330,7 @@ async function updateInTenant(
     // 古いデータ：スタッフはいるが担当（ログイン）が付いていない。ここで付ける
     if (staff?.membership && staff.membership.userId !== p.userId) {
       throw new MemberError(
-        `${deptName}の「${staff.name}」には、別のアカウントが付いています。全社管理者に相談してください`,
+        otherAccountMessage(deptName, staff.name, staff.membership.user.email),
       );
     }
     membership = await tx.membership.create({

@@ -17,7 +17,8 @@ export type Actor = { role: string; tenantId: string; userId: string };
 export function memberRoleLabel(role: string | null): string {
   if (role === "owner") return "オーナー";
   if (role === "staff") return "一般";
-  return "ログインなし";
+  // その部署で予約は受けているが、担当（役割）がまだ付いていない古いデータ。1人の画面で保存すると付く
+  return "役割未設定";
 }
 
 /** 部署のチェックを触れる部署。全社管理者は全部署、オーナーは今の部署だけ */

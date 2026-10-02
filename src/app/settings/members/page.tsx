@@ -206,6 +206,9 @@ function LooseSection({
             <input type="hidden" name="tenantIds" value={u.tenantId} />
             <input type="hidden" name={`role_${u.tenantId}`} value={u.role} />
             <input type="hidden" name="email" value={u.email} />
+            <span className="w-full break-all text-xs text-neutral-600">
+              {u.email}（{u.tenantName}・{memberRoleLabel(u.role)}）
+            </span>
             <input
               type="text"
               name="name"
@@ -213,11 +216,8 @@ function LooseSection({
               defaultValue={u.name}
               placeholder="名前"
               aria-label={`${u.email} の名前`}
-              className="w-36 rounded-md border border-neutral-300 px-2 py-1 text-sm"
+              className="min-w-0 flex-1 rounded-md border border-neutral-300 px-2 py-1 text-base sm:text-sm"
             />
-            <span className="min-w-0 flex-1 truncate text-xs text-neutral-600">
-              {u.email}（{u.tenantName}・{memberRoleLabel(u.role)}、名簿になし）
-            </span>
             <button
               type="submit"
               className="rounded-md border border-neutral-300 bg-white px-3 py-1 text-sm hover:bg-neutral-50"
@@ -234,9 +234,9 @@ function LooseSection({
           >
             <input type="hidden" name="tenantIds" value={s.tenantId} />
             <input type="hidden" name="name" value={s.name} />
-            <span className="w-36 truncate text-sm">
+            <span className="w-full text-sm">
               {s.name}
-              <span className="ml-1 text-xs text-neutral-500">（{s.tenantName}）</span>
+              <span className="ml-1 text-xs text-neutral-500">（{s.tenantName}・ログインなし）</span>
             </span>
             <input
               type="email"
@@ -245,7 +245,7 @@ function LooseSection({
               autoComplete="off"
               placeholder="ログインに使うメール"
               aria-label={`${s.name} のメールアドレス`}
-              className="min-w-0 flex-1 rounded-md border border-neutral-300 px-2 py-1 text-sm"
+              className="min-w-0 flex-1 rounded-md border border-neutral-300 px-2 py-1 text-base sm:text-sm"
             />
             <input type="hidden" name={`role_${s.tenantId}`} value="staff" />
             <button

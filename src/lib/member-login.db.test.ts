@@ -1,10 +1,10 @@
 /**
  * 部署に属さない社員のログイン（担当部署の無いアカウント）を開発用 DB で確かめる。npm run test:db で流す。
  *
- *   ・名簿の画面からの発行・パスワードを戻す・取り消し（employee-actions.ts）
+ *   ・設定→メンバー で部署なしの人として登録・パスワードを戻す・登録の取り消し（member-actions.ts）
  *   ・最初のパスワードはメールアドレスと同じで、変えるまで変更の画面以外を開けない
  *   ・ログインすると「全社の1日」へ。部署の画面の入口（requireSession）は「全社の1日」へ回す
- *   ・名簿で在籍を外すと、ログイン中でも入れなくなる
+ *   ・退職にすると、ログイン中でも入れなくなる
  *
  * Cookie・画面移動・再描画は Next.js の外では動かないので差し替える。
  * Cookie は1つの入れ物で持ち回り、redirect は行き先を例外にして受け取る。
@@ -13,7 +13,6 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import { prisma } from "./prisma";
 import {
   type TestShop,
-  createTestEmployee,
   createTestShop,
   deleteLeftoverTestShops,
   deleteTestEmployees,
@@ -35,10 +34,10 @@ vi.mock("next/navigation", () => ({
     throw new Redirected(url);
   },
 }));
-// 名簿の操作は全社管理者のログインが前提。ここでは確認を省き、それ以外の入口は本物を使う
+// メンバーの操作は全社管理者のログインが前提。ここでは確認を省き、それ以外の入口は本物を使う
 vi.mock("./auth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./auth")>()),
-  requireGroupAdmin: async () => ({}),
+  requireOwner: async () => ({ role: "group_admin", tenantId: shop.tenantId, userId: "test-admin", name: "" }),
 }));
 
 class Redirected extends Error {
@@ -49,9 +48,7 @@ class Redirected extends Error {
 
 process.env.AUTH_SECRET ??= "test-secret-at-least-16-chars";
 
-const { issueMemberLogin, resetMemberPassword, revokeMemberLogin, deleteEmployee } = await import(
-  "./employee-actions"
-);
+const { createMember, deleteMember, resetMemberPassword, retireMember } = await import("./member-actions");
 const { login } = await import("./actions");
 const { setFirstPassword } = await import("./account-actions");
 const { FIRST_PASSWORD_PATH, requireSession, requireTeamSession } = await import("./auth");
@@ -102,10 +99,26 @@ afterAll(async () => {
   await deleteTestShop(shop.tenantId);
 });
 
-describe("ログインの発行", () => {
+const NAME = "[自動テスト] 事務 花子";
+
+/** 部署なしの人として登録し、名簿の行を返す */
+async function registerTeamOnly(email = EMAIL, name = NAME) {
+  expect(await errorOf(createMember, { name, email })).toBeNull();
+  const user = await prisma.user.findUniqueOrThrow({ where: { email }, include: { employee: true } });
+  return user.employee!;
+}
+
+/** 最初のパスワードの変更を済ませた状態にする */
+async function skipFirstPassword(email = EMAIL) {
+  await prisma.user.update({
+    where: { email },
+    data: { passwordHash: await hashPassword(PASSWORD), mustChangePassword: false },
+  });
+}
+
+describe("部署なしの人の登録", () => {
   it("最初はメールアドレスで入り、パスワードを変えるまでは変更の画面にしか行けない", async () => {
-    const e = await createTestEmployee("事務 花子");
-    expect(await errorOf(issueMemberLogin, { id: e.id, email: EMAIL })).toBeNull();
+    const e = await registerTeamOnly();
 
     // 初期パスワード＝メールアドレス
     expect(await redirectOf(() => login(form({ email: EMAIL, password: EMAIL })))).toBe(FIRST_PASSWORD_PATH);
@@ -130,16 +143,12 @@ describe("ログインの発行", () => {
     expect(await redirectOf(() => login(form({ email: EMAIL, password: PASSWORD })))).toBe("/team");
   });
 
-  it("在籍を外すと、ログイン中でも入れなくなり、ログインもできない", async () => {
-    const e = await createTestEmployee("退職予定");
-    await errorOf(issueMemberLogin, { id: e.id, email: EMAIL });
-    await prisma.user.update({
-      where: { email: EMAIL },
-      data: { passwordHash: await hashPassword(PASSWORD), mustChangePassword: false },
-    });
+  it("退職にすると、ログイン中でも入れなくなり、ログインもできない", async () => {
+    const e = await registerTeamOnly();
+    await skipFirstPassword();
     await redirectOf(() => login(form({ email: EMAIL, password: PASSWORD })));
 
-    await prisma.employee.update({ where: { id: e.id }, data: { isActive: false } });
+    expect(await errorOf(retireMember, { id: e.id })).toBeNull();
     expect(await redirectOf(() => requireTeamSession())).toBe("/login");
 
     jar.clear();
@@ -147,41 +156,25 @@ describe("ログインの発行", () => {
     expect(url).toContain("/login?error=");
   });
 
-  it("ほかのアカウントと同じメール・部署のアカウントを持つ人には発行しない", async () => {
-    const e = await createTestEmployee("兼任の人");
-    await prisma.user.create({
-      data: {
-        email: DEPT_EMAIL,
-        passwordHash: await hashPassword(PASSWORD),
-        memberships: { create: { tenantId: shop.tenantId, role: "staff", staffId: shop.staffA.id } },
-      },
-    });
-
-    expect(await errorOf(issueMemberLogin, { id: e.id, email: DEPT_EMAIL })).toContain("使われています");
-    expect(await errorOf(issueMemberLogin, { id: e.id, email: "not-an-email" })).toContain("形式");
-
-    await prisma.staff.update({ where: { id: shop.staffA.id }, data: { employeeId: e.id } });
-    expect(await errorOf(issueMemberLogin, { id: e.id, email: EMAIL })).toContain("発行は不要");
-    await prisma.staff.update({ where: { id: shop.staffA.id }, data: { employeeId: null } });
+  it("形式の違うメール・同じ名前の別人は登録しない", async () => {
+    expect(await errorOf(createMember, { name: NAME, email: "not-an-email" })).toContain("形式");
+    await registerTeamOnly(DEPT_EMAIL);
+    expect(await errorOf(createMember, { name: NAME, email: EMAIL })).toContain("同じ名前");
   });
 });
 
-describe("パスワードを戻す・取り消し", () => {
-  it("戻すとメールアドレスで入れて変更の画面へ。取り消すと入れない。ログインがある間は名簿の行を消せない", async () => {
-    const e = await createTestEmployee("事務 次郎");
-    await errorOf(issueMemberLogin, { id: e.id, email: EMAIL });
-    await prisma.user.update({
-      where: { email: EMAIL },
-      data: { passwordHash: await hashPassword(PASSWORD), mustChangePassword: false },
-    });
-    expect(await errorOf(deleteEmployee, { id: e.id })).toContain("ログインがある");
+describe("パスワードを戻す・登録の取り消し", () => {
+  it("戻すとメールアドレスで入れて変更の画面へ。取り消すとログインごと消えて入れない", async () => {
+    const e = await registerTeamOnly();
+    await skipFirstPassword();
 
     expect(await errorOf(resetMemberPassword, { id: e.id })).toBeNull();
     expect(await redirectOf(() => login(form({ email: EMAIL, password: PASSWORD })))).toContain("error=");
     expect(await redirectOf(() => login(form({ email: EMAIL, password: EMAIL })))).toBe(FIRST_PASSWORD_PATH);
 
-    expect(await errorOf(revokeMemberLogin, { id: e.id })).toBeNull();
+    expect(await errorOf(deleteMember, { id: e.id })).toBeNull();
     expect(await redirectOf(() => requireTeamSession())).toBe("/login");
-    expect(await errorOf(deleteEmployee, { id: e.id })).toBeNull();
+    expect(await prisma.user.findUnique({ where: { email: EMAIL } })).toBeNull();
+    expect(await prisma.employee.findUnique({ where: { id: e.id } })).toBeNull();
   });
 });
