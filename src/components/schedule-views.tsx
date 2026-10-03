@@ -18,6 +18,7 @@ import { isAllDay, layoutLanes, timeRangeOf } from "@/lib/team-view";
 import { TapToAddLayer } from "./tap-to-add-layer";
 
 export { AddEntryPanel } from "./add-entry-panel";
+import { dayTint, holidayName } from "@/lib/jp-holidays";
 import { dayOfWeekOf, toHm } from "@/lib/time";
 
 export type ScheduleEntry = {
@@ -158,11 +159,23 @@ function NavLink({ href, label, highlight }: { href: string; label: string; high
 
 const PX_PER_MIN = 1.1;
 
+/** 土日祝の薄い色（週・月の表で共通） */
+const TINT_BG = { sat: "bg-sky-50/70", sun: "bg-red-50/70" } as const;
+const TINT_TEXT = { sat: "text-sky-700", sun: "text-red-600" } as const;
+
+function columnBackground(col: TimelineColumn): string {
+  if (col.highlight) return "bg-emerald-50/40";
+  const tint = col.date ? dayTint(col.date) : null;
+  return tint ? TINT_BG[tint] : "";
+}
+
 export type TimelineColumn = {
   key: string;
   header: ReactNode;
   /** 自分の列・今日の列を薄く色付けする */
   highlight?: boolean;
+  /** 1日1列の表（週表示）なら、その日付。土曜は薄い青、日曜・祝日は薄い赤にする */
+  date?: string;
   entries: ScheduleEntry[];
   /** 空いているところを押して予定を足せる列なら、その日付（と誰の予定か） */
   tapToAdd?: { date: string; employeeId?: string };
@@ -204,7 +217,7 @@ export function TimelineGrid({
         {columns.map((col) => (
           <div
             key={col.key}
-            className={`border-r border-neutral-100 ${columnClassName} ${col.highlight ? "bg-emerald-50/40" : ""}`}
+            className={`border-r border-neutral-100 ${columnClassName} ${columnBackground(col)}`}
           >
             <div className="h-14 border-b border-neutral-200 px-1.5 py-1.5">{col.header}</div>
             <div className="relative" style={{ height: totalHeight }}>
@@ -270,12 +283,19 @@ const MAX_PER_DAY = 3;
 export function DayColumnHeader({ date, href, today }: { date: string; href: string; today: string }) {
   const [, m, d] = date.split("-").map(Number);
   const dow = dayOfWeekOf(date);
+  const tint = dayTint(date);
+  const holiday = holidayName(date);
   return (
     <Link href={href} className="block rounded px-0.5 hover:bg-neutral-100">
-      <div className={`text-sm font-medium tabular-nums ${dow === 0 ? "text-red-600" : dow === 6 ? "text-sky-700" : ""}`}>
+      <div className={`text-sm font-medium tabular-nums ${tint ? TINT_TEXT[tint] : ""}`}>
         {m}/{d}（{WEEKDAY_HEADERS[(dow + 6) % 7]}）
       </div>
-      <div className="text-[11px] text-neutral-500">{date === today ? "今日" : "　"}</div>
+      <div
+        className={`truncate text-[11px] ${holiday ? "text-red-600" : "text-neutral-500"}`}
+        title={holiday ?? undefined}
+      >
+        {[date === today ? "今日" : null, holiday].filter(Boolean).join("・") || "　"}
+      </div>
     </Link>
   );
 }
@@ -311,23 +331,38 @@ export function MonthGrid({
             );
             const inMonth = date.slice(0, 7) === month;
             const day = Number(date.slice(8));
+            const tint = dayTint(date);
+            const holiday = holidayName(date);
             return (
               <Link
                 key={date}
                 href={dayHref(date)}
                 aria-label={`${Number(date.slice(5, 7))}月${day}日（${entries.length}件）を1日表示で見る`}
                 className={`block min-h-20 min-w-0 border-r border-neutral-100 p-0.5 last:border-r-0 hover:bg-neutral-50 sm:min-h-24 sm:p-1 ${
-                  inMonth ? "" : "bg-neutral-50/70 text-neutral-400"
+                  inMonth ? (tint ? TINT_BG[tint] : "") : "bg-neutral-50/70 text-neutral-400"
                 }`}
               >
-                <div className="mb-0.5 flex justify-center sm:justify-start">
+                <div className="mb-0.5 flex min-w-0 items-center justify-center gap-1 sm:justify-start">
                   <span
-                    className={`flex size-5 items-center justify-center rounded-full text-xs tabular-nums ${
-                      date === today ? "bg-neutral-800 font-semibold text-white" : ""
+                    className={`flex size-5 shrink-0 items-center justify-center rounded-full text-xs tabular-nums ${
+                      date === today
+                        ? "bg-neutral-800 font-semibold text-white"
+                        : tint && inMonth
+                          ? TINT_TEXT[tint]
+                          : ""
                     }`}
                   >
                     {day}
                   </span>
+                  {/* 祝日の名前。スマホではマスが狭いので、少し広い画面からだけ出す */}
+                  {holiday && (
+                    <span
+                      className={`hidden truncate text-[10px] sm:inline ${inMonth ? "text-red-600" : ""}`}
+                      title={holiday}
+                    >
+                      {holiday}
+                    </span>
+                  )}
                 </div>
                 <div className="space-y-0.5">
                   {entries.slice(0, MAX_PER_DAY).map((e) => (

@@ -93,6 +93,7 @@ export default async function MySchedulePage({
               columns={dates.map((d) => ({
                 key: d,
                 highlight: d === today,
+                date: d,
                 header: <DayColumnHeader date={d} today={today} href={scheduleHref(PATH, "day", d)} />,
                 entries: entriesOf(d),
                 tapToAdd: { date: d },
