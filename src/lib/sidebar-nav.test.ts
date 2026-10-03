@@ -5,28 +5,34 @@ const labels = (items: { label: string }[] | null) => items?.map((i) => i.label)
 
 describe("サイドバーの項目", () => {
   it("全社管理者は設定に「部署」まで出る", () => {
-    const nav = buildNav({ role: "group_admin", staffId: null });
+    const nav = buildNav({ role: "group_admin", staffId: null, tenantId: "t1" });
     expect(labels(nav.main)).toEqual(["カレンダー", "顧客一覧", "全体スケジュール"]);
     expect(labels(nav.settings)?.at(-1)).toBe("部署");
     expect(labels(nav.settings)).toContain("メンバー");
   });
 
   it("オーナーは設定が出るが「部署」は出ない。予約を受ける人には自分の予定が出る", () => {
-    const nav = buildNav({ role: "owner", staffId: "s1" });
+    const nav = buildNav({ role: "owner", staffId: "s1", tenantId: "t1" });
     expect(labels(nav.main)).toEqual(["カレンダー", "顧客一覧", "自分の予定", "全体スケジュール"]);
     expect(labels(nav.settings)).not.toContain("部署");
   });
 
   it("一般は設定が出ず、部署なしの社員は全体スケジュールだけ", () => {
-    expect(buildNav({ role: "staff", staffId: "s1" }).settings).toBeNull();
-    const member = buildNav({ role: "member", staffId: null });
+    expect(buildNav({ role: "staff", staffId: "s1", tenantId: "t1" }).settings).toBeNull();
+    const member = buildNav({ role: "member", staffId: null, tenantId: null });
     expect(labels(member.main)).toEqual(["全体スケジュール"]);
     expect(member.settings).toBeNull();
+  });
+
+  it("部署を選んでいない全社管理者は、全体スケジュールだけ", () => {
+    const nav = buildNav({ role: "group_admin", staffId: null, tenantId: null });
+    expect(labels(nav.main)).toEqual(["全体スケジュール"]);
+    expect(nav.settings).toBeNull();
   });
 });
 
 describe("今いる画面", () => {
-  const calendar = buildNav({ role: "owner", staffId: null }).main[0];
+  const calendar = buildNav({ role: "owner", staffId: null, tenantId: "t1" }).main[0];
 
   it("その下の画面と、予約の登録・詳細もカレンダーの中とみなす", () => {
     expect(isActive("/calendar", calendar)).toBe(true);

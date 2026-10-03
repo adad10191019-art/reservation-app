@@ -158,24 +158,36 @@ export function SidebarPinButton({ pinned, className }: { pinned: boolean; class
   );
 }
 
-/** 部署の切り替え。選んだらすぐ切り替える */
+/**
+ * 部署の切り替え。選んだらすぐ切り替える。
+ * 全社管理者は「部署を選ばない」も選べる（全体スケジュールだけの状態。選んでいる間は色を付けない）
+ */
 export function TenantSelect({
   tenants,
   currentId,
+  allowNone,
 }: {
   tenants: { id: string; name: string }[];
   currentId: string | null;
+  allowNone: boolean;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   return (
     <form ref={formRef} action={switchTenant}>
       <select
+        // 切り替えたあとの描き直しで、選んでいる部署を合わせ直す
+        key={currentId ?? ""}
         name="tenantId"
-        defaultValue={currentId ?? undefined}
+        defaultValue={currentId ?? ""}
         aria-label="部署を切り替える"
         onChange={() => formRef.current?.requestSubmit()}
-        className="w-full rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-sm text-amber-900"
+        className={`w-full rounded-md border px-2 py-1.5 text-sm ${
+          currentId
+            ? "border-amber-300 bg-amber-50 text-amber-900"
+            : "border-neutral-300 bg-white text-neutral-600"
+        }`}
       >
+        {allowNone && <option value="">部署を選ばない（全体）</option>}
         {tenants.map((t) => (
           <option key={t.id} value={t.id}>
             {t.name}

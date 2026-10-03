@@ -130,6 +130,25 @@ describe("社員（部署に属さない人）のセッション", () => {
   });
 });
 
+describe("部署を選んでいない全社管理者のセッション", () => {
+  const company = buildSession({
+    userId: "u1",
+    tenantId: null,
+    role: "group_admin",
+    staffId: null,
+    name: "管理者",
+  });
+
+  it("署名して戻すと元に戻る", () => {
+    expect(decodeSession(encodeSession(company, SECRET), SECRET)).toEqual(company);
+  });
+
+  it("スタッフ付きの中身は通さない", () => {
+    const withStaff = { ...company, staffId: "s1" } as unknown as typeof company;
+    expect(decodeSession(encodeSession(withStaff, SECRET), SECRET)).toBeNull();
+  });
+});
+
 describe("お客様のセッション", () => {
   const customer = buildCustomerSession({ customerId: "c1", tenantId: "t1", name: "山田" });
 

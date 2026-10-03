@@ -11,7 +11,7 @@ export default async function LoginPage({
 
   // すでにログインしていれば素通しする
   const session = await getVerifiedAnySession();
-  if (session) redirect(session.role === "member" ? "/team" : "/calendar");
+  if (session) redirect(session.tenantId === null ? "/team" : "/calendar");
 
   return (
     <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center p-6">

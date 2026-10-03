@@ -5,7 +5,12 @@
  */
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { type AccessUser, resolveDeptSession, resolveMemberSession } from "./account-access";
+import {
+  type AccessUser,
+  resolveCompanySession,
+  resolveDeptSession,
+  resolveMemberSession,
+} from "./account-access";
 import { prisma } from "./prisma";
 import {
   type AnySession,
@@ -66,6 +71,12 @@ async function verify(): Promise<{ session: AnySession; mustChangePassword: bool
     return member ? { session: { ...session, ...member }, mustChangePassword: user.mustChangePassword } : null;
   }
 
+  if (session.tenantId === null) {
+    // 部署を選んでいない全社管理者。全社管理者でなくなっていれば入れない
+    const company = resolveCompanySession(user);
+    return company ? { session: { ...session, ...company }, mustChangePassword: user.mustChangePassword } : null;
+  }
+
   const tenantExists = user.isGroupAdmin
     ? Boolean(await prisma.tenant.findUnique({ where: { id: session.tenantId }, select: { id: true } }))
     : true;
@@ -77,10 +88,10 @@ export async function getVerifiedAnySession(): Promise<AnySession | null> {
   return (await verify())?.session ?? null;
 }
 
-/** 部署の画面を使う人（オーナー・スタッフ・全社管理者）のログイン。社員ログインは null */
+/** 部署の画面を使う人（オーナー・スタッフ・全社管理者）のログイン。部署を選んでいなければ null */
 export async function getVerifiedSession(): Promise<SessionData | null> {
   const session = await getVerifiedAnySession();
-  return session && session.role !== "member" ? session : null;
+  return session && session.tenantId !== null ? session : null;
 }
 
 /**
@@ -96,11 +107,11 @@ async function requireVerified(allowInitialPassword = false): Promise<AnySession
 
 /**
  * 部署の画面の入口。ログインしていなければログイン画面へ、
- * 社員ログイン（部署に属さない人）なら使える唯一の画面「全体スケジュール」へ送る。
+ * 部署を選んでいない（社員ログイン・部署を選ぶ前の全社管理者）なら「全体スケジュール」へ送る。
  */
 export async function requireSession(): Promise<SessionData> {
   const session = await requireVerified();
-  if (session.role === "member") redirect("/team");
+  if (session.tenantId === null) redirect("/team");
   return session;
 }
 
@@ -156,6 +167,18 @@ export async function startDeptSession(user: AccessUser, tenantId: string): Prom
   if (!dept) return false;
   await startSession(buildSession(dept));
   await prisma.user.update({ where: { id: user.id }, data: { lastTenantId: tenantId } });
+  return true;
+}
+
+/**
+ * 全社管理者を「部署を選んでいない」ログイン状態にする。全社管理者でなければ何もせず false。
+ * 次のログインも部署を選ばずに始まるので、前回の部署は覚えておかない。
+ */
+export async function startCompanySession(user: AccessUser): Promise<boolean> {
+  const company = resolveCompanySession(user);
+  if (!company) return false;
+  await startSession(buildSession(company));
+  await prisma.user.update({ where: { id: user.id }, data: { lastTenantId: null } });
   return true;
 }
 

@@ -239,6 +239,39 @@ describe("オーナーの登録", () => {
 
     await prisma.staff.update({ where: { id: shopA.staffB.id }, data: { name: "テスト担当B", employeeId: null } });
   });
+
+  it("まだ整っていない人（担当と予約担当だけあるログイン）をメンバーにすると、その予約担当も同じ人に結ぶ", async () => {
+    await createUser(ADMIN, [], true);
+    await createUser(NEW, [{ tenantId: shopA.tenantId, role: "staff", staffId: shopA.staffB.id }]);
+    await loginAs(ADMIN, shopA.tenantId);
+
+    // 画面の「メンバーにする」と同じ欄
+    expect(
+      await errorOf(createMember, {
+        name: `${P}整える人`,
+        email: NEW,
+        tenantIds: shopA.tenantId,
+        [`role_${shopA.tenantId}`]: "staff",
+      }),
+    ).toBeNull();
+    const { employee, staffs } = await personOf(NEW);
+    expect(staffs.map((s) => s.id)).toEqual([shopA.staffB.id]);
+
+    // ずれたままの古いデータも、1人の画面で保存すると結ばれる
+    await prisma.staff.update({ where: { id: shopA.staffB.id }, data: { employeeId: null } });
+    expect(
+      await errorOf(saveMember, {
+        id: employee.id,
+        name: employee.name,
+        email: NEW,
+        tenantIds: shopA.tenantId,
+        [`role_${shopA.tenantId}`]: "staff",
+      }),
+    ).toBeNull();
+    expect((await personOf(NEW)).staffs.map((s) => s.id)).toEqual([shopA.staffB.id]);
+
+    await prisma.staff.update({ where: { id: shopA.staffB.id }, data: { employeeId: null } });
+  });
 });
 
 describe("部署の付け替え", () => {

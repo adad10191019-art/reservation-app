@@ -7,7 +7,7 @@
  *
  * DB も Cookie も触らない純粋な処理なので、そのままテストできる。
  */
-import type { MemberSessionData, Role, SessionData } from "./session";
+import type { CompanySessionData, MemberSessionData, Role, SessionData } from "./session";
 
 export type AccessUser = {
   id: string;
@@ -63,6 +63,18 @@ export function resolveMemberSession(user: AccessUser): Omit<MemberSessionData, 
   if (!isTeamOnly(user)) return null;
   if (!user.employee?.isActive) return null;
   return { userId: user.id, tenantId: null, role: "member", staffId: null, name: user.employee.name };
+}
+
+/** 全社管理者が部署を選んでいないときのログイン状態の中身。全社管理者でなければ null */
+export function resolveCompanySession(user: AccessUser): Omit<CompanySessionData, "exp"> | null {
+  if (!user.isGroupAdmin) return null;
+  return {
+    userId: user.id,
+    tenantId: null,
+    role: "group_admin",
+    staffId: null,
+    name: user.employee?.name ?? user.email,
+  };
 }
 
 /**

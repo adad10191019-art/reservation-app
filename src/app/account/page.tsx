@@ -46,10 +46,10 @@ export default async function AccountPage({
       <AppHeader tenantName="アカウント情報" subtitle="ログイン情報の変更" session={session}>
         {/* 社員（部署に属さない人）はカレンダーを使えないので、全体スケジュールへ戻す */}
         <Link
-          href={session.role === "member" ? "/team" : "/calendar"}
+          href={session.tenantId === null ? "/team" : "/calendar"}
           className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
         >
-          {session.role === "member" ? "全体スケジュールへ" : "カレンダーへ"}
+          {session.tenantId === null ? "全体スケジュールへ" : "カレンダーへ"}
         </Link>
       </AppHeader>
 

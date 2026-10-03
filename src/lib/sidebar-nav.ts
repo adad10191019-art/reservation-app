@@ -3,7 +3,7 @@
  *
  *   ・毎日使うもの：カレンダー・顧客一覧・自分の予定（予約を受ける人だけ）・全体スケジュール
  *   ・設定：オーナーと全社管理者だけ（「部署」は全社管理者だけ）
- *   ・部署に属さない社員（member）は、全体スケジュールだけ
+ *   ・部署に属さない社員（member）と、部署を選んでいない全社管理者は、全体スケジュールだけ
  * 通知設定・アカウント情報・ログアウトは、サイドバーの下にまとめて出す。
  */
 
@@ -29,11 +29,12 @@ export const SETTINGS_ITEMS: NavItem[] = [
 const TENANTS_ITEM: NavItem = { href: "/settings/tenants", label: "部署", match: ["/settings/tenants"] };
 const TEAM_ITEM: NavItem = { href: "/team", label: "全体スケジュール", match: ["/team"] };
 
-export function buildNav(session: { role: string; staffId: string | null }): {
+export function buildNav(session: { role: string; staffId: string | null; tenantId: string | null }): {
   main: NavItem[];
   settings: NavItem[] | null;
 } {
-  if (session.role === "member") return { main: [TEAM_ITEM], settings: null };
+  // 部署を選んでいない（社員・部署を選ぶ前の全社管理者）なら、部署の画面は出さない
+  if (session.tenantId === null) return { main: [TEAM_ITEM], settings: null };
 
   const main: NavItem[] = [
     // 予約の登録・詳細もカレンダーから入る画面なので、カレンダーの中として扱う

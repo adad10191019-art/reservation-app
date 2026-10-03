@@ -3,6 +3,7 @@ import {
   type AccessUser,
   canResetPassword,
   pickLoginTenant,
+  resolveCompanySession,
   resolveDeptSession,
   resolveMemberSession,
 } from "./account-access";
@@ -69,6 +70,17 @@ describe("resolveMemberSession", () => {
     expect(resolveMemberSession(user())).toBeNull();
     expect(resolveMemberSession(user({ memberships: [iroha], employee: { name: "竹内", isActive: true } }))).toBeNull();
     expect(resolveMemberSession(user({ isGroupAdmin: true, employee: { name: "社長", isActive: true } }))).toBeNull();
+  });
+});
+
+describe("resolveCompanySession", () => {
+  it("全社管理者だけ、部署を選ばない状態になれる", () => {
+    expect(resolveCompanySession(user({ isGroupAdmin: true }))).toMatchObject({
+      role: "group_admin",
+      tenantId: null,
+      staffId: null,
+    });
+    expect(resolveCompanySession(user({ memberships: [iroha] }))).toBeNull();
   });
 });
 

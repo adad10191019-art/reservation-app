@@ -98,7 +98,7 @@ export default async function TeamPage({
   return (
     <main className="mx-auto w-full max-w-7xl p-4 sm:p-6">
       <AppHeader tenantName={tenant.name} subtitle="全体スケジュール" session={session}>
-        {session.role !== "member" && (
+        {session.tenantId !== null && (
           <Link
             href={`/calendar?date=${date}`}
             className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
@@ -250,6 +250,7 @@ export default async function TeamPage({
               columns={dates.map((d) => ({
                 key: d,
                 highlight: d === today,
+                date: d,
                 header: <DayColumnHeader date={d} today={today} href={scheduleHref(PATH, "day", d)} />,
                 entries: personEntries(d),
                 tapToAdd: canTapAdd(person) ? { date: d, employeeId: person ?? undefined } : undefined,

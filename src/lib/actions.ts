@@ -10,6 +10,8 @@ import {
   endSession,
   loadAccessUser,
   requireSession,
+  requireTeamSession,
+  startCompanySession,
   startDeptSession,
   startSession,
 } from "./auth";
@@ -73,10 +75,13 @@ export async function login(formData: FormData) {
     redirect(user.mustChangePassword ? FIRST_PASSWORD_PATH : "/team");
   }
 
-  const tenants = user.isGroupAdmin
-    ? await prisma.tenant.findMany({ orderBy: { createdAt: "asc" }, select: { id: true } })
-    : [];
-  const tenantId = pickLoginTenant(user, tenants.map((t) => t.id));
+  // 全社管理者は部署を選ばずに始め、全体スケジュールに着地させる（部署はサイドバーで選ぶ）
+  if (await startCompanySession(user)) {
+    await recordSuccess(email);
+    redirect(user.mustChangePassword ? FIRST_PASSWORD_PATH : "/team");
+  }
+
+  const tenantId = pickLoginTenant(user, []);
   if (!tenantId || !(await startDeptSession(user, tenantId))) {
     await recordFailure(email);
     fail();
@@ -99,16 +104,27 @@ export async function logout() {
   redirect("/login");
 }
 
-/** 今操作対象にしている部署を切り替える（全社管理者は全部署、兼任の人は担当部署の中で） */
+/**
+ * 今操作対象にしている部署を切り替える（全社管理者は全部署、兼任の人は担当部署の中で）。
+ * 全社管理者は空（「部署を選ばない」）を選ぶと、部署を選んでいない状態に戻り全体スケジュールへ。
+ */
 export async function switchTenant(formData: FormData) {
-  const session = await requireSession();
+  const session = await requireTeamSession();
+  if (session.role === "member") redirect("/team");
   const tenantId = String(formData.get("tenantId") ?? "");
+  const back = session.tenantId === null ? "/team" : "/calendar";
+  const cannot = (): never =>
+    redirect(`${back}?error=${encodeURIComponent("その部署には切り替えられません")}`);
 
   const user = await loadAccessUser({ id: session.userId });
-  if (!user || !(await startDeptSession(user, tenantId))) {
-    redirect(`/calendar?error=${encodeURIComponent("その部署には切り替えられません")}`);
+  if (!user) return cannot();
+
+  if (!tenantId) {
+    if (!(await startCompanySession(user))) cannot();
+    redirect("/team");
   }
 
+  if (!(await startDeptSession(user, tenantId))) cannot();
   redirect("/calendar");
 }
 

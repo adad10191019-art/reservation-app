@@ -407,6 +407,26 @@ async function findOrCreateEmployee(tx: Tx, name: string) {
   return { ...created, reused: false };
 }
 
+/**
+ * ログインを名簿の人に結んだとき、そのログインがすでに担当している部署の予約担当（スタッフ）も同じ人に結ぶ。
+ * 結ばないと、その部署は「担当している」のに名簿の人の部署として数えられず、
+ * 全体スケジュールに部署名・予約が出ない（「まだ整っていない人」を「メンバーにする」とき）。
+ * その部署にこの人のスタッフがすでにいれば、そちらを残して触らない（1部署に同じ人は1人まで）。
+ */
+async function linkMembershipStaffs(
+  tx: Tx,
+  employeeId: string,
+  memberships: { tenantId: string; staffId: string | null }[],
+) {
+  const already = await tx.staff.findMany({ where: { employeeId }, select: { tenantId: true } });
+  const taken = new Set(already.map((s) => s.tenantId));
+  const staffIds = memberships
+    .filter((m) => m.staffId && !taken.has(m.tenantId))
+    .map((m) => m.staffId!);
+  if (staffIds.length === 0) return;
+  await tx.staff.updateMany({ where: { id: { in: staffIds }, employeeId: null }, data: { employeeId } });
+}
+
 // ── 画面から呼ぶ処理 ────────────────────────
 
 /**
@@ -434,7 +454,10 @@ export async function createMember(formData: FormData) {
 
   const employeeId = await runOrFail(LIST, () =>
     prisma.$transaction(async (tx) => {
-      const existing = await tx.user.findUnique({ where: { email }, include: { employee: true } });
+      const existing = await tx.user.findUnique({
+        where: { email },
+        include: { employee: true, memberships: { select: { tenantId: true, staffId: true } } },
+      });
       let employee: { id: string; name: string; isActive: boolean };
       let userId: string;
       let hadEmployee = false;
@@ -447,6 +470,7 @@ export async function createMember(formData: FormData) {
         } else {
           employee = await findOrCreateEmployee(tx, name);
           await tx.user.update({ where: { id: existing.id }, data: { employeeId: employee.id } });
+          await linkMembershipStaffs(tx, employee.id, existing.memberships);
         }
         if (!employee.isActive) {
           await tx.employee.update({ where: { id: employee.id }, data: { isActive: true } });
@@ -572,6 +596,8 @@ export async function saveMember(formData: FormData) {
         // 古いデータ：ログインが名簿の人にひも付いていなければ、ここで付ける
         await tx.user.update({ where: { id: person.user.id }, data: { employeeId: id } });
       }
+      // 担当している部署の予約担当が、まだこの人に結ばれていなければ結ぶ（古いデータの直し）
+      if (person.user) await linkMembershipStaffs(tx, id, person.user.memberships);
 
       for (const c of changes) {
         if (c.kind === "add") {

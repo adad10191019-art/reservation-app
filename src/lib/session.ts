@@ -43,8 +43,24 @@ export type MemberSessionData = {
   exp: number;
 };
 
-/** どちらかのログイン状態 */
-export type AnySession = SessionData | MemberSessionData;
+/**
+ * 全社管理者が部署を選んでいないときのログイン状態（ログイン直後はこれ）。
+ * 社員と同じく「全体スケジュール」とアカウント情報だけを使い、部署の画面は部署を選んでから。
+ */
+export type CompanySessionData = {
+  userId: string;
+  tenantId: null;
+  role: "group_admin";
+  staffId: null;
+  name: string;
+  exp: number;
+};
+
+/** 部署を選んでいないログイン状態（tenantId が null。部署の画面には入れない） */
+export type NoDeptSession = MemberSessionData | CompanySessionData;
+
+/** どれかのログイン状態。部署を選んでいるかは tenantId が null かどうかで見分ける */
+export type AnySession = SessionData | NoDeptSession;
 
 export const SESSION_COOKIE = "session";
 export const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7; // 7日
@@ -66,9 +82,9 @@ export function decodeSession(
   if (!data || typeof data !== "object") return null;
   if (typeof data.exp !== "number" || data.exp <= now) return null;
   if (!data.userId) return null;
-  if (data.role === "member") {
+  if (data.role === "member" || (data.role === "group_admin" && data.tenantId === null)) {
     if (data.tenantId !== null || data.staffId !== null) return null;
-    return data as MemberSessionData;
+    return data as NoDeptSession;
   }
   if (!data.tenantId) return null;
   if (data.role !== "owner" && data.role !== "staff" && data.role !== "group_admin") {
@@ -80,8 +96,9 @@ export function decodeSession(
 /** 今から有効期限までのログイン状態を作る */
 export function buildSession(user: Omit<SessionData, "exp">, now?: number): SessionData;
 export function buildSession(user: Omit<MemberSessionData, "exp">, now?: number): MemberSessionData;
+export function buildSession(user: Omit<CompanySessionData, "exp">, now?: number): CompanySessionData;
 export function buildSession(
-  user: Omit<SessionData, "exp"> | Omit<MemberSessionData, "exp">,
+  user: Omit<SessionData, "exp"> | Omit<NoDeptSession, "exp">,
   now = Date.now(),
 ): AnySession {
   return { ...user, exp: now + SESSION_MAX_AGE_SECONDS * 1000 } as AnySession;

@@ -82,7 +82,11 @@ export async function AppHeader({
         {tenants ? (
           <>
             <p className="mb-1 px-1 text-xs text-neutral-500">部署</p>
-            <TenantSelect tenants={tenants} currentId={session.tenantId} />
+            <TenantSelect
+              tenants={tenants}
+              currentId={session.tenantId}
+              allowNone={session.role === "group_admin"}
+            />
           </>
         ) : (
           <p className="px-1 font-bold tracking-tight">{deptName}</p>
@@ -103,7 +107,7 @@ export async function AppHeader({
         </p>
         <NavLinks
           items={[
-            ...(session.role !== "member"
+            ...(session.tenantId !== null
               ? [{ href: "/notify", label: "通知設定", match: ["/notify"] }]
               : []),
             { href: "/account", label: "アカウント情報", match: ["/account"] },

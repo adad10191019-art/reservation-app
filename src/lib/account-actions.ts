@@ -92,5 +92,5 @@ export async function setFirstPassword(formData: FormData) {
     data: { passwordHash: await hashPassword(newPassword), mustChangePassword: false },
   });
 
-  redirect(session.role === "member" ? "/team" : session.staffId && session.role === "staff" ? "/my-schedule" : "/calendar");
+  redirect(session.tenantId === null ? "/team" : session.staffId && session.role === "staff" ? "/my-schedule" : "/calendar");
 }
