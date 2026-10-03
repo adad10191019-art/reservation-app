@@ -10,6 +10,7 @@
  */
 import { prisma } from "./prisma";
 import { type GoogleEvent, type GoogleEventItem, splitGoogleEventsByDate } from "./google-event-split";
+import { GoogleGrantRevokedError, isRevokedGrantResponse } from "./google-grant";
 import { dateMinutesToUtcIso } from "./time";
 
 export type { GoogleEventItem } from "./google-event-split";
@@ -113,7 +114,11 @@ async function refreshAccessToken(
       grant_type: "refresh_token",
     }),
   });
-  if (!res.ok) throw new Error("Googleカレンダーとの連携が切れています。再連携してください");
+  if (!res.ok) {
+    const body: unknown = await res.json().catch(() => null);
+    if (isRevokedGrantResponse(res.status, body)) throw new GoogleGrantRevokedError();
+    throw new Error("Googleからトークンを受け取れませんでした");
+  }
 
   const token = (await res.json()) as { access_token?: string; expires_in?: number };
   if (!token.access_token) throw new Error("Googleからトークンを受け取れませんでした");
@@ -156,22 +161,63 @@ type ConnectionRow = {
   refreshToken: string;
   accessToken: string | null;
   accessTokenExpiresAt: Date | null;
+  brokenAt: Date | null;
 };
 
-/** 有効なアクセストークンを返す。期限切れならリフレッシュしてDBに保存し直す */
+/**
+ * 切れたことを残す。切れたまま気づかないと、予約受付が Google の予定を見ずに枠を出してしまうので、
+ * 本人（アカウント情報・全体スケジュール・自分の予定）と全体スケジュールの列に出して、つなぎ直してもらう。
+ * 残せなくても読み込みは続ける（次に開いたときにまた試す）。
+ */
+async function markBroken(employeeId: string): Promise<void> {
+  try {
+    await prisma.googleCalendarConnection.updateMany({
+      where: { employeeId, brokenAt: null },
+      data: { brokenAt: new Date(), accessToken: null, accessTokenExpiresAt: null },
+    });
+  } catch (e) {
+    console.error("[Google連携] 切れたことを残せませんでした", e);
+  }
+}
+
+/**
+ * 有効なアクセストークンを返す。期限切れならリフレッシュしてDBに保存し直す。
+ * 切れている連携は Google に問い合わせず、すぐ GoogleGrantRevokedError にする。
+ */
 async function getValidAccessToken(connection: ConnectionRow): Promise<string> {
+  if (connection.brokenAt) throw new GoogleGrantRevokedError();
+
   const stillValid =
     connection.accessToken &&
     connection.accessTokenExpiresAt &&
     connection.accessTokenExpiresAt.getTime() - Date.now() > 60_000;
   if (stillValid) return connection.accessToken as string;
 
-  const { accessToken, expiresIn } = await refreshAccessToken(connection.refreshToken);
+  let refreshed: { accessToken: string; expiresIn: number };
+  try {
+    refreshed = await refreshAccessToken(connection.refreshToken);
+  } catch (e) {
+    if (e instanceof GoogleGrantRevokedError) await markBroken(connection.employeeId);
+    throw e;
+  }
   await prisma.googleCalendarConnection.update({
     where: { employeeId: connection.employeeId },
-    data: { accessToken, accessTokenExpiresAt: new Date(Date.now() + expiresIn * 1000) },
+    data: {
+      accessToken: refreshed.accessToken,
+      accessTokenExpiresAt: new Date(Date.now() + refreshed.expiresIn * 1000),
+    },
   });
-  return accessToken;
+  return refreshed.accessToken;
+}
+
+/** 名簿の人のうち、Google の連携が切れている人の ID */
+export async function findBrokenGoogleEmployeeIds(employeeIds: string[]): Promise<Set<string>> {
+  if (!isGoogleCalendarConfigured() || employeeIds.length === 0) return new Set();
+  const rows = await prisma.googleCalendarConnection.findMany({
+    where: { employeeId: { in: employeeIds }, brokenAt: { not: null } },
+    select: { employeeId: true },
+  });
+  return new Set(rows.map((r) => r.employeeId));
 }
 
 /**

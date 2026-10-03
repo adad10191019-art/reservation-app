@@ -338,7 +338,7 @@ export async function setReservationStatus(input: {
   tenantId: string;
   reservationId: string;
   status: ReservationStatus;
-}): Promise<Result> {
+}): Promise<Result<{ changed: boolean }>> {
   const { actor, tenantId, reservationId, status } = input;
 
   if (!RESERVATION_STATUSES.includes(status)) {
@@ -346,7 +346,7 @@ export async function setReservationStatus(input: {
   }
 
   try {
-    await withRetry(() =>
+    const changed = await withRetry(() =>
       prisma.$transaction(async (tx) => {
       const reservation = await tx.reservation.findFirst({
         where: { id: reservationId, tenantId },
@@ -356,6 +356,10 @@ export async function setReservationStatus(input: {
       if (!canManageStaffReservation(actor, reservation.staffId)) {
         throw new Error(denyMessage(actor));
       }
+
+      // すでにその状態なら何もしない。二度押し・「戻る」からの押し直しで、
+      // お客様にキャンセルの通知が2回届かないよう、呼び出し側には「変わっていない」と返す
+      if (reservation.status === status) return false;
 
       // キャンセル済みを「予約済み」に戻すときは、その間に別の予約が
       // 入っていないか確かめる。ここを抜くと復帰で二重予約になる。
@@ -379,10 +383,11 @@ export async function setReservationStatus(input: {
           canceledAt: status === "canceled" || status === "no_show" ? new Date() : null,
         },
       });
+        return true;
       }, SERIALIZABLE),
     );
 
-    return { ok: true };
+    return { ok: true, changed };
   } catch (e) {
     if (isWriteConflict(e)) {
       return { ok: false, message: "この枠は、ちょうど今ほかの予約で埋まりました" };
@@ -490,7 +495,7 @@ export async function cancelOwnReservation(input: {
   customerId: string;
   reservationId: string;
   now?: Date;
-}): Promise<Result> {
+}): Promise<Result<{ changed: boolean }>> {
   const { tenantId, customerId, reservationId } = input;
 
   const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
@@ -516,10 +521,12 @@ export async function cancelOwnReservation(input: {
     return { ok: false, message: "お時間が近いため、お電話でご連絡ください" };
   }
 
-  await prisma.reservation.updateMany({
-    where: { id: reservationId, tenantId, customerId },
+  // まだ予約済みのときだけ変える。同時に2回送られても、変えられるのは片方だけ
+  // （もう片方は changed: false になり、通知を送らない）
+  const updated = await prisma.reservation.updateMany({
+    where: { id: reservationId, tenantId, customerId, status: "booked" },
     data: { status: "canceled", canceledAt: new Date() },
   });
 
-  return { ok: true };
+  return { ok: true, changed: updated.count > 0 };
 }

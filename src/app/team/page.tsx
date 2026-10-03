@@ -11,9 +11,11 @@ import {
   TimelineGrid,
   scheduleHref,
 } from "@/components/schedule-views";
+import { GoogleBrokenNotice } from "@/components/google-broken-notice";
 import { SubmitButton } from "@/components/submit-button";
 import { TimeRangeFields } from "@/components/time-range-fields";
 import { requireTeamSession } from "@/lib/auth";
+import { findBrokenGoogleEmployeeIds } from "@/lib/google-calendar";
 import { prisma } from "@/lib/prisma";
 import { getTenant } from "@/lib/schedule";
 import { monthWeeks, parseView, viewDates } from "@/lib/schedule-range";
@@ -65,6 +67,9 @@ export default async function TeamPage({
     view === "day" || person
       ? await getTeamDays(dates, viewer, person ?? undefined)
       : new Map<string, TeamColumn[]>();
+  // Google の連携が切れている人。1日表示の列に出し、本人以外（管理者など）も気づけるようにする
+  const googleBroken =
+    view === "day" ? await findBrokenGoogleEmployeeIds(employees.map((e) => e.id)) : new Set<string>();
 
   /** 全体スケジュールの1件を、並べる部品の形にする（消せる予定には × を付ける） */
   const toEntry = (item: TeamItem, itemDate: string): ScheduleEntry => ({
@@ -109,6 +114,7 @@ export default async function TeamPage({
       </AppHeader>
 
       <Banner error={sp.error} done={sp.done} />
+      <GoogleBrokenNotice employeeId={viewer.employeeId} />
 
       <ScheduleNav basePath={PATH} view={view} date={date} today={today} extra={extra}>
         {view !== "day" && employees.length > 0 && (
@@ -230,6 +236,11 @@ export default async function TeamPage({
                   {col.isMe && <span className="ml-1 text-xs text-emerald-700">（自分）</span>}
                 </div>
                 <div className="truncate text-[11px] text-neutral-500" title={col.departments.join("・")}>
+                  {googleBroken.has(col.employeeId) && (
+                    <span className="mr-1 font-medium text-red-700" title="Googleカレンダーとの連携が切れています">
+                      Google連携切れ
+                    </span>
+                  )}
                   {col.departments.length > 0 ? col.departments.join("・") : "　"}
                 </div>
               </>

@@ -205,7 +205,8 @@ export async function changeReservationStatus(formData: FormData) {
     status,
   });
 
-  if (result.ok && status === "canceled") await notifyReservationCanceled(reservationId);
+  // 実際にキャンセルに変わったときだけ知らせる（二度押しで2通届かないように）
+  if (result.ok && result.changed && status === "canceled") await notifyReservationCanceled(reservationId);
 
   refresh();
   if (!result.ok) {

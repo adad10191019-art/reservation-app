@@ -278,7 +278,8 @@ export async function cancelCustomerReservation(formData: FormData) {
     reservationId,
   });
 
-  if (result.ok) {
+  // 実際にキャンセルに変わったときだけ知らせる（二度押しで2通届かないように）
+  if (result.ok && result.changed) {
     await notifyReservationCanceled(reservationId);
     await notifyStaffCanceled(reservationId);
   }

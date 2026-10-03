@@ -57,7 +57,8 @@ export async function GET(request: Request) {
     await prisma.googleCalendarConnection.upsert({
       where: { employeeId },
       create: { employeeId, googleEmail, refreshToken, accessToken, accessTokenExpiresAt },
-      update: { googleEmail, refreshToken, accessToken, accessTokenExpiresAt },
+      // つなぎ直したら、切れていた印も消す
+      update: { googleEmail, refreshToken, accessToken, accessTokenExpiresAt, brokenAt: null },
     });
     // 別の Google アカウントでつなぎ直したときに、前のアカウントの予定を出さないように
     await clearGoogleEventCache(employeeId);

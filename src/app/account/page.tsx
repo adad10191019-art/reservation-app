@@ -13,6 +13,13 @@ import {
 import { CACHE_MINUTES } from "@/lib/google-calendar-cache";
 import { prisma } from "@/lib/prisma";
 import { getTeamViewer } from "@/lib/team";
+import { formatDateLabel, toHm, toJstDateString } from "@/lib/time";
+
+/** ある瞬間を日本時間の「10月3日(金) 18:05」にする */
+function formatJst(instant: Date): string {
+  const minutes = Math.floor(((instant.getTime() + 9 * 60 * 60 * 1000) % 86_400_000) / 60_000);
+  return `${formatDateLabel(toJstDateString(instant))} ${toHm(minutes)}`;
+}
 
 const ROLE_LABEL: Record<string, string> = {
   owner: "オーナー",
@@ -37,7 +44,7 @@ export default async function AccountPage({
   const google = viewer.employeeId
     ? await prisma.googleCalendarConnection.findUnique({
         where: { employeeId: viewer.employeeId },
-        select: { googleEmail: true, showTitles: true },
+        select: { googleEmail: true, showTitles: true, brokenAt: true },
       })
     : null;
 
@@ -130,9 +137,29 @@ export default async function AccountPage({
           </p>
         ) : google ? (
           <div className="space-y-4">
-            <p className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
-              つないでいます：{google.googleEmail}
-            </p>
+            {google.brokenAt ? (
+              <div
+                role="alert"
+                className="space-y-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm leading-relaxed text-red-800"
+              >
+                <p>
+                  {google.googleEmail} との連携が切れています（{formatJst(google.brokenAt)}ごろから）。
+                  今はGoogleの予定が予約受付・全体スケジュールに反映されていません。つなぎ直してください。
+                </p>
+                <form action={connectGoogleCalendar}>
+                  <button
+                    type="submit"
+                    className="rounded-md bg-neutral-800 px-4 py-1.5 text-sm font-medium text-white hover:bg-neutral-700"
+                  >
+                    Googleカレンダーをつなぎ直す
+                  </button>
+                </form>
+              </div>
+            ) : (
+              <p className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+                つないでいます：{google.googleEmail}
+              </p>
+            )}
 
             <form action={setGoogleShowTitles} className="space-y-2">
               <p className="text-xs font-medium text-neutral-600">全体スケジュールでの見せ方（社員全員が見ます）</p>

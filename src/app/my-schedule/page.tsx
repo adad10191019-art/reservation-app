@@ -10,6 +10,7 @@ import {
   TimelineGrid,
   scheduleHref,
 } from "@/components/schedule-views";
+import { GoogleBrokenNotice } from "@/components/google-broken-notice";
 import { SubmitButton } from "@/components/submit-button";
 import { TimeRangeFields } from "@/components/time-range-fields";
 import { requireSession } from "@/lib/auth";
@@ -63,6 +64,9 @@ export default async function MySchedulePage({
   }
 
   const staffId = session.staffId;
+  // Google の連携は人（名簿）に付く。切れていたら上に知らせる
+  const myEmployeeId =
+    (await prisma.staff.findUnique({ where: { id: staffId }, select: { employeeId: true } }))?.employeeId ?? null;
 
   if (view !== "day") {
     // 週・月：自分の予定の全部をカレンダーの形で並べる。日付を押すとその日の1日表示へ
@@ -74,6 +78,7 @@ export default async function MySchedulePage({
       <main className="mx-auto w-full max-w-5xl p-4 sm:p-6">
         <MyScheduleHeader tenantName={tenant.name} session={session} date={date} />
         <Banner error={sp.error} done={sp.done} />
+        <GoogleBrokenNotice employeeId={myEmployeeId} />
         <ScheduleNav basePath={PATH} view={view} date={date} today={today} />
 
         <p className="mb-3 text-xs leading-relaxed text-neutral-500">
@@ -175,6 +180,7 @@ export default async function MySchedulePage({
       <MyScheduleHeader tenantName={tenant.name} session={session} date={date} />
 
       <Banner error={sp.error} done={sp.done} />
+      <GoogleBrokenNotice employeeId={myEmployeeId} />
 
       <ScheduleNav basePath={PATH} view={view} date={date} today={today} />
 

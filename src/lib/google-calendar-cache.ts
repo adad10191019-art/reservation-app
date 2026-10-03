@@ -53,21 +53,26 @@ export async function getGoogleEventsForTeam(
       }
 
       result.set(connection.employeeId, fetched);
-      await prisma.$transaction([
-        prisma.googleEventCache.deleteMany({
-          where: { employeeId: connection.employeeId, date: { in: dates } },
-        }),
-        prisma.googleEventCache.createMany({
-          data: dates.map((date) => ({
-            employeeId: connection.employeeId,
-            date,
-            items: fetched.get(date) ?? [],
-            fetchedAt: now,
-          })),
-          // 同じ人の画面を2人が同時に開いて、先に入れられていた日は飛ばす
-          skipDuplicates: true,
-        }),
-      ]);
+      // 控えを残せなくても、取ってきた予定はそのまま出す（次に開いたときにまた取りに行くだけ）
+      try {
+        await prisma.$transaction([
+          prisma.googleEventCache.deleteMany({
+            where: { employeeId: connection.employeeId, date: { in: dates } },
+          }),
+          prisma.googleEventCache.createMany({
+            data: dates.map((date) => ({
+              employeeId: connection.employeeId,
+              date,
+              items: fetched.get(date) ?? [],
+              fetchedAt: now,
+            })),
+            // 同じ人の画面を2人が同時に開いて、先に入れられていた日は飛ばす
+            skipDuplicates: true,
+          }),
+        ]);
+      } catch (e) {
+        console.error("[Googleの予定の控え] 保存に失敗", e);
+      }
     }),
   );
   return result;

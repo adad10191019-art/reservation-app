@@ -318,13 +318,33 @@ describe("setReservationStatus（状態の変更）", () => {
         reservationId: r.reservationId,
         status: "canceled",
       }),
-    ).toEqual({ ok: true });
+    ).toEqual({ ok: true, changed: true });
 
     const saved = await prisma.reservation.findUniqueOrThrow({ where: { id: r.reservationId } });
     expect(saved.status).toBe("canceled");
     expect(saved.canceledAt).not.toBeNull();
 
     expectOk(await bookCut(OPEN));
+  });
+
+  it("すでにキャンセル済みなら何も変えず、変わっていないと返す（二度押しで通知を2回送らない）", async () => {
+    const r = await bookCut(OPEN);
+    expectOk(r);
+    const cancel = () =>
+      setReservationStatus({
+        actor: owner,
+        tenantId: shop.tenantId,
+        reservationId: r.reservationId,
+        status: "canceled",
+      });
+
+    expect(await cancel()).toEqual({ ok: true, changed: true });
+    const first = await prisma.reservation.findUniqueOrThrow({ where: { id: r.reservationId } });
+
+    expect(await cancel()).toEqual({ ok: true, changed: false });
+    const second = await prisma.reservation.findUniqueOrThrow({ where: { id: r.reservationId } });
+    // キャンセルした日時も最初のまま
+    expect(second.canceledAt).toEqual(first.canceledAt);
   });
 
   it("キャンセルを戻すとき、その間に別の予約が入っていれば戻せない", async () => {
@@ -364,7 +384,7 @@ describe("setReservationStatus（状態の変更）", () => {
         reservationId: r.reservationId,
         status: "booked",
       }),
-    ).toEqual({ ok: true });
+    ).toEqual({ ok: true, changed: true });
 
     const saved = await prisma.reservation.findUniqueOrThrow({ where: { id: r.reservationId } });
     expect(saved).toMatchObject({ status: "booked", canceledAt: null });
@@ -457,12 +477,12 @@ describe("bookAsCustomer / cancelOwnReservation（お客様側）", () => {
         reservationId: r.reservationId,
         now: NOW,
       }),
-    ).toEqual({ ok: true });
+    ).toEqual({ ok: true, changed: true });
 
     const saved = await prisma.reservation.findUniqueOrThrow({ where: { id: r.reservationId } });
     expect(saved.status).toBe("canceled");
 
-    // 2回目は受け付けない
+    // 2回目は受け付けない（同時に2回届いたときは、片方が changed: false になる）
     expect(
       await cancelOwnReservation({
         tenantId: shop.tenantId,
