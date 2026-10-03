@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultEnd, defaultStart, endChoices, endFor, lengthLabel, startChoices } from "./time-choices";
+import { defaultEnd, defaultStart, endChoices, endFor, lengthLabel, startChoices, tappedStart } from "./time-choices";
 
 // 2026-10-02 14:07（日本時間）
 const now = new Date("2026-10-02T05:07:00Z");
@@ -49,5 +49,18 @@ describe("lengthLabel", () => {
     expect(lengthLabel(30)).toBe("30分");
     expect(lengthLabel(60)).toBe("1時間");
     expect(lengthLabel(90)).toBe("1時間30分");
+  });
+});
+
+describe("tappedStart（表を押した位置から開始時刻を決める）", () => {
+  it("30分単位で切り捨てる", () => {
+    // 表は 9:00 から、1分 = 1.1px。13:10 の位置
+    expect(tappedStart((13 * 60 + 10 - 540) * 1.1, 540, 1.1)).toBe(13 * 60);
+    expect(tappedStart((13 * 60 + 45 - 540) * 1.1, 540, 1.1)).toBe(13 * 60 + 30);
+  });
+
+  it("表の外側に寄った位置は、選べる範囲に収める", () => {
+    expect(tappedStart(-5, 540, 1.1)).toBe(540);
+    expect(tappedStart(99999, 0, 1.1)).toBe(23 * 60 + 30);
   });
 });

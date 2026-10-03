@@ -58,3 +58,16 @@ export function lengthLabel(minutes: number): string {
   if (h === 0) return `${m}分`;
   return m === 0 ? `${h}時間` : `${h}時間${m}分`;
 }
+
+/** 予定の表の空いているところを押したときに選ぶ時刻の細かさ（スマホの指でも狙えるよう30分。微調整は一覧で） */
+export const TAP_MINUTES = 30;
+
+/**
+ * 予定の表で押した位置（列の上端からの px）を、開始時刻にする。
+ * 30分単位で切り捨て、開始に選べる範囲（0:00〜23:30）に収める。
+ */
+export function tappedStart(offsetPx: number, rangeStart: number, pxPerMinute: number): number {
+  const minutes = rangeStart + Math.max(offsetPx, 0) / pxPerMinute;
+  const slot = Math.floor(minutes / TAP_MINUTES) * TAP_MINUTES;
+  return Math.min(Math.max(slot, 0), DAY_END - TAP_MINUTES);
+}

@@ -95,6 +95,7 @@ export default async function MySchedulePage({
                 highlight: d === today,
                 header: <DayColumnHeader date={d} today={today} href={scheduleHref(PATH, "day", d)} />,
                 entries: entriesOf(d),
+                tapToAdd: { date: d },
               }))}
             />
           ) : (

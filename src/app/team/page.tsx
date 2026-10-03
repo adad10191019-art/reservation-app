@@ -90,6 +90,9 @@ export default async function TeamPage({
     (byDate.get(d)?.[0]?.items ?? []).map((item) => toEntry(item, d));
 
   const canAdd = viewer.employeeId !== null || viewer.isAdmin;
+  /** 空いているところを押して予定を足せる人の列か（自分の列。全社管理者は全員の列） */
+  const canTapAdd = (employeeId: string | null) =>
+    canAdd && employeeId !== null && (viewer.isAdmin || employeeId === viewer.employeeId);
   const personName = employees.find((e) => e.id === person)?.name;
 
   return (
@@ -232,6 +235,7 @@ export default async function TeamPage({
               </>
             ),
             entries: col.items.map((item) => toEntry(item, date)),
+            tapToAdd: canTapAdd(col.employeeId) ? { date, employeeId: col.employeeId } : undefined,
           }))}
         />
       ) : (
@@ -248,6 +252,7 @@ export default async function TeamPage({
                 highlight: d === today,
                 header: <DayColumnHeader date={d} today={today} href={scheduleHref(PATH, "day", d)} />,
                 entries: personEntries(d),
+                tapToAdd: canTapAdd(person) ? { date: d, employeeId: person ?? undefined } : undefined,
               }))}
             />
           ) : (

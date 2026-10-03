@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { onQuickAdd } from "@/lib/quick-add";
 import { hm, toHm } from "@/lib/time";
 import {
   LENGTH_CHOICES,
@@ -21,6 +22,16 @@ export function TimeRangeFields({ defaultStart }: { defaultStart: number }) {
   const [start, setStart] = useState(defaultStart);
   const [end, setEnd] = useState(() => defaultEnd(defaultStart));
   const length = end - start;
+
+  // 予定の表の空いているところが押されたら、その時刻から1時間にする（quick-add.ts）
+  useEffect(
+    () =>
+      onQuickAdd(({ start: next }) => {
+        setStart(next);
+        setEnd(defaultEnd(next));
+      }),
+    [],
+  );
 
   const selectClass = "rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-sm";
 

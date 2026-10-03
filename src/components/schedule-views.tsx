@@ -15,6 +15,9 @@ import {
   viewTitle,
 } from "@/lib/schedule-range";
 import { isAllDay, layoutLanes, timeRangeOf } from "@/lib/team-view";
+import { TapToAddLayer } from "./tap-to-add-layer";
+
+export { AddEntryPanel } from "./add-entry-panel";
 import { dayOfWeekOf, toHm } from "@/lib/time";
 
 export type ScheduleEntry = {
@@ -161,6 +164,8 @@ export type TimelineColumn = {
   /** 自分の列・今日の列を薄く色付けする */
   highlight?: boolean;
   entries: ScheduleEntry[];
+  /** 空いているところを押して予定を足せる列なら、その日付（と誰の予定か） */
+  tapToAdd?: { date: string; employeeId?: string };
 };
 
 export function TimelineGrid({
@@ -210,6 +215,9 @@ export function TimelineGrid({
                   style={{ top: top(m) }}
                 />
               ))}
+              {col.tapToAdd && (
+                <TapToAddLayer {...col.tapToAdd} rangeStart={range.start} pxPerMinute={PX_PER_MIN} />
+              )}
               {layoutLanes(col.entries).map(({ item, lane, lanes }) => {
                 const body = (
                   <>
@@ -348,21 +356,3 @@ export function MonthGrid({
   );
 }
 
-/**
- * 予定を足す欄。ふだんは「＋ 予定を追加」のボタンだけにして、押すと入力欄が開く
- * （スマホで入力欄が予定の表を下へ押し出さないように）。JavaScript を使わない details 要素なので、すぐ開く。
- */
-export function AddEntryPanel({ label = "予定を追加", children }: { label?: string; children: ReactNode }) {
-  return (
-    <details className="group mb-4 rounded-lg border border-neutral-200 bg-white open:p-3">
-      <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-lg px-3 py-2 text-sm font-medium text-emerald-700 marker:content-none hover:bg-emerald-50 group-open:mb-2 group-open:px-0 group-open:py-0 group-open:hover:bg-transparent">
-        <span className="text-base leading-none group-open:hidden">＋</span>
-        <span className="hidden text-base leading-none group-open:inline">−</span>
-        {label}
-        <span className="text-xs font-normal text-neutral-500 group-open:hidden">（押すと入力欄が開きます）</span>
-        <span className="hidden text-xs font-normal text-neutral-500 group-open:inline">（押すと閉じます）</span>
-      </summary>
-      {children}
-    </details>
-  );
-}
