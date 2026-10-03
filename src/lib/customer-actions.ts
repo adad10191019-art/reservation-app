@@ -5,6 +5,7 @@ import { randomBytes } from "node:crypto";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { bookAsCustomer, cancelOwnReservation } from "./booking";
+import { bookAsCustomerAnyStaff } from "./booking-any-staff";
 import { EMAIL_LOGIN_COOKIE, LINE_LOGIN_COOKIE } from "./constants";
 import {
   buildCustomerSession,
@@ -28,6 +29,7 @@ import {
 } from "./notify";
 import { prisma } from "./prisma";
 import { safeNextPath } from "./safe-redirect";
+import { parseStaffSelection } from "./staff-assignment";
 import { handleOf, tenantHandle } from "./tenant";
 import { sanitizeDate } from "./time";
 
@@ -219,9 +221,14 @@ export async function createCustomerReservation(formData: FormData) {
   if (!session) back("ログインし直してください");
 
   if (!slot) back("時間を選んでください");
-  const [startText, staffId] = slot.split("|");
+  // "開始分|スタッフID"。担当を指名しない（「誰でもいい」）ときはスタッフIDが空
+  const [startText, pickedStaffId = ""] = slot.split("|");
   const startMinutes = Number(startText);
-  if (!Number.isInteger(startMinutes) || !staffId) back("時間の指定が正しくありません");
+  if (!Number.isInteger(startMinutes)) back("時間の指定が正しくありません");
+
+  // 担当を選ばせない部署では、指名が送られてきても使わない
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { staffSelection: true } });
+  const staffId = parseStaffSelection(tenant?.staffSelection) === "none" ? "" : pickedStaffId;
 
   // お名前・電話番号は確認画面に戻して直してもらう。
   // 入力した値は URL に載せない（個人情報をアドレスバーや履歴に残さないため）
@@ -242,14 +249,11 @@ export async function createCustomerReservation(formData: FormData) {
     phone: profile.value.phone,
   });
 
-  const result = await bookAsCustomer({
-    tenantId,
-    customerId: session.customerId,
-    date,
-    menuId,
-    staffId,
-    startMinutes,
-  });
+  const booking = { tenantId, customerId: session.customerId, date, menuId, startMinutes };
+  // 指名が無ければ、空いている人のうちその日の予約が少ない人へ振り分ける
+  const result = staffId
+    ? await bookAsCustomer({ ...booking, staffId })
+    : await bookAsCustomerAnyStaff(booking);
 
   if (!result.ok) back(result.message);
 

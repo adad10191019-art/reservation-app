@@ -287,6 +287,20 @@ export async function saveCustomerLoginMethod(formData: FormData) {
   back(path);
 }
 
+/** お客様に担当を選ばせるか（選べる／選ばせない＝部署としての空きだけを見せる） */
+export async function saveStaffSelection(formData: FormData) {
+  const session = await requireOwner();
+  const path = "/settings/store";
+
+  const value = String(formData.get("staffSelection") ?? "");
+  if (value !== "choose" && value !== "none") back(path, "担当の選ばせ方の指定が正しくありません");
+
+  await prisma.tenant.update({ where: { id: session.tenantId }, data: { staffSelection: value } });
+
+  refreshAll();
+  back(path);
+}
+
 // ── 日付ごとの例外とブロック枠 ────────────
 
 function daysPath(date: string): string {

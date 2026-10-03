@@ -40,6 +40,11 @@ model Tenant {
   /// LINEが使えればLINE、使えなければメール）
   customerLoginMethod String?
 
+  /// お客様に担当を選ばせるか。"choose"＝選べる（「誰でもいい」も選べる）、
+  /// "none"＝選ばせない（部署としての空きだけを見せ、予約の瞬間に空いている人へ振り分ける）。
+  /// どちらでも予約が済んだあとは担当名を見せる
+  staffSelection String @default("choose")
+
   /// LINEアプリの中で予約ページを開くためのLIFFアプリID。
   /// 空なら環境変数（NEXT_PUBLIC_LIFF_ID）をシステム全体の既定値として使う。
   /// LINEログインと同じチャネルの中に登録する（新しいチャネルではない）

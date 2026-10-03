@@ -19,6 +19,7 @@ import { priceLabel } from "@/lib/price";
 import { prisma } from "@/lib/prisma";
 import { LiffAutoLogin } from "@/components/liff-auto-login";
 import { SubmitButton } from "@/components/submit-button";
+import { parseStaffSelection } from "@/lib/staff-assignment";
 import { findTenantByHandle, tenantHandle } from "@/lib/tenant";
 import {
   addDays,
@@ -87,10 +88,13 @@ export default async function PublicBookingPage({
     : null;
   const availability = availabilityByDate?.get(date) ?? null;
 
+  // 担当を選ばせない部署では、担当の欄を出さず部署としての空きだけを見せる
+  const canChooseStaff = parseStaffSelection(tenant.staffSelection) === "choose";
+
   // このメニューに対応できるスタッフだけを選択肢にする
   const eligibleStaff = availability?.perStaff ?? [];
   const selectedStaffId =
-    sp.staffId && eligibleStaff.some((s) => s.staffId === sp.staffId) ? sp.staffId : "";
+    canChooseStaff && sp.staffId && eligibleStaff.some((s) => s.staffId === sp.staffId) ? sp.staffId : "";
 
   const rawStarts = selectedStaffId
     ? (eligibleStaff.find((s) => s.staffId === selectedStaffId)?.starts ?? [])
@@ -105,11 +109,8 @@ export default async function PublicBookingPage({
     }),
   );
 
-  const slots = selectedStaffId
-    ? rawStarts
-        .filter((m) => bookableStarts.has(m))
-        .map((m) => ({ startMinutes: m, staffIds: [selectedStaffId] }))
-    : (availability?.merged ?? []).filter((s) => bookableStarts.has(s.startMinutes));
+  // 指名が無ければ担当は予約の瞬間に決める（booking-any-staff.ts）ので、時間だけを並べる
+  const slots = rawStarts.filter((m) => bookableStarts.has(m));
 
   const lastDate = addDays(todayString(), tenant.bookingWindowDays);
 
@@ -205,6 +206,7 @@ export default async function PublicBookingPage({
           </select>
         </label>
 
+        {canChooseStaff && (
         <label className="block">
           <span className="mb-1.5 block text-xs font-medium text-neutral-500">担当</span>
           <select
@@ -220,8 +222,9 @@ export default async function PublicBookingPage({
             ))}
           </select>
         </label>
+        )}
 
-        <label className="block">
+        <label className={canChooseStaff ? "block" : "block sm:col-span-2"}>
           <span className="mb-1.5 block text-xs font-medium text-neutral-500">日付</span>
           <input
             type="date"
@@ -332,23 +335,19 @@ export default async function PublicBookingPage({
                   ご希望の時間を選んでください
                 </legend>
                 <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-                  {slots.map((slot) => (
+                  {slots.map((start) => (
                     <label
-                      key={slot.startMinutes}
+                      key={start}
                       className="has-[:checked]:text-[var(--brand-on)] cursor-pointer rounded-md border border-neutral-300 px-2 py-2.5 text-center text-sm transition-colors hover:border-neutral-400 has-[:checked]:border-[var(--brand)] has-[:checked]:bg-[var(--brand)]"
                     >
                       <input
                         type="radio"
                         name="slot"
-                        value={`${slot.startMinutes}|${slot.staffIds[0]}`}
+                        // 指名が無ければ担当は空のまま送り、予約の瞬間に決める
+                        value={`${start}|${selectedStaffId}`}
                         className="sr-only"
                       />
-                      <span className="block font-medium tabular-nums">
-                        {toHm(slot.startMinutes)}
-                      </span>
-                      <span className="block text-xs opacity-80">
-                        {staffNames.get(slot.staffIds[0])}
-                      </span>
+                      <span className="block font-medium tabular-nums">{toHm(start)}</span>
                     </label>
                   ))}
                 </div>
@@ -368,17 +367,12 @@ export default async function PublicBookingPage({
           ) : (
             <>
               <div className="mb-5 grid grid-cols-3 gap-2 sm:grid-cols-4">
-                {slots.map((slot) => (
+                {slots.map((start) => (
                   <span
-                    key={slot.startMinutes}
+                    key={start}
                     className="rounded-md border border-neutral-200 bg-neutral-50 px-2 py-2.5 text-center text-sm text-neutral-500"
                   >
-                    <span className="block font-medium tabular-nums">
-                      {toHm(slot.startMinutes)}
-                    </span>
-                    <span className="block text-xs">
-                      {staffNames.get(slot.staffIds[0])}
-                    </span>
+                    <span className="block font-medium tabular-nums">{toHm(start)}</span>
                   </span>
                 ))}
               </div>

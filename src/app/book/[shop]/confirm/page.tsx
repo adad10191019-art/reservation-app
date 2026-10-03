@@ -8,6 +8,7 @@ import { getActiveCustomer } from "@/lib/customer-store";
 import { priceLabel } from "@/lib/price";
 import { prisma } from "@/lib/prisma";
 import { SubmitButton } from "@/components/submit-button";
+import { parseStaffSelection } from "@/lib/staff-assignment";
 import { findTenantByHandle, tenantHandle } from "@/lib/tenant";
 import { formatDateLabel, sanitizeDate, toHm } from "@/lib/time";
 
@@ -41,20 +42,26 @@ export default async function BookingConfirmPage({
     : null;
   if (!menu) back("メニューを選び直してください");
 
-  const [startText, staffId] = (sp.slot ?? "").split("|");
+  // "開始分|スタッフID"。指名が無い（「誰でもいい」・担当を選ばせない部署）ときはスタッフIDが空
+  const [startText, pickedStaffId = ""] = (sp.slot ?? "").split("|");
   const startMinutes = Number(startText);
-  if (!Number.isInteger(startMinutes) || !staffId) back("時間を選び直してください");
+  if (!Number.isInteger(startMinutes)) back("時間を選び直してください");
+  const staffId = parseStaffSelection(tenant.staffSelection) === "none" ? "" : pickedStaffId;
 
-  const staff = await prisma.staff.findFirst({
-    where: { id: staffId, tenantId, isActive: true },
-  });
-  if (!staff) back("担当者を選び直してください");
+  const staff = staffId
+    ? await prisma.staff.findFirst({ where: { id: staffId, tenantId, isActive: true } })
+    : null;
+  if (staffId && !staff) back("担当者を選び直してください");
 
   // ここでもう一度、他の人に取られていないか・受付時間内かを確かめる
-  // （選択画面を開いてから確定するまでの間に埋まる可能性があるため）
-  const availability = await findAvailability({ tenantId, date, menuId: menu!.id, staffId });
+  // （選択画面を開いてから確定するまでの間に埋まる可能性があるため）。
+  // 指名が無ければ、誰か1人でも空いていればよい
+  const availability = await findAvailability({ tenantId, date, menuId: menu!.id, staffId: staffId || undefined });
+  const starts = staffId
+    ? (availability.perStaff[0]?.starts ?? [])
+    : availability.merged.map((s) => s.startMinutes);
   const bookableStarts = new Set(
-    filterBookableStarts(availability.perStaff[0]?.starts ?? [], {
+    filterBookableStarts(starts, {
       date,
       windowDays: tenant.bookingWindowDays,
       leadMinutes: tenant.bookingLeadMinutes,
@@ -87,7 +94,9 @@ export default async function BookingConfirmPage({
           </div>
           <div className="flex justify-between gap-4">
             <dt className="text-neutral-500">担当</dt>
-            <dd className="font-medium">{staff!.name}</dd>
+            <dd className="text-right font-medium">
+              {staff ? staff.name : "空いている者が担当します（予約後にお知らせします）"}
+            </dd>
           </div>
           {priceLabel(menu!.price) && (
             <div className="flex justify-between gap-4">

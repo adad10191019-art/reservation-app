@@ -6,9 +6,11 @@ import { SLOT_CHOICES } from "@/lib/constants";
 import { isEmailConfigured } from "@/lib/email";
 import { resolveCustomerLoginMethods } from "@/lib/email-login";
 import { resolveLiffId } from "@/lib/line";
+import { parseStaffSelection } from "@/lib/staff-assignment";
 import {
   saveBrandColor,
   saveCustomerLoginMethod,
+  saveStaffSelection,
   saveLineSettings,
   saveStore,
 } from "@/lib/settings-actions";
@@ -262,6 +264,56 @@ export default async function StoreSettingsPage({
             「メール」「両方」を選んでも、予約画面にメールでのログインは表示されません。
           </p>
         )}
+      </section>
+
+      <section className="rounded-lg border border-neutral-200 bg-white p-4">
+        <h2 className="mb-1 font-semibold">お客様に担当を選んでもらうか</h2>
+        <p className="mb-4 text-xs leading-relaxed text-neutral-500">
+          初回面談のように、お客様が担当の名前を知らない部署では「選ばせない」にしてください。
+          どちらでも、担当を指名しない予約は、その時間に空いている人のうちその日の予約が少ない人に入ります。
+          予約が済んだあとの通知と「自分の予約」には担当の名前が出ます。
+        </p>
+
+        <form action={saveStaffSelection} className="space-y-3">
+          {(
+            [
+              {
+                value: "choose",
+                label: "選べる",
+                desc: "予約画面に「担当」の欄を出す（「誰でもいい」も選べる）",
+              },
+              {
+                value: "none",
+                label: "選ばせない",
+                desc: "担当の欄を出さず、部署としての空き時間だけを見せる",
+              },
+            ] as const
+          ).map((opt) => (
+            <label
+              key={opt.value}
+              className="flex cursor-pointer items-start gap-3 rounded-md border border-neutral-200 p-3 has-checked:border-sky-400 has-checked:bg-sky-50"
+            >
+              <input
+                type="radio"
+                name="staffSelection"
+                value={opt.value}
+                defaultChecked={parseStaffSelection(tenant.staffSelection) === opt.value}
+                className="mt-0.5"
+              />
+              <span>
+                <span className="block text-sm font-medium text-neutral-800">{opt.label}</span>
+                <span className="block text-xs text-neutral-500">{opt.desc}</span>
+              </span>
+            </label>
+          ))}
+
+          <button
+            type="submit"
+            className="rounded-md bg-neutral-800 px-4 py-1.5 text-sm font-medium text-white hover:bg-neutral-700"
+          >
+            保存する
+          </button>
+        </form>
       </section>
 
       <section className="rounded-lg border border-neutral-200 bg-white p-4">
