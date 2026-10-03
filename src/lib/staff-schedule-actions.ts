@@ -18,13 +18,18 @@ import { requireSession } from "./auth";
 import { logChange } from "./change-log";
 import { parseRanges } from "./ranges";
 import { prisma } from "./prisma";
+import { safeReturnPath } from "./schedule-range";
 import { formatDateLabel, hm, toHm } from "./time";
 
 const PATH = "/my-schedule";
 const SETTINGS_PATH = "/my-schedule/settings";
 
-function back(date: string, message?: string, basePath: string = PATH): never {
-  const path = `${basePath}?date=${encodeURIComponent(date)}`;
+/** returnTo（フォームの隠し欄）があれば、元の表示（日・週・月）に戻る */
+function back(date: string, message?: string, basePath: string = PATH, returnTo?: unknown): never {
+  const path =
+    returnTo === undefined
+      ? `${basePath}?date=${encodeURIComponent(date)}`
+      : safeReturnPath(returnTo, basePath, date);
   redirect(message ? `${path}&error=${encodeURIComponent(message)}` : `${path}&done=1`);
 }
 
@@ -111,17 +116,18 @@ export async function saveOwnDayOverride(formData: FormData) {
 /** 自分の予定（ブロック枠）を1件追加する */
 export async function createOwnBlock(formData: FormData) {
   const { tenantId, staffId, name } = await requireOwnStaffId();
+  const returnTo = formData.get("returnTo") ?? undefined;
   const date = String(formData.get("date") ?? "");
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) back(date, "日付の形式が正しくありません");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) back(date, "日付の形式が正しくありません", PATH, returnTo);
 
   const reason = String(formData.get("reason") ?? "").trim();
   const startText = String(formData.get("start") ?? "");
   const endText = String(formData.get("end") ?? "");
-  if (!reason) back(date, "内容を入力してください");
+  if (!reason) back(date, "内容を入力してください", PATH, returnTo);
 
   const result = parseRanges(`${startText}-${endText}`);
-  if (!result.ok) back(date, result.message);
-  if (result.intervals.length !== 1) back(date, "時間の指定が正しくありません");
+  if (!result.ok) back(date, result.message, PATH, returnTo);
+  if (result.intervals.length !== 1) back(date, "時間の指定が正しくありません", PATH, returnTo);
   const interval = result.intervals[0];
 
   // すでに入っている自分の予約と重なる場合は知らせる（登録自体は認める）
@@ -157,9 +163,11 @@ export async function createOwnBlock(formData: FormData) {
     back(
       date,
       `登録しましたが、この時間にはすでに予約が${overlapping}件あります。カレンダーで確認してください`,
+      PATH,
+      returnTo,
     );
   }
-  back(date);
+  back(date, undefined, PATH, returnTo);
 }
 
 /**
@@ -181,15 +189,16 @@ export async function issueCalendarToken(formData: FormData) {
 /** 自分の予定（ブロック枠）を1件削除する。他人の分は消せない */
 export async function deleteOwnBlock(formData: FormData) {
   const { tenantId, staffId, name } = await requireOwnStaffId();
+  const returnTo = formData.get("returnTo") ?? undefined;
   const date = String(formData.get("date") ?? "");
   const id = String(formData.get("id") ?? "");
 
   // 消える前に内容を控えておく。staffId も条件に入れ、他人の分は対象にしない
   const block = await prisma.block.findFirst({ where: { id, tenantId, staffId } });
-  if (!block) back(date, "見つかりません（他の人の予定は削除できません）");
+  if (!block) back(date, "見つかりません（他の人の予定は削除できません）", PATH, returnTo);
 
   const deleted = await prisma.block.deleteMany({ where: { id, tenantId, staffId } });
-  if (deleted.count === 0) back(date, "見つかりません");
+  if (deleted.count === 0) back(date, "見つかりません", PATH, returnTo);
 
   await logChange({
     tenantId,
@@ -203,5 +212,5 @@ export async function deleteOwnBlock(formData: FormData) {
   revalidatePath("/calendar/week");
   revalidatePath("/booking");
   revalidatePath(PATH);
-  back(date);
+  back(date, undefined, PATH, returnTo);
 }

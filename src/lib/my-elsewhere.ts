@@ -14,6 +14,7 @@ export type ElsewhereItem =
   | {
       kind: "elsewhere-reservation";
       id: string;
+      date: string;
       startMinutes: number;
       endMinutes: number;
       tenantName: string;
@@ -23,20 +24,23 @@ export type ElsewhereItem =
   | {
       kind: "elsewhere-block";
       id: string;
+      date: string;
       startMinutes: number;
       endMinutes: number;
       tenantName: string;
       reason: string;
     }
-  | { kind: "event"; id: string; startMinutes: number; endMinutes: number; title: string };
+  | { kind: "event"; id: string; date: string; startMinutes: number; endMinutes: number; title: string };
 
 export async function fetchMyElsewhere(params: {
   userId: string;
   tenantId: string;
   staffId: string;
-  date: string;
+  /** 読む日付（1日表示なら1日、週・月の表示ならその範囲の全部の日） */
+  dates: string[];
 }): Promise<ElsewhereItem[]> {
-  const { userId, tenantId, staffId, date } = params;
+  const { userId, tenantId, staffId, dates } = params;
+  const date = { in: dates };
 
   const [user, currentStaff] = await Promise.all([
     prisma.user.findUnique({
@@ -69,6 +73,7 @@ export async function fetchMyElsewhere(params: {
           where: { staffId: { in: staffIds }, date, status: "booked" },
           select: {
             id: true,
+            date: true,
             startMinutes: true,
             endMinutes: true,
             menuNameSnapshot: true,
@@ -83,6 +88,7 @@ export async function fetchMyElsewhere(params: {
           where: { staffId: { in: staffIds }, date },
           select: {
             id: true,
+            date: true,
             startMinutes: true,
             endMinutes: true,
             reason: true,
@@ -93,7 +99,7 @@ export async function fetchMyElsewhere(params: {
     employeeId
       ? prisma.employeeEvent.findMany({
           where: { employeeId, date },
-          select: { id: true, startMinutes: true, endMinutes: true, title: true },
+          select: { id: true, date: true, startMinutes: true, endMinutes: true, title: true },
         })
       : [],
   ]);
@@ -103,6 +109,7 @@ export async function fetchMyElsewhere(params: {
       (r): ElsewhereItem => ({
         kind: "elsewhere-reservation",
         id: r.id,
+        date: r.date,
         startMinutes: r.startMinutes,
         endMinutes: r.endMinutes,
         tenantName: r.tenant.name,
@@ -114,6 +121,7 @@ export async function fetchMyElsewhere(params: {
       (b): ElsewhereItem => ({
         kind: "elsewhere-block",
         id: b.id,
+        date: b.date,
         startMinutes: b.startMinutes,
         endMinutes: b.endMinutes,
         tenantName: b.tenant.name,

@@ -11,12 +11,14 @@ import { revalidatePath } from "next/cache";
 import { requireTeamSession } from "./auth";
 import { parseRanges } from "./ranges";
 import { prisma } from "./prisma";
+import { safeReturnPath } from "./schedule-range";
 import { getTeamViewer } from "./team";
 
 const PATH = "/team";
 
-function back(date: string, message?: string): never {
-  const path = `${PATH}?date=${encodeURIComponent(date)}`;
+/** 元の表示（日・週・月、選んだ人）に戻る。returnTo はフォームの隠し欄から来る */
+function back(date: string, returnTo: unknown, message?: string): never {
+  const path = safeReturnPath(returnTo, PATH, date);
   redirect(message ? `${path}&error=${encodeURIComponent(message)}` : `${path}&done=1`);
 }
 
@@ -33,28 +35,29 @@ export async function createEmployeeEvent(formData: FormData) {
   const session = await requireTeamSession();
   const viewer = await getTeamViewer(session);
 
+  const returnTo = formData.get("returnTo");
   const date = String(formData.get("date") ?? "");
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) back(date, "日付の形式が正しくありません");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) back("", returnTo, "日付の形式が正しくありません");
 
   // 対象の社員。指定が無ければ自分。自分以外を選べるのは全社管理者だけ
   const employeeId = String(formData.get("employeeId") ?? "") || viewer.employeeId;
   if (!employeeId) {
-    back(date, "このアカウントは社員名簿とひも付いていないため、予定を入れられません。全社管理者に依頼してください");
+    back(date, returnTo, "このアカウントは社員名簿とひも付いていないため、予定を入れられません。全社管理者に依頼してください");
   }
   if (employeeId !== viewer.employeeId && !viewer.isAdmin) {
-    back(date, "自分の予定だけ入れられます");
+    back(date, returnTo, "自分の予定だけ入れられます");
   }
 
   const employee = await prisma.employee.findFirst({ where: { id: employeeId, isActive: true } });
-  if (!employee) back(date, "社員が見つかりません");
+  if (!employee) back(date, returnTo, "社員が見つかりません");
 
   const title = String(formData.get("title") ?? "").trim();
-  if (!title) back(date, "件名を入力してください");
-  if (title.length > 100) back(date, "件名は100文字以内にしてください");
+  if (!title) back(date, returnTo, "件名を入力してください");
+  if (title.length > 100) back(date, returnTo, "件名は100文字以内にしてください");
 
   const result = parseRanges(`${formData.get("start") ?? ""}-${formData.get("end") ?? ""}`);
-  if (!result.ok) back(date, result.message);
-  if (result.intervals.length !== 1) back(date, "開始・終了の時刻を入力してください");
+  if (!result.ok) back(date, returnTo, result.message);
+  if (result.intervals.length !== 1) back(date, returnTo, "開始・終了の時刻を入力してください");
   const interval = result.intervals[0];
 
   await prisma.employeeEvent.create({
@@ -70,23 +73,24 @@ export async function createEmployeeEvent(formData: FormData) {
   });
 
   revalidateAll();
-  back(date);
+  back(date, returnTo);
 }
 
 export async function deleteEmployeeEvent(formData: FormData) {
   const session = await requireTeamSession();
   const viewer = await getTeamViewer(session);
+  const returnTo = formData.get("returnTo");
   const date = String(formData.get("date") ?? "");
   const id = String(formData.get("id") ?? "");
 
   const event = await prisma.employeeEvent.findUnique({ where: { id } });
-  if (!event) back(date, "見つかりません");
+  if (!event) back(date, returnTo, "見つかりません");
   if (event.employeeId !== viewer.employeeId && !viewer.isAdmin) {
-    back(date, "他の人の予定は削除できません");
+    back(date, returnTo, "他の人の予定は削除できません");
   }
 
   await prisma.employeeEvent.delete({ where: { id } });
 
   revalidateAll();
-  back(date);
+  back(date, returnTo);
 }

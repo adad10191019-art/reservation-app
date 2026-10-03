@@ -176,9 +176,12 @@ export function layoutLanes<T extends { startMinutes: number; endMinutes: number
 
 /** 表示する時間の範囲。予定が無ければ 9:00〜19:00 */
 export function teamViewRange(columns: TeamColumn[]): Interval {
-  const points = columns.flatMap((c) =>
-    c.items.filter((i) => !isAllDay(i)).flatMap((i) => [i.startMinutes, i.endMinutes]),
-  );
+  return timeRangeOf(columns.flatMap((c) => c.items));
+}
+
+/** 並べる項目すべてが入る時間の範囲（1時間単位）。終日の予定では広げない。予定が無ければ 9:00〜19:00 */
+export function timeRangeOf(items: { startMinutes: number; endMinutes: number }[]): Interval {
+  const points = items.filter((i) => !isAllDay(i)).flatMap((i) => [i.startMinutes, i.endMinutes]);
   const start = Math.min(9 * 60, ...points);
   const end = Math.max(19 * 60, ...points);
   return { start: Math.floor(start / 60) * 60, end: Math.ceil(end / 60) * 60 };

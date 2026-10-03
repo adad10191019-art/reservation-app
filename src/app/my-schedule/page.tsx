@@ -1,30 +1,46 @@
 import Link from "next/link";
 import { AppHeader } from "@/components/app-header";
 import { Banner } from "@/components/banner";
+import {
+  AddEntryPanel,
+  DayColumnHeader,
+  MonthGrid,
+  ScheduleNav,
+  type ScheduleEntry,
+  TimelineGrid,
+  scheduleHref,
+} from "@/components/schedule-views";
 import { SubmitButton } from "@/components/submit-button";
 import { TimeRangeFields } from "@/components/time-range-fields";
 import { requireSession } from "@/lib/auth";
-import { fetchGoogleBusyByDate, isGoogleCalendarConfigured } from "@/lib/google-calendar";
+import { fetchGoogleEventsOfDates, isGoogleCalendarConfigured } from "@/lib/google-calendar";
+import { fetchMyCalendar } from "@/lib/my-calendar";
 import { type ElsewhereItem, fetchMyElsewhere } from "@/lib/my-elsewhere";
 import { prisma } from "@/lib/prisma";
 import { getDaySchedule, getTenant } from "@/lib/schedule";
+import { monthWeeks, parseView, viewDates } from "@/lib/schedule-range";
 import { createOwnBlock, deleteOwnBlock } from "@/lib/staff-schedule-actions";
-import { addDays, formatDateLabel, sanitizeDate, toHm, todayString } from "@/lib/time";
+import { sanitizeDate, toHm, todayString } from "@/lib/time";
 import { defaultStart } from "@/lib/time-choices";
+
+const PATH = "/my-schedule";
 
 type AgendaItem =
   | { kind: "reservation"; id: string; startMinutes: number; endMinutes: number; menuName: string; customerName: string }
   | { kind: "block"; id: string; startMinutes: number; endMinutes: number; reason: string; wholeShop: boolean }
-  | { kind: "google"; startMinutes: number; endMinutes: number }
+  | { kind: "google"; startMinutes: number; endMinutes: number; title: string | null }
   | ElsewhereItem;
 
 export default async function MySchedulePage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string; error?: string; done?: string }>;
+  searchParams: Promise<{ date?: string; view?: string; error?: string; done?: string }>;
 }) {
   const sp = await searchParams;
   const date = sanitizeDate(sp.date);
+  const view = parseView(sp.view);
+  const today = todayString();
+  const returnTo = scheduleHref(PATH, view, date);
   const session = await requireSession();
   const tenant = await getTenant(session.tenantId);
 
@@ -48,6 +64,57 @@ export default async function MySchedulePage({
 
   const staffId = session.staffId;
 
+  if (view !== "day") {
+    // 週・月：自分の予定の全部をカレンダーの形で並べる。日付を押すとその日の1日表示へ
+    const dates = viewDates(view, date);
+    const items = await fetchMyCalendar({ userId: session.userId, tenantId: tenant.id, staffId, dates });
+    const entriesOf = (d: string): ScheduleEntry[] => items.filter((i) => i.date === d);
+
+    return (
+      <main className="mx-auto w-full max-w-5xl p-4 sm:p-6">
+        <MyScheduleHeader tenantName={tenant.name} session={session} date={date} />
+        <Banner error={sp.error} done={sp.done} />
+        <ScheduleNav basePath={PATH} view={view} date={date} today={today} />
+
+        <p className="mb-3 text-xs leading-relaxed text-neutral-500">
+          ここにある内容は<strong>自分（{session.name}）の分だけ</strong>です。
+          兼任先の部署の予約・全体スケジュールの予定・Googleカレンダーの予定もまとめて出します。
+          日付を押すと、その日の一覧が出ます。
+        </p>
+
+        <AddEntryPanel label="自分の予定を追加">
+          <AddOwnBlockForm date={date} returnTo={returnTo} />
+        </AddEntryPanel>
+
+        <section className="mb-5">
+          {view === "week" ? (
+            <TimelineGrid
+              columnClassName="min-w-[88px] flex-1"
+              columns={dates.map((d) => ({
+                key: d,
+                highlight: d === today,
+                header: <DayColumnHeader date={d} today={today} href={scheduleHref(PATH, "day", d)} />,
+                entries: entriesOf(d),
+              }))}
+            />
+          ) : (
+            <MonthGrid
+              weeks={monthWeeks(date)}
+              month={date.slice(0, 7)}
+              today={today}
+              entriesByDate={new Map(dates.map((d) => [d, entriesOf(d)]))}
+              dayHref={(d) => scheduleHref(PATH, "day", d)}
+            />
+          )}
+          <p className="mt-2 text-xs text-neutral-500">
+            青は{tenant.name}の予約（押すと詳細）、水色は兼任先の部署の予約、破線はブロック枠、
+            緑は全体スケジュールで入れた予定、紫はGoogleカレンダーの予定です。
+          </p>
+        </section>
+      </main>
+    );
+  }
+
   const [schedule, ownBlocks, googleConnection, elsewhere] = await Promise.all([
     getDaySchedule({ tenantId: tenant.id, date }),
     prisma.block.findMany({
@@ -60,13 +127,12 @@ export default async function MySchedulePage({
           .findUnique({ where: { id: staffId }, select: { employee: { select: { googleCalendarConnection: true } } } })
           .then((staff) => staff?.employee?.googleCalendarConnection ?? null)
       : null,
-    fetchMyElsewhere({ userId: session.userId, tenantId: tenant.id, staffId, date }),
+    fetchMyElsewhere({ userId: session.userId, tenantId: tenant.id, staffId, dates: [date] }),
   ]);
 
-  // 連携していれば、Googleカレンダーの予定も「見るだけ」の項目として混ぜる。
-  // タイトルは freebusy API からは取れないため、時間帯だけ表示する
+  // 連携していれば、Googleカレンダーの予定も「見るだけ」の項目として混ぜる（本人の分なので件名も出す）
   const googleBusy = googleConnection
-    ? (await fetchGoogleBusyByDate(googleConnection, [date])).get(date) ?? []
+    ? ((await fetchGoogleEventsOfDates(googleConnection, [date], true))?.get(date) ?? [])
     : [];
 
   // 自分の列だけを取り出す。まだ勤務日として登録されていない
@@ -98,42 +164,17 @@ export default async function MySchedulePage({
     ),
     ...elsewhere,
     ...googleBusy.map(
-      (g): AgendaItem => ({ kind: "google", startMinutes: g.start, endMinutes: g.end }),
+      (g): AgendaItem => ({ kind: "google", startMinutes: g.start, endMinutes: g.end, title: g.title }),
     ),
   ].sort((a, b) => a.startMinutes - b.startMinutes);
 
   return (
     <main className="mx-auto w-full max-w-2xl p-4 sm:p-6">
-      <AppHeader
-        tenantName={tenant.name}
-        subtitle="自分の予定"
-        session={session}
-        menuLinks={[{ href: `/my-schedule/settings?date=${date}`, label: "予定の設定" }]}
-      >
-        <Link
-          href={`/calendar?date=${date}`}
-          className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
-        >
-          全体を見る（日表示）
-        </Link>
-        <Link
-          href={`/calendar/week?date=${date}`}
-          className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
-        >
-          全体を見る（週表示）
-        </Link>
-      </AppHeader>
+      <MyScheduleHeader tenantName={tenant.name} session={session} date={date} />
 
       <Banner error={sp.error} done={sp.done} />
 
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold">{formatDateLabel(date)}</h2>
-        <nav className="flex items-center gap-1">
-          <DayLink date={addDays(date, -1)} label="← 前日" />
-          <DayLink date={todayString()} label="今日" />
-          <DayLink date={addDays(date, 1)} label="翌日 →" />
-        </nav>
-      </div>
+      <ScheduleNav basePath={PATH} view={view} date={date} today={today} />
 
       <p className="mb-3 text-xs leading-relaxed text-neutral-500">
         ここにある内容は<strong>自分（{session.name}）の分だけ</strong>です。
@@ -251,7 +292,7 @@ export default async function MySchedulePage({
                 </li>
               ) : (
                 <li
-                  key={`g-${item.startMinutes}`}
+                  key={`g-${item.startMinutes}-${item.endMinutes}-${item.title ?? ""}`}
                   className="flex items-center gap-3 rounded-lg border border-dashed border-violet-300 bg-violet-50 px-3 py-2.5"
                 >
                   <span className="w-11 shrink-0 text-sm font-medium tabular-nums text-violet-800">
@@ -259,10 +300,10 @@ export default async function MySchedulePage({
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium text-violet-900">
-                      Googleカレンダーの予定
+                      {item.title ?? "予定あり"}
                     </span>
                     <span className="block truncate text-xs text-violet-700">
-                      {item.endMinutes - item.startMinutes}分・内容はここでは分かりません
+                      {item.endMinutes - item.startMinutes}分・Googleカレンダーの予定
                     </span>
                   </span>
                 </li>
@@ -286,29 +327,9 @@ export default async function MySchedulePage({
           </details>
         </div>
 
-        <form action={createOwnBlock} className="mb-4 flex flex-wrap items-end gap-2">
-          <input
-            type="date"
-            name="date"
-            required
-            defaultValue={date}
-            className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
-          />
-          <TimeRangeFields key={date} defaultStart={defaultStart(date, new Date())} />
-          <input
-            type="text"
-            name="reason"
-            required
-            placeholder="商談、私用 など"
-            className="min-w-32 flex-1 rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
-          />
-          <SubmitButton
-            pendingText="追加中…"
-            className="rounded-md bg-neutral-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-700"
-          >
-            追加
-          </SubmitButton>
-        </form>
+        <div className="mb-4">
+          <AddOwnBlockForm date={date} returnTo={returnTo} />
+        </div>
 
         {ownBlocks.length === 0 ? (
           <p className="rounded-md bg-neutral-50 px-3 py-5 text-center text-sm text-neutral-500">
@@ -330,6 +351,7 @@ export default async function MySchedulePage({
                 <form action={deleteOwnBlock}>
                   <input type="hidden" name="id" value={block.id} />
                   <input type="hidden" name="date" value={date} />
+                  <input type="hidden" name="returnTo" value={returnTo} />
                   <SubmitButton
                     pendingText="削除中…"
                     confirmText={`「${block.reason}」（${toHm(block.startMinutes)}–${toHm(block.endMinutes)}）を消しますか？`}
@@ -347,13 +369,66 @@ export default async function MySchedulePage({
   );
 }
 
-function DayLink({ date, label }: { date: string; label: string }) {
+function MyScheduleHeader({
+  tenantName,
+  session,
+  date,
+}: {
+  tenantName: string;
+  session: Awaited<ReturnType<typeof requireSession>>;
+  date: string;
+}) {
   return (
-    <Link
-      href={`/my-schedule?date=${date}`}
-      className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
+    <AppHeader
+      tenantName={tenantName}
+      subtitle="自分の予定"
+      session={session}
+      menuLinks={[{ href: `/my-schedule/settings?date=${date}`, label: "予定の設定" }]}
     >
-      {label}
-    </Link>
+      <Link
+        href={`/calendar?date=${date}`}
+        className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
+      >
+        全体を見る（日表示）
+      </Link>
+      <Link
+        href={`/calendar/week?date=${date}`}
+        className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
+      >
+        全体を見る（週表示）
+      </Link>
+    </AppHeader>
+  );
+}
+
+/** 自分の予定（ブロック枠）を足す欄。足したあとは元の表示（日・週・月）の、足した日に戻る */
+function AddOwnBlockForm({ date, returnTo }: { date: string; returnTo: string }) {
+  return (
+    <form action={createOwnBlock} className="flex flex-wrap items-end gap-2">
+      <input type="hidden" name="returnTo" value={returnTo} />
+      <input
+        key={`date-${date}`}
+        type="date"
+        name="date"
+        required
+        defaultValue={date}
+        aria-label="日付"
+        className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+      />
+      <TimeRangeFields key={date} defaultStart={defaultStart(date, new Date())} />
+      <input
+        type="text"
+        name="reason"
+        required
+        placeholder="商談、私用 など"
+        className="min-w-32 flex-1 rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+      />
+      <SubmitButton
+        pendingText="追加中…"
+        className="rounded-md bg-neutral-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-700"
+      >
+        追加
+      </SubmitButton>
+    </form>
   );
 }

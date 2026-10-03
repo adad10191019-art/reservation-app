@@ -9,7 +9,10 @@
  * 裏側からアクセストークンを取り直し続ける（LINEログインと同じ、fetchだけの実装）。
  */
 import { prisma } from "./prisma";
+import { type GoogleEvent, type GoogleEventItem, splitGoogleEventsByDate } from "./google-event-split";
 import { dateMinutesToUtcIso } from "./time";
+
+export type { GoogleEventItem } from "./google-event-split";
 
 const AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -242,31 +245,19 @@ export async function fetchGoogleBusyByDate(
   return result;
 }
 
-/** 全体スケジュールに出す Google の予定1件。title は件名を出さない設定なら null */
-export type GoogleEventItem = { start: number; end: number; title: string | null };
-
-type GoogleEvent = {
-  status?: string;
-  summary?: string;
-  visibility?: string;
-  transparency?: string;
-  start?: { dateTime?: string; date?: string };
-  end?: { dateTime?: string; date?: string };
-};
-
 /**
- * その日の Google の予定を、件名つきで取ってくる（全体スケジュール用）。
- *
- * 空き枠の計算（freeBusy）とそろえて、「予定なし」として入れた予定（transparency=transparent。
- * 終日の予定はふつうこれ）とキャンセル済みは出さない。
- * Google 側で「非公開」にした予定は、件名を出す設定でも件名を出さない。
+ * 何日分かの Google の予定を、件名つきでまとめて1回で取ってくる（全体スケジュール・自分の予定用）。
+ * 日付ごとへの分け方（出さない予定・件名を隠す予定）は google-event-split.ts。
  * 問い合わせられなかったときは null（呼び出し側で前回の分を使うなどする）。
  */
-export async function fetchGoogleEventsOfDate(
+export async function fetchGoogleEventsOfDates(
   connection: ConnectionRow,
-  date: string,
+  dates: string[],
   withTitles: boolean,
-): Promise<GoogleEventItem[] | null> {
+): Promise<Map<string, GoogleEventItem[]> | null> {
+  if (dates.length === 0) return new Map();
+  const sorted = [...dates].sort();
+
   let accessToken: string;
   try {
     accessToken = await getValidAccessToken(connection);
@@ -274,14 +265,13 @@ export async function fetchGoogleEventsOfDate(
     return null;
   }
 
-  const dayStartMs = new Date(dateMinutesToUtcIso(date, 0)).getTime();
-  const dayEndMs = new Date(dateMinutesToUtcIso(date, 24 * 60)).getTime();
   const query = new URLSearchParams({
-    timeMin: dateMinutesToUtcIso(date, 0),
-    timeMax: dateMinutesToUtcIso(date, 24 * 60),
+    timeMin: dateMinutesToUtcIso(sorted[0], 0),
+    timeMax: dateMinutesToUtcIso(sorted[sorted.length - 1], 24 * 60),
     singleEvents: "true", // 繰り返しの予定を1回ずつに展開してもらう
     orderBy: "startTime",
-    maxResults: "100",
+    // 1か月分（月表示は最大6週）でも1回で収まるよう、上限いっぱいにする
+    maxResults: "2500",
     fields: "items(status,summary,visibility,transparency,start,end)",
   });
 
@@ -296,29 +286,5 @@ export async function fetchGoogleEventsOfDate(
   if (!res.ok) return null;
 
   const data = (await res.json()) as { items?: GoogleEvent[] };
-  const result: GoogleEventItem[] = [];
-  for (const e of data.items ?? []) {
-    if (e.status === "cancelled" || e.transparency === "transparent") continue;
-    let s: number;
-    let t: number;
-    if (e.start?.dateTime && e.end?.dateTime) {
-      s = Math.max(new Date(e.start.dateTime).getTime(), dayStartMs);
-      t = Math.min(new Date(e.end.dateTime).getTime(), dayEndMs);
-    } else if (e.start?.date && e.end?.date) {
-      // 終日の予定（「予定あり」にしたもの）。終わりの日付はその日を含まない
-      if (!(e.start.date <= date && date < e.end.date)) continue;
-      s = dayStartMs;
-      t = dayEndMs;
-    } else {
-      continue;
-    }
-    if (t <= s) continue;
-    const hidden = e.visibility === "private" || e.visibility === "confidential";
-    result.push({
-      start: Math.round((s - dayStartMs) / 60000),
-      end: Math.round((t - dayStartMs) / 60000),
-      title: withTitles && !hidden && e.summary ? e.summary.slice(0, 100) : null,
-    });
-  }
-  return result;
+  return splitGoogleEventsByDate(data.items ?? [], dates, withTitles);
 }

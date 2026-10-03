@@ -1,62 +1,96 @@
 import Link from "next/link";
 import { AppHeader } from "@/components/app-header";
+import { AutoSubmitSelect } from "@/components/auto-submit-select";
 import { Banner } from "@/components/banner";
+import {
+  AddEntryPanel,
+  DayColumnHeader,
+  MonthGrid,
+  ScheduleNav,
+  type ScheduleEntry,
+  TimelineGrid,
+  scheduleHref,
+} from "@/components/schedule-views";
 import { SubmitButton } from "@/components/submit-button";
 import { TimeRangeFields } from "@/components/time-range-fields";
 import { requireTeamSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getTenant } from "@/lib/schedule";
-import { getTeamDay, getTeamViewer } from "@/lib/team";
+import { monthWeeks, parseView, viewDates } from "@/lib/schedule-range";
+import { getTeamDays, getTeamViewer } from "@/lib/team";
 import { createEmployeeEvent, deleteEmployeeEvent } from "@/lib/team-actions";
-import { type TeamItem, layoutLanes, teamViewRange } from "@/lib/team-view";
-import { addDays, formatDateLabel, sanitizeDate, toHm, todayString } from "@/lib/time";
+import type { TeamColumn, TeamItem } from "@/lib/team-view";
+import { sanitizeDate, toHm, todayString } from "@/lib/time";
 import { defaultStart } from "@/lib/time-choices";
 
-const PX_PER_MIN = 1.1;
-const COLUMN_WIDTH = 132;
+const PATH = "/team";
 
-const ITEM_STYLE: Record<TeamItem["kind"], string> = {
-  event: "border-emerald-300 bg-emerald-50 text-emerald-900",
-  reservation: "border-sky-300 bg-sky-50 text-sky-900",
-  block: "border-dashed border-amber-400 bg-amber-50 text-amber-900",
-  google: "border-violet-300 bg-violet-50 text-violet-900",
-};
-
-/** 消している途中（中の送信ボタンが aria-busy）の予定は薄くして、押したことがすぐわかるようにする */
-const BUSY_FADE = "has-[[aria-busy=true]]:pointer-events-none has-[[aria-busy=true]]:opacity-40";
-
-/** 社員全員の1日の予定を、1人1列で並べる画面 */
-export default async function TeamDayPage({
+/**
+ * 社員の予定を見る画面。
+ *   ・1日 … 社員全員を1人1列で並べる
+ *   ・週・月 … 1人分だけ（上の欄で人を選ぶ。最初は自分）。数十人を週・月で並べるとスマホで読めないため
+ */
+export default async function TeamPage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string; error?: string; done?: string }>;
+  searchParams: Promise<{ date?: string; view?: string; person?: string; error?: string; done?: string }>;
 }) {
   const sp = await searchParams;
   const date = sanitizeDate(sp.date);
+  const view = parseView(sp.view);
   const today = todayString();
 
   const session = await requireTeamSession();
   // 社員（部署に属さない人）には部署が無いので、見出しは「全社」にする
-  const [tenant, viewer] = await Promise.all([
+  const [tenant, viewer, employees] = await Promise.all([
     session.tenantId ? getTenant(session.tenantId) : { name: "全社" },
     getTeamViewer(session),
+    prisma.employee.findMany({
+      where: { isActive: true },
+      orderBy: [{ displayOrder: "asc" }, { name: "asc" }],
+      select: { id: true, name: true },
+    }),
   ]);
-  const columns = await getTeamDay(date, viewer);
-  const range = teamViewRange(columns);
-  const totalHeight = (range.end - range.start) * PX_PER_MIN;
-  const hours: number[] = [];
-  for (let m = range.start; m <= range.end; m += 60) hours.push(m);
-  const top = (m: number) => (m - range.start) * PX_PER_MIN;
 
-  // 全社管理者は、誰の予定を入れるか選べる
-  const employeeChoices = viewer.isAdmin
-    ? await prisma.employee.findMany({
-        where: { isActive: true },
-        orderBy: [{ displayOrder: "asc" }, { name: "asc" }],
-        select: { id: true, name: true },
-      })
-    : [];
+  // 週・月で見る人。指定が無い・いない人なら自分、自分が名簿にいなければ名簿の先頭
+  const person =
+    view === "day"
+      ? null
+      : (employees.find((e) => e.id === sp.person)?.id ?? viewer.employeeId ?? employees[0]?.id ?? null);
+  const extra: Record<string, string> = person ? { person } : {};
+  const returnTo = scheduleHref(PATH, view, date, extra);
+
+  const dates = viewDates(view, date);
+  const byDate =
+    view === "day" || person
+      ? await getTeamDays(dates, viewer, person ?? undefined)
+      : new Map<string, TeamColumn[]>();
+
+  /** 全体スケジュールの1件を、並べる部品の形にする（消せる予定には × を付ける） */
+  const toEntry = (item: TeamItem, itemDate: string): ScheduleEntry => ({
+    ...item,
+    action: item.deletableEventId ? (
+      <form action={deleteEmployeeEvent}>
+        <input type="hidden" name="id" value={item.deletableEventId} />
+        <input type="hidden" name="date" value={itemDate} />
+        <input type="hidden" name="returnTo" value={returnTo} />
+        <SubmitButton
+          pendingText="…"
+          ariaLabel={`${item.label} を削除`}
+          confirmText={`「${item.label}」（${toHm(item.startMinutes)}–${toHm(item.endMinutes)}）を消しますか？`}
+          className="rounded px-0.5 text-neutral-500 hover:bg-white hover:text-red-700"
+        >
+          ×
+        </SubmitButton>
+      </form>
+    ) : undefined,
+  });
+  /** 週・月で見ている人の、その日の予定 */
+  const personEntries = (d: string): ScheduleEntry[] =>
+    (byDate.get(d)?.[0]?.items ?? []).map((item) => toEntry(item, d));
+
   const canAdd = viewer.employeeId !== null || viewer.isAdmin;
+  const personName = employees.find((e) => e.id === person)?.name;
 
   return (
     <main className="mx-auto w-full max-w-7xl p-4 sm:p-6">
@@ -73,62 +107,93 @@ export default async function TeamDayPage({
 
       <Banner error={sp.error} done={sp.done} />
 
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold">{formatDateLabel(date)}</h2>
-        <nav className="flex items-center gap-1">
-          <DateLink date={addDays(date, -1)} label="← 前日" />
-          <DateLink date={today} label="今日" highlight={date === today} />
-          <DateLink date={addDays(date, 1)} label="翌日 →" />
-        </nav>
-      </div>
+      <ScheduleNav basePath={PATH} view={view} date={date} today={today} extra={extra}>
+        {view !== "day" && employees.length > 0 && (
+          // 週・月で見る人を選ぶ。選んだらすぐ切り替わる
+          <form method="get" action={PATH} className="flex items-center gap-1.5">
+            <input type="hidden" name="view" value={view} />
+            <input type="hidden" name="date" value={date} />
+            <span className="text-sm text-neutral-600">見る人</span>
+            <AutoSubmitSelect
+              key={person ?? ""}
+              name="person"
+              defaultValue={person ?? undefined}
+              aria-label="予定を見る人"
+              className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
+            >
+              {employees.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.id === viewer.employeeId ? `${e.name}（自分）` : e.name}
+                </option>
+              ))}
+            </AutoSubmitSelect>
+          </form>
+        )}
+      </ScheduleNav>
 
       {canAdd ? (
-        <form
-          action={createEmployeeEvent}
-          className="mb-4 flex flex-wrap items-end gap-2 rounded-lg border border-neutral-200 bg-white p-3"
-        >
-          <input type="hidden" name="date" value={date} />
-          {viewer.isAdmin && (
+        <AddEntryPanel>
+          <form action={createEmployeeEvent} className="flex flex-wrap items-end gap-2">
+            <input type="hidden" name="returnTo" value={returnTo} />
+            {viewer.isAdmin && (
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-neutral-600">誰の予定</span>
+                <select
+                  key={person ?? ""}
+                  name="employeeId"
+                  // 週・月で人を選んでいれば、その人の予定を入れる形にしておく
+                  defaultValue={person ?? viewer.employeeId ?? ""}
+                  required
+                  className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+                >
+                  {viewer.employeeId === null && person === null && <option value="">選んでください</option>}
+                  {employees.map((e) => (
+                    <option key={e.id} value={e.id}>
+                      {e.id === viewer.employeeId ? `${e.name}（自分）` : e.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label className="block">
-              <span className="mb-1 block text-xs font-medium text-neutral-600">誰の予定</span>
-              <select
-                name="employeeId"
-                defaultValue={viewer.employeeId ?? ""}
+              <span className="mb-1 block text-xs font-medium text-neutral-600">日付</span>
+              <input
+                key={`date-${date}`}
+                type="date"
+                name="date"
                 required
+                defaultValue={date}
                 className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
-              >
-                {viewer.employeeId === null && <option value="">選んでください</option>}
-                {employeeChoices.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.id === viewer.employeeId ? `${e.name}（自分）` : e.name}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
-          )}
-          <TimeRangeFields key={date} defaultStart={defaultStart(date, new Date())} />
-          <label className="block min-w-40 flex-1">
-            <span className="mb-1 block text-xs font-medium text-neutral-600">件名</span>
-            <input
-              type="text"
-              name="title"
-              required
-              maxLength={100}
-              placeholder="例：外出（〇〇社）"
-              className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
-            />
-          </label>
-          <label className="flex items-center gap-1.5 pb-2 text-sm text-neutral-700">
-            <input type="checkbox" name="isPrivate" />
-            私用（件名を隠す）
-          </label>
-          <SubmitButton
-            pendingText="追加中…"
-            className="rounded-md bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-700"
-          >
-            予定を追加
-          </SubmitButton>
-        </form>
+            <TimeRangeFields key={date} defaultStart={defaultStart(date, new Date())} />
+            <label className="block min-w-40 flex-1">
+              <span className="mb-1 block text-xs font-medium text-neutral-600">件名</span>
+              <input
+                type="text"
+                name="title"
+                required
+                maxLength={100}
+                placeholder="例：外出（〇〇社）"
+                className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+              />
+            </label>
+            <label className="flex items-center gap-1.5 pb-2 text-sm text-neutral-700">
+              <input type="checkbox" name="isPrivate" />
+              私用（件名を隠す）
+            </label>
+            <SubmitButton
+              pendingText="追加中…"
+              className="rounded-md bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-700"
+            >
+              予定を追加
+            </SubmitButton>
+            {!viewer.isAdmin && person !== null && person !== viewer.employeeId && (
+              // ほかの人の週・月を見ていても、入るのは自分の予定
+              <p className="w-full text-xs text-neutral-500">ここで追加する予定は、自分の予定として入ります。</p>
+            )}
+          </form>
+        </AddEntryPanel>
       ) : (
         <p className="mb-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
           このアカウントはメンバーとして整っていないため、予定を入れられません（見ることはできます）。
@@ -136,7 +201,7 @@ export default async function TeamDayPage({
         </p>
       )}
 
-      {columns.length === 0 ? (
+      {employees.length === 0 ? (
         <p className="rounded-md border border-neutral-200 bg-white px-3 py-6 text-center text-sm text-neutral-500">
           メンバーがまだいません。
           {viewer.isAdmin && (
@@ -149,97 +214,52 @@ export default async function TeamDayPage({
             </>
           )}
         </p>
+      ) : view === "day" ? (
+        <TimelineGrid
+          columnClassName="w-[132px] shrink-0"
+          columns={(byDate.get(date) ?? []).map((col) => ({
+            key: col.employeeId,
+            highlight: col.isMe,
+            header: (
+              <>
+                <div className="truncate text-sm font-medium" title={col.name}>
+                  {col.name}
+                  {col.isMe && <span className="ml-1 text-xs text-emerald-700">（自分）</span>}
+                </div>
+                <div className="truncate text-[11px] text-neutral-500" title={col.departments.join("・")}>
+                  {col.departments.length > 0 ? col.departments.join("・") : "　"}
+                </div>
+              </>
+            ),
+            entries: col.items.map((item) => toEntry(item, date)),
+          }))}
+        />
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
-          <div className="flex min-w-max">
-            {/* 時刻の列。横にスクロールしても見えるよう左に固定する */}
-            <div className="sticky left-0 z-20 w-12 shrink-0 border-r border-neutral-200 bg-white">
-              <div className="h-14 border-b border-neutral-200" />
-              <div className="relative" style={{ height: totalHeight }}>
-                {hours.map((m) => (
-                  <div
-                    key={m}
-                    className="absolute right-1 -translate-y-1/2 text-[11px] tabular-nums text-neutral-400"
-                    style={{ top: top(m) }}
-                  >
-                    {toHm(m)}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {columns.map((col) => (
-              <div
-                key={col.employeeId}
-                className={`shrink-0 border-r border-neutral-100 ${col.isMe ? "bg-emerald-50/40" : ""}`}
-                style={{ width: COLUMN_WIDTH }}
-              >
-                <div className="h-14 border-b border-neutral-200 px-1.5 py-1.5">
-                  <div className="truncate text-sm font-medium" title={col.name}>
-                    {col.name}
-                    {col.isMe && <span className="ml-1 text-xs text-emerald-700">（自分）</span>}
-                  </div>
-                  <div
-                    className="truncate text-[11px] text-neutral-500"
-                    title={col.departments.join("・")}
-                  >
-                    {col.departments.length > 0 ? col.departments.join("・") : "　"}
-                  </div>
-                </div>
-                <div className="relative" style={{ height: totalHeight }}>
-                  {hours.map((m) => (
-                    <div
-                      key={m}
-                      className="absolute inset-x-0 border-t border-neutral-100"
-                      style={{ top: top(m) }}
-                    />
-                  ))}
-                  {layoutLanes(col.items).map(({ item, lane, lanes }) => (
-                    <div
-                      key={item.key}
-                      title={`${toHm(item.startMinutes)}–${toHm(item.endMinutes)} ${item.label}${item.note ? `（${item.note}）` : ""}`}
-                      className={`absolute overflow-hidden rounded border px-1 py-0.5 text-[11px] leading-tight transition-opacity ${BUSY_FADE} ${ITEM_STYLE[item.kind]}`}
-                      style={{
-                        // 終日の予定は表示している時間の範囲に収める
-                        top: top(Math.max(item.startMinutes, range.start)),
-                        height: Math.max(
-                          (Math.min(item.endMinutes, range.end) - Math.max(item.startMinutes, range.start)) *
-                            PX_PER_MIN -
-                            2,
-                          14,
-                        ),
-                        left: `calc(${(lane / lanes) * 100}% + 2px)`,
-                        width: `calc(${100 / lanes}% - 4px)`,
-                      }}
-                    >
-                      <div className="flex items-start justify-between gap-0.5">
-                        <span className="truncate font-medium">{item.label}</span>
-                        {item.deletableEventId && (
-                          <form action={deleteEmployeeEvent}>
-                            <input type="hidden" name="id" value={item.deletableEventId} />
-                            <input type="hidden" name="date" value={date} />
-                            <SubmitButton
-                              pendingText="…"
-                              ariaLabel={`${item.label} を削除`}
-                              confirmText={`「${item.label}」（${toHm(item.startMinutes)}–${toHm(item.endMinutes)}）を消しますか？`}
-                              className="rounded px-0.5 text-neutral-500 hover:bg-white hover:text-red-700"
-                            >
-                              ×
-                            </SubmitButton>
-                          </form>
-                        )}
-                      </div>
-                      <div className="truncate tabular-nums opacity-75">
-                        {toHm(item.startMinutes)}–{toHm(item.endMinutes)}
-                      </div>
-                      {item.note && <div className="truncate opacity-75">{item.note}</div>}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <>
+          <p className="mb-2 text-sm text-neutral-600">
+            <span className="font-medium text-neutral-900">{personName}</span> さんの予定
+            {view === "month" && "（日付を押すと、その日の全員の予定が出ます）"}
+          </p>
+          {view === "week" ? (
+            <TimelineGrid
+              columnClassName="min-w-[88px] flex-1"
+              columns={dates.map((d) => ({
+                key: d,
+                highlight: d === today,
+                header: <DayColumnHeader date={d} today={today} href={scheduleHref(PATH, "day", d)} />,
+                entries: personEntries(d),
+              }))}
+            />
+          ) : (
+            <MonthGrid
+              weeks={monthWeeks(date)}
+              month={date.slice(0, 7)}
+              today={today}
+              entriesByDate={new Map(dates.map((d) => [d, personEntries(d)]))}
+              dayHref={(d) => scheduleHref(PATH, "day", d)}
+            />
+          )}
+        </>
       )}
 
       <p className="mt-3 text-xs text-neutral-500">
@@ -249,20 +269,5 @@ export default async function TeamDayPage({
         ここで入れた予定は、その人がいる全部署の予約受付で「空いていない時間」になります。
       </p>
     </main>
-  );
-}
-
-function DateLink({ date, label, highlight }: { date: string; label: string; highlight?: boolean }) {
-  return (
-    <Link
-      href={`/team?date=${date}`}
-      className={`rounded-md border px-3 py-1.5 text-sm ${
-        highlight
-          ? "border-neutral-800 bg-neutral-800 text-white"
-          : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50"
-      }`}
-    >
-      {label}
-    </Link>
   );
 }

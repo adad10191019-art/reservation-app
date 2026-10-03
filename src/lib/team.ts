@@ -27,9 +27,17 @@ export async function getTeamViewer(session: AnySession): Promise<TeamViewer> {
   return { employeeId: staff?.employeeId ?? null, isAdmin };
 }
 
-export async function getTeamDay(date: string, viewer: TeamViewer): Promise<TeamColumn[]> {
+/**
+ * 何日分かの全体スケジュールを、日付 → 1人1列 の形で返す。
+ * 週・月の表示は1人分だけを見るので、onlyEmployeeId でその人に絞る（全員並べるのは1日表示だけ）。
+ */
+export async function getTeamDays(
+  dates: string[],
+  viewer: TeamViewer,
+  onlyEmployeeId?: string,
+): Promise<Map<string, TeamColumn[]>> {
   const employees = await prisma.employee.findMany({
-    where: { isActive: true },
+    where: { isActive: true, ...(onlyEmployeeId ? { id: onlyEmployeeId } : {}) },
     orderBy: [{ displayOrder: "asc" }, { name: "asc" }],
     select: { id: true, name: true },
   });
@@ -40,13 +48,15 @@ export async function getTeamDay(date: string, viewer: TeamViewer): Promise<Team
     select: { id: true, employeeId: true, tenant: { select: { name: true } } },
   });
   const staffIds = staffs.map((s) => s.id);
+  const inDates = { in: dates };
 
   const [events, reservations, blocks, googleByEmployee] = await Promise.all([
     prisma.employeeEvent.findMany({
-      where: { employeeId: { in: employeeIds }, date },
+      where: { employeeId: { in: employeeIds }, date: inDates },
       select: {
         id: true,
         employeeId: true,
+        date: true,
         startMinutes: true,
         endMinutes: true,
         title: true,
@@ -54,30 +64,41 @@ export async function getTeamDay(date: string, viewer: TeamViewer): Promise<Team
       },
     }),
     prisma.reservation.findMany({
-      where: { staffId: { in: staffIds }, date, status: "booked" },
+      where: { staffId: { in: staffIds }, date: inDates, status: "booked" },
       // お客様・メニューは読まない（全社員が見る画面のため）
-      select: { id: true, staffId: true, startMinutes: true, endMinutes: true },
+      select: { id: true, staffId: true, date: true, startMinutes: true, endMinutes: true },
     }),
     // 店舗全体のブロック枠（staffId が null）は「その人の予定」ではないので出さない
     prisma.block.findMany({
-      where: { staffId: { in: staffIds }, date },
-      select: { id: true, staffId: true, startMinutes: true, endMinutes: true, reason: true },
+      where: { staffId: { in: staffIds }, date: inDates },
+      select: { id: true, staffId: true, date: true, startMinutes: true, endMinutes: true, reason: true },
     }),
     // 連携している人の Google の予定（少しの間だけ覚えておいた分を使う）
-    getGoogleEventsForTeam(employeeIds, date),
+    getGoogleEventsForTeam(employeeIds, dates),
   ]);
 
-  return buildTeamColumns(
-    {
-      employees,
-      staffs: staffs.map((s) => ({ id: s.id, employeeId: s.employeeId!, tenantName: s.tenant.name })),
-      events,
-      reservations,
-      blocks: blocks.map((b) => ({ ...b, staffId: b.staffId! })),
-      googleEvents: [...googleByEmployee].flatMap(([employeeId, list]) =>
-        list.map((g) => ({ employeeId, startMinutes: g.start, endMinutes: g.end, title: g.title })),
+  const staffRows = staffs.map((s) => ({ id: s.id, employeeId: s.employeeId!, tenantName: s.tenant.name }));
+  return new Map(
+    dates.map((date) => [
+      date,
+      buildTeamColumns(
+        {
+          employees,
+          staffs: staffRows,
+          events: events.filter((e) => e.date === date),
+          reservations: reservations.filter((r) => r.date === date),
+          blocks: blocks.filter((b) => b.date === date).map((b) => ({ ...b, staffId: b.staffId! })),
+          googleEvents: [...googleByEmployee].flatMap(([employeeId, byDate]) =>
+            (byDate.get(date) ?? []).map((g) => ({
+              employeeId,
+              startMinutes: g.start,
+              endMinutes: g.end,
+              title: g.title,
+            })),
+          ),
+        },
+        viewer,
       ),
-    },
-    viewer,
+    ]),
   );
 }
