@@ -52,18 +52,17 @@ model Tenant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  memberships               Membership[]
-  staffs                    Staff[]
-  menus                     Menu[]
-  staffMenus                StaffMenu[]
-  businessHours             BusinessHour[]
-  dateOverrides             DateOverride[]
-  customers                 Customer[]
-  reservations              Reservation[]
-  blocks                    Block[]
-  changeLogs                ChangeLog[]
-  googleCalendarConnections GoogleCalendarConnection[]
-  customerLoginCodes        CustomerLoginCode[]
+  memberships        Membership[]
+  staffs             Staff[]
+  menus              Menu[]
+  staffMenus         StaffMenu[]
+  businessHours      BusinessHour[]
+  dateOverrides      DateOverride[]
+  customers          Customer[]
+  reservations       Reservation[]
+  blocks             Block[]
+  changeLogs         ChangeLog[]
+  customerLoginCodes CustomerLoginCode[]
 }
 
 // ── ログインする人 ─────────────────────
@@ -143,15 +142,14 @@ model Staff {
   /// 空ならまだ名簿とひも付けていない（その部署の中だけで今まで通り動く）
   employeeId String?
 
-  tenant                   Tenant                    @relation(fields: [tenantId], references: [id])
-  employee                 Employee?                 @relation(fields: [employeeId], references: [id])
-  membership               Membership?
-  staffMenus               StaffMenu[]
-  businessHours            BusinessHour[]
-  dateOverrides            DateOverride[]
-  reservations             Reservation[]
-  blocks                   Block[]
-  googleCalendarConnection GoogleCalendarConnection?
+  tenant        Tenant         @relation(fields: [tenantId], references: [id])
+  employee      Employee?      @relation(fields: [employeeId], references: [id])
+  membership    Membership?
+  staffMenus    StaffMenu[]
+  businessHours BusinessHour[]
+  dateOverrides DateOverride[]
+  reservations  Reservation[]
+  blocks        Block[]
 
   @@index([tenantId])
   @@index([employeeId])
@@ -172,10 +170,13 @@ model Employee {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  staffs Staff[]
-  events EmployeeEvent[]
+  staffs                   Staff[]
+  events                   EmployeeEvent[]
   /// この人のログイン（1人1つ）
-  user   User?
+  user                     User?
+  /// この人の Google カレンダー（1人1つ。どの部署の空き枠にも効く）
+  googleCalendarConnection GoogleCalendarConnection?
+  googleEventCaches        GoogleEventCache[]
 }
 
 // ── 社員の予定（人に付く予定） ───────────
@@ -203,11 +204,11 @@ model EmployeeEvent {
 }
 
 // ── Googleカレンダーとの双方向連携 ─────
-// 本人のGoogleカレンダーにある予定を取り込んで、空き枠の計算に反映させる。
+// 本人のGoogleカレンダーにある予定を取り込んで、空き枠の計算と全体スケジュールに反映させる。
 // （アプリ→カレンダーは既存の calendarToken によるURL購読が別にある）
+// 連携は人（社員名簿）に付く。兼任でも1回つなげば全部署の空き枠に効き、部署に属さない人もつなげる。
 model GoogleCalendarConnection {
-  staffId              String    @id
-  tenantId             String
+  employeeId           String    @id
   /// 画面に表示するだけの情報（本人確認用）
   googleEmail          String
   /// 有効期限が無く、明示的に取り消されるまで使い続けられる
@@ -215,13 +216,27 @@ model GoogleCalendarConnection {
   /// 直近取得したアクセストークン。期限内は使い回し、Google側への呼び出しを減らす
   accessToken          String?
   accessTokenExpiresAt DateTime?
+  /// 全体スケジュールに件名を出すか。出さないときは「予定あり」だけ（本人が選ぶ）
+  showTitles           Boolean   @default(false)
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
-  staff  Staff  @relation(fields: [staffId], references: [id], onDelete: Cascade)
-  tenant Tenant @relation(fields: [tenantId], references: [id])
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+}
 
-  @@index([tenantId])
+// 全体スケジュールに出す Google の予定を、人・日付ごとに少しの間だけ覚えておく。
+// 数十人ぶんを開くたびに Google へ問い合わせると遅くなるため（google-calendar-cache.ts）。
+// 空き枠の計算はここを使わず、毎回その場で Google に確かめる。
+model GoogleEventCache {
+  employeeId String
+  date       String // "YYYY-MM-DD"
+  /// [{ start, end, title }]。title は件名を出さない設定なら null
+  items      Json
+  fetchedAt  DateTime @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@id([employeeId, date])
 }
 
 // ── メニュー ───────────────────────────

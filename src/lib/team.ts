@@ -4,6 +4,7 @@
  *
  * 部署をまたいで読むので、予約はお客様・メニューを読まず、時刻の列だけを選ぶ。
  */
+import { getGoogleEventsForTeam } from "./google-calendar-cache";
 import { prisma } from "./prisma";
 import type { AnySession } from "./session";
 import { type TeamColumn, type TeamViewer, buildTeamColumns } from "./team-view";
@@ -40,7 +41,7 @@ export async function getTeamDay(date: string, viewer: TeamViewer): Promise<Team
   });
   const staffIds = staffs.map((s) => s.id);
 
-  const [events, reservations, blocks] = await Promise.all([
+  const [events, reservations, blocks, googleByEmployee] = await Promise.all([
     prisma.employeeEvent.findMany({
       where: { employeeId: { in: employeeIds }, date },
       select: {
@@ -62,6 +63,8 @@ export async function getTeamDay(date: string, viewer: TeamViewer): Promise<Team
       where: { staffId: { in: staffIds }, date },
       select: { id: true, staffId: true, startMinutes: true, endMinutes: true, reason: true },
     }),
+    // 連携している人の Google の予定（少しの間だけ覚えておいた分を使う）
+    getGoogleEventsForTeam(employeeIds, date),
   ]);
 
   return buildTeamColumns(
@@ -71,6 +74,9 @@ export async function getTeamDay(date: string, viewer: TeamViewer): Promise<Team
       events,
       reservations,
       blocks: blocks.map((b) => ({ ...b, staffId: b.staffId! })),
+      googleEvents: [...googleByEmployee].flatMap(([employeeId, list]) =>
+        list.map((g) => ({ employeeId, startMinutes: g.start, endMinutes: g.end, title: g.title })),
+      ),
     },
     viewer,
   );

@@ -19,6 +19,7 @@ const ITEM_STYLE: Record<TeamItem["kind"], string> = {
   event: "border-emerald-300 bg-emerald-50 text-emerald-900",
   reservation: "border-sky-300 bg-sky-50 text-sky-900",
   block: "border-dashed border-amber-400 bg-amber-50 text-amber-900",
+  google: "border-violet-300 bg-violet-50 text-violet-900",
 };
 
 /** 消している途中（中の送信ボタンが aria-busy）の予定は薄くして、押したことがすぐわかるようにする */
@@ -199,8 +200,14 @@ export default async function TeamDayPage({
                       title={`${toHm(item.startMinutes)}–${toHm(item.endMinutes)} ${item.label}${item.note ? `（${item.note}）` : ""}`}
                       className={`absolute overflow-hidden rounded border px-1 py-0.5 text-[11px] leading-tight transition-opacity ${BUSY_FADE} ${ITEM_STYLE[item.kind]}`}
                       style={{
-                        top: top(item.startMinutes),
-                        height: Math.max((item.endMinutes - item.startMinutes) * PX_PER_MIN - 2, 14),
+                        // 終日の予定は表示している時間の範囲に収める
+                        top: top(Math.max(item.startMinutes, range.start)),
+                        height: Math.max(
+                          (Math.min(item.endMinutes, range.end) - Math.max(item.startMinutes, range.start)) *
+                            PX_PER_MIN -
+                            2,
+                          14,
+                        ),
                         left: `calc(${(lane / lanes) * 100}% + 2px)`,
                         width: `calc(${100 / lanes}% - 4px)`,
                       }}
@@ -236,7 +243,8 @@ export default async function TeamDayPage({
       )}
 
       <p className="mt-3 text-xs text-neutral-500">
-        緑は社員の予定、青は部署の予約（お客様名は出しません）、破線は部署の予定（会議・研修など）。
+        緑は社員の予定、青は部署の予約（お客様名は出しません）、破線は部署の予定（会議・研修など）、
+        紫は本人がつないだGoogleカレンダーの予定（件名を出すかは本人が アカウント情報 で選びます。反映は最大10分遅れます）。
         私用にした予定は、本人以外には「予定あり」とだけ表示されます。
         ここで入れた予定は、その人がいる全部署の予約受付で「空いていない時間」になります。
       </p>

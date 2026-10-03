@@ -7,6 +7,8 @@
  *   ・社員の予定 … 件名を出す。ただし私用（isPrivate）は本人以外には「予定あり」だけ
  *   ・予約       … 「予約（部署名）」だけ。お客様名・メニューは出さない
  *   ・ブロック枠 … 件名（会議・研修など）と部署名を出す（ユーザーと合意済み 2026-10-01）
+ *   ・Google の予定 … 本人が「件名を出す」にしていれば件名、そうでなければ「予定あり」
+ *                    （件名を出すかは取ってくる時点で決まっていて、title が null なら出さない）
  */
 import type { Interval } from "./time";
 
@@ -19,7 +21,7 @@ export type TeamViewer = {
 
 export type TeamItem = {
   key: string;
-  kind: "event" | "reservation" | "block";
+  kind: "event" | "reservation" | "block" | "google";
   startMinutes: number;
   endMinutes: number;
   label: string;
@@ -52,7 +54,16 @@ export type TeamSource = {
   }[];
   reservations: { id: string; staffId: string; startMinutes: number; endMinutes: number }[];
   blocks: { id: string; staffId: string; startMinutes: number; endMinutes: number; reason: string }[];
+  /** 連携している Google カレンダーの予定（google-calendar-cache.ts） */
+  googleEvents: { employeeId: string; startMinutes: number; endMinutes: number; title: string | null }[];
 };
+
+const DAY_END = 24 * 60;
+
+/** 終日の予定（0:00〜24:00）。表示の範囲を広げる元にはしない */
+export function isAllDay(item: { startMinutes: number; endMinutes: number }): boolean {
+  return item.startMinutes === 0 && item.endMinutes === DAY_END;
+}
 
 export function buildTeamColumns(source: TeamSource, viewer: TeamViewer): TeamColumn[] {
   const staffById = new Map(source.staffs.map((s) => [s.id, s]));
@@ -107,6 +118,20 @@ export function buildTeamColumns(source: TeamSource, viewer: TeamViewer): TeamCo
       });
     }
 
+    source.googleEvents.forEach((g, index) => {
+      if (g.employeeId !== employee.id) return;
+      const allDay = isAllDay(g);
+      items.push({
+        key: `google-${employee.id}-${index}`,
+        kind: "google",
+        startMinutes: g.startMinutes,
+        endMinutes: g.endMinutes,
+        label: g.title ?? "予定あり",
+        note: allDay ? "終日（Googleカレンダー）" : "Googleカレンダー",
+        deletableEventId: null,
+      });
+    });
+
     items.sort((a, b) => a.startMinutes - b.startMinutes || a.endMinutes - b.endMinutes);
     return { employeeId: employee.id, name: employee.name, departments, isMe, items };
   });
@@ -151,7 +176,9 @@ export function layoutLanes<T extends { startMinutes: number; endMinutes: number
 
 /** 表示する時間の範囲。予定が無ければ 9:00〜19:00 */
 export function teamViewRange(columns: TeamColumn[]): Interval {
-  const points = columns.flatMap((c) => c.items.flatMap((i) => [i.startMinutes, i.endMinutes]));
+  const points = columns.flatMap((c) =>
+    c.items.filter((i) => !isAllDay(i)).flatMap((i) => [i.startMinutes, i.endMinutes]),
+  );
   const start = Math.min(9 * 60, ...points);
   const end = Math.max(19 * 60, ...points);
   return { start: Math.floor(start / 60) * 60, end: Math.ceil(end / 60) * 60 };

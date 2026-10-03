@@ -5,9 +5,11 @@
  * 送信済みの予約は飛ばすので、二重に呼ばれても同じ人に2通は届かない。
  * 手元から送りたいときは、これまで通り `npm run remind` も使える。
  *
- * ついでに、古いログイン失敗の記録も消す（1日1回で足りるので相乗りさせる）。
+ * ついでに、古いログイン失敗の記録と、全体スケジュール用の Google の予定の控えも消す
+ * （1日1回で足りるので相乗りさせる）。
  */
 import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
 import { isAuthorizedCronRequest } from "@/lib/cron-auth";
 import { deleteStaleLoginAttempts } from "@/lib/login-attempts";
 import { sendRemindersFor } from "@/lib/notify";
@@ -41,11 +43,24 @@ export async function GET(request: Request) {
     console.error("[ログイン失敗の掃除] 失敗", e);
   }
 
+  // 全体スケジュール用に覚えておいた Google の予定は、10分で使わなくなる。1日たったものは消す
+  let deletedGoogleCaches: number | null = null;
+  try {
+    const { count } = await prisma.googleEventCache.deleteMany({
+      where: { fetchedAt: { lt: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
+    });
+    deletedGoogleCaches = count;
+    console.log(`[Googleの予定の控えの掃除] ${count} 件を削除`);
+  } catch (e) {
+    console.error("[Googleの予定の控えの掃除] 失敗", e);
+  }
+
   return NextResponse.json({
     date,
     total: outcomes.length,
     sent,
     failed: failed.length,
     deletedLoginAttempts,
+    deletedGoogleCaches,
   });
 }

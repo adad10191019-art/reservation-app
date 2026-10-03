@@ -6,17 +6,16 @@
  * 計算するときは、次のものも「空いていない時間」として足す。
  *   ・その人の予定（EmployeeEvent。どの部署から入れたものでも）
  *   ・兼任先の部署での、その人の予約とブロック枠
- *   ・兼任先で連携している Google カレンダーの予定（指定したときだけ）
  *
  * 他部署のデータを読むのはこのファイルだけにする。
  * 返すのは「何時から何時まで」だけで、件名・お客様名・部署名は返さない。
  * DB から読むときも時刻の列だけを選び、他部署の中身がそもそも手元に来ないようにする。
+ * Google カレンダーは人に付く連携なので、ここではなく availability.ts がその人の分として読む。
  *
  * 店舗全体のブロック枠（staffId が null）は他部署には持ち込まない。
  * 「その部署の受付を止める」ためのもので、その人が塞がっているとは限らないため。
  */
 import { prisma } from "./prisma";
-import { fetchGoogleBusyByDate, isGoogleCalendarConfigured } from "./google-calendar";
 import type { Interval } from "./time";
 
 /** トランザクションの中でも外でも使えるクライアント */
@@ -49,11 +48,9 @@ export async function fetchPersonBusy(
     dates: string[];
     /** 日時変更のとき、その予約自身で塞がって見えないようにする */
     excludeReservationId?: string;
-    /** 兼任先の Google カレンダーも見るか（外部への問い合わせになるので、必要なときだけ） */
-    includeGoogle?: boolean;
   },
 ): Promise<BusyByStaff> {
-  const { staffIds, dates, excludeReservationId, includeGoogle = false } = params;
+  const { staffIds, dates, excludeReservationId } = params;
   const result: BusyByStaff = new Map();
   if (staffIds.length === 0 || dates.length === 0) return result;
 
@@ -74,7 +71,7 @@ export async function fetchPersonBusy(
   const employeeOfSibling = new Map(siblings.map((s) => [s.id, s.employeeId!]));
 
   // 時刻の列だけを読む。件名・お客様・部署はここで読まない
-  const [events, reservations, blocks, googleBusy] = await Promise.all([
+  const [events, reservations, blocks] = await Promise.all([
     db.employeeEvent.findMany({
       where: { employeeId: { in: employeeIds }, date: { in: dates } },
       select: { employeeId: true, date: true, startMinutes: true, endMinutes: true },
@@ -96,7 +93,6 @@ export async function fetchPersonBusy(
           select: { staffId: true, date: true, startMinutes: true, endMinutes: true },
         })
       : [],
-    includeGoogle ? fetchSiblingGoogleBusy(siblingIds, dates) : new Map<string, Map<string, Interval[]>>(),
   ]);
 
   // 社員ごとにまとめてから、その社員を指す呼び出し側のスタッフに配る
@@ -108,13 +104,6 @@ export async function fetchPersonBusy(
     const employeeId = employeeOfSibling.get(r.staffId!);
     if (employeeId) push(byEmployee, employeeId, r.date, { start: r.startMinutes, end: r.endMinutes });
   }
-  for (const [siblingId, byDate] of googleBusy) {
-    const employeeId = employeeOfSibling.get(siblingId);
-    if (!employeeId) continue;
-    for (const [date, list] of byDate) {
-      for (const interval of list) push(byEmployee, employeeId, date, interval);
-    }
-  }
 
   for (const staff of staffs) {
     const byDate = byEmployee.get(staff.employeeId!);
@@ -123,25 +112,6 @@ export async function fetchPersonBusy(
       for (const interval of list) push(result, staff.id, date, interval);
     }
   }
-  return result;
-}
-
-/** 兼任先で Google カレンダーを連携している分だけ、busy を取ってくる */
-async function fetchSiblingGoogleBusy(
-  siblingIds: string[],
-  dates: string[],
-): Promise<Map<string, Map<string, Interval[]>>> {
-  const result = new Map<string, Map<string, Interval[]>>();
-  if (!isGoogleCalendarConfigured() || siblingIds.length === 0) return result;
-
-  const connections = await prisma.googleCalendarConnection.findMany({
-    where: { staffId: { in: siblingIds } },
-  });
-  await Promise.all(
-    connections.map(async (connection) => {
-      result.set(connection.staffId, await fetchGoogleBusyByDate(connection, dates));
-    }),
-  );
   return result;
 }
 

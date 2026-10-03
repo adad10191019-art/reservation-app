@@ -1,0 +1,34 @@
+import { describe, expect, it } from "vitest";
+import { CACHE_MINUTES, isCacheFresh, parseCachedItems } from "./google-cache-rules";
+
+describe("isCacheFresh", () => {
+  const fetchedAt = new Date("2026-10-03T01:00:00Z");
+
+  it(`${CACHE_MINUTES}分たつまでは使う`, () => {
+    expect(isCacheFresh(fetchedAt, new Date("2026-10-03T01:09:59Z"))).toBe(true);
+  });
+
+  it(`${CACHE_MINUTES}分たったら取り直す`, () => {
+    expect(isCacheFresh(fetchedAt, new Date("2026-10-03T01:10:00Z"))).toBe(false);
+  });
+});
+
+describe("parseCachedItems", () => {
+  it("正しい形だけを読み戻す", () => {
+    expect(
+      parseCachedItems([
+        { start: 600, end: 660, title: "来客" },
+        { start: 700, end: 720, title: null },
+        { start: "x", end: 1 },
+        null,
+      ]),
+    ).toEqual([
+      { start: 600, end: 660, title: "来客" },
+      { start: 700, end: 720, title: null },
+    ]);
+  });
+
+  it("配列でなければ空", () => {
+    expect(parseCachedItems({})).toEqual([]);
+  });
+});

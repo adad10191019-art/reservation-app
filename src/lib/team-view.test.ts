@@ -16,6 +16,7 @@ const source: TeamSource = {
   ],
   reservations: [{ id: "r1", staffId: "s2", startMinutes: 780, endMinutes: 840 }],
   blocks: [{ id: "b1", staffId: "s1", startMinutes: 900, endMinutes: 960, reason: "部署会議" }],
+  googleEvents: [],
 };
 
 describe("buildTeamColumns", () => {
@@ -79,5 +80,32 @@ describe("teamViewRange", () => {
       { employeeId: null, isAdmin: false },
     );
     expect(teamViewRange(columns)).toEqual({ start: 420, end: 1260 });
+  });
+});
+
+describe("Google カレンダーの予定", () => {
+  const withGoogle: TeamSource = {
+    ...source,
+    googleEvents: [
+      { employeeId: "e1", startMinutes: 600, endMinutes: 660, title: null },
+      { employeeId: "e2", startMinutes: 780, endMinutes: 840, title: "来客対応" },
+      { employeeId: "e2", startMinutes: 0, endMinutes: 24 * 60, title: null },
+    ],
+  };
+
+  it("件名を出さない人は「予定あり」、出す人は件名。どちらも消せない", () => {
+    const [takeuchi, jimu] = buildTeamColumns(withGoogle, { employeeId: "e1", isAdmin: true });
+    const mine = takeuchi.items.filter((i) => i.kind === "google");
+    expect(mine.map((i) => i.label)).toEqual(["予定あり"]);
+    const theirs = jimu.items.filter((i) => i.kind === "google");
+    expect(theirs.map((i) => i.label)).toEqual(["予定あり", "来客対応"]);
+    expect(theirs.every((i) => i.deletableEventId === null)).toBe(true);
+  });
+
+  it("終日の予定は印を付け、表示の範囲を広げない", () => {
+    const columns = buildTeamColumns(withGoogle, { employeeId: null, isAdmin: false });
+    const allDay = columns[1].items.find((i) => i.kind === "google" && i.startMinutes === 0)!;
+    expect(allDay.note).toBe("終日（Googleカレンダー）");
+    expect(teamViewRange(columns)).toEqual(teamViewRange(buildTeamColumns(source, { employeeId: null, isAdmin: false })));
   });
 });

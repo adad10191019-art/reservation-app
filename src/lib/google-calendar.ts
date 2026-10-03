@@ -3,9 +3,9 @@
  *
  * アプリ→カレンダーは calendarToken によるURL購読（ics.ts）が別にあるので、
  * ここが担うのはカレンダー→アプリの向き（本人のGoogleカレンダーにある予定を
- * 「空いていない時間」として取り込む）だけ。
+ * 「空いていない時間」として取り込み、全体スケジュールにも出す）だけ。
  *
- * スタッフ本人が自分のGoogleアカウントで許可し、以後はリフレッシュトークンで
+ * 連携は人（社員名簿）に付く。本人が自分のGoogleアカウントで許可し、以後はリフレッシュトークンで
  * 裏側からアクセストークンを取り直し続ける（LINEログインと同じ、fetchだけの実装）。
  */
 import { prisma } from "./prisma";
@@ -15,6 +15,7 @@ const AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const REVOKE_URL = "https://oauth2.googleapis.com/revoke";
 const FREEBUSY_URL = "https://www.googleapis.com/calendar/v3/freeBusy";
+const EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
 const USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo";
 
 export function isGoogleCalendarConfigured(): boolean {
@@ -135,8 +136,20 @@ export async function revokeGoogleToken(refreshToken: string): Promise<void> {
   }
 }
 
+/**
+ * その人の連携を外す（外すボタン・退職・登録の取り消しで使う）。
+ * DB から消し、全体スケジュール用の控えも捨て、Google にも以後読ませないよう伝える。
+ */
+export async function removeGoogleConnection(employeeId: string): Promise<void> {
+  const connection = await prisma.googleCalendarConnection.findUnique({ where: { employeeId } });
+  if (!connection) return;
+  await prisma.googleCalendarConnection.deleteMany({ where: { employeeId } });
+  await prisma.googleEventCache.deleteMany({ where: { employeeId } });
+  await revokeGoogleToken(connection.refreshToken);
+}
+
 type ConnectionRow = {
-  staffId: string;
+  employeeId: string;
   refreshToken: string;
   accessToken: string | null;
   accessTokenExpiresAt: Date | null;
@@ -152,7 +165,7 @@ async function getValidAccessToken(connection: ConnectionRow): Promise<string> {
 
   const { accessToken, expiresIn } = await refreshAccessToken(connection.refreshToken);
   await prisma.googleCalendarConnection.update({
-    where: { staffId: connection.staffId },
+    where: { employeeId: connection.employeeId },
     data: { accessToken, accessTokenExpiresAt: new Date(Date.now() + expiresIn * 1000) },
   });
   return accessToken;
@@ -226,5 +239,86 @@ export async function fetchGoogleBusyByDate(
     }
   }
 
+  return result;
+}
+
+/** 全体スケジュールに出す Google の予定1件。title は件名を出さない設定なら null */
+export type GoogleEventItem = { start: number; end: number; title: string | null };
+
+type GoogleEvent = {
+  status?: string;
+  summary?: string;
+  visibility?: string;
+  transparency?: string;
+  start?: { dateTime?: string; date?: string };
+  end?: { dateTime?: string; date?: string };
+};
+
+/**
+ * その日の Google の予定を、件名つきで取ってくる（全体スケジュール用）。
+ *
+ * 空き枠の計算（freeBusy）とそろえて、「予定なし」として入れた予定（transparency=transparent。
+ * 終日の予定はふつうこれ）とキャンセル済みは出さない。
+ * Google 側で「非公開」にした予定は、件名を出す設定でも件名を出さない。
+ * 問い合わせられなかったときは null（呼び出し側で前回の分を使うなどする）。
+ */
+export async function fetchGoogleEventsOfDate(
+  connection: ConnectionRow,
+  date: string,
+  withTitles: boolean,
+): Promise<GoogleEventItem[] | null> {
+  let accessToken: string;
+  try {
+    accessToken = await getValidAccessToken(connection);
+  } catch {
+    return null;
+  }
+
+  const dayStartMs = new Date(dateMinutesToUtcIso(date, 0)).getTime();
+  const dayEndMs = new Date(dateMinutesToUtcIso(date, 24 * 60)).getTime();
+  const query = new URLSearchParams({
+    timeMin: dateMinutesToUtcIso(date, 0),
+    timeMax: dateMinutesToUtcIso(date, 24 * 60),
+    singleEvents: "true", // 繰り返しの予定を1回ずつに展開してもらう
+    orderBy: "startTime",
+    maxResults: "100",
+    fields: "items(status,summary,visibility,transparency,start,end)",
+  });
+
+  let res: Response;
+  try {
+    res = await fetch(`${EVENTS_URL}?${query.toString()}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+  } catch {
+    return null;
+  }
+  if (!res.ok) return null;
+
+  const data = (await res.json()) as { items?: GoogleEvent[] };
+  const result: GoogleEventItem[] = [];
+  for (const e of data.items ?? []) {
+    if (e.status === "cancelled" || e.transparency === "transparent") continue;
+    let s: number;
+    let t: number;
+    if (e.start?.dateTime && e.end?.dateTime) {
+      s = Math.max(new Date(e.start.dateTime).getTime(), dayStartMs);
+      t = Math.min(new Date(e.end.dateTime).getTime(), dayEndMs);
+    } else if (e.start?.date && e.end?.date) {
+      // 終日の予定（「予定あり」にしたもの）。終わりの日付はその日を含まない
+      if (!(e.start.date <= date && date < e.end.date)) continue;
+      s = dayStartMs;
+      t = dayEndMs;
+    } else {
+      continue;
+    }
+    if (t <= s) continue;
+    const hidden = e.visibility === "private" || e.visibility === "confidential";
+    result.push({
+      start: Math.round((s - dayStartMs) / 60000),
+      end: Math.round((t - dayStartMs) / 60000),
+      title: withTitles && !hidden && e.summary ? e.summary.slice(0, 100) : null,
+    });
+  }
   return result;
 }

@@ -26,6 +26,7 @@ import {
   planAssignments,
   readCheckedTenants,
 } from "./member-access";
+import { removeGoogleConnection, revokeGoogleToken } from "./google-calendar";
 import { prisma } from "./prisma";
 import { todayString } from "./time";
 
@@ -632,6 +633,8 @@ export async function retireMember(formData: FormData) {
       await tx.employee.update({ where: { id }, data: { isActive: false } });
     }, TX_OPTIONS),
   );
+  // 退職した人の Google カレンダーは、もう読まない
+  await removeGoogleConnection(id);
 
   refreshAll();
   done(LIST, [`「${person.employee.name}」さんを退職の扱いにしました。記録は残っています。`]);
@@ -663,6 +666,10 @@ export async function deleteMember(formData: FormData) {
     fail(path, "予約か予定の記録があるため取り消せません。辞めた人なら「退職にする」を使ってください");
   }
 
+  const googleConnection = await prisma.googleCalendarConnection.findUnique({
+    where: { employeeId: id },
+    select: { refreshToken: true },
+  });
   await runOrFail(path, () =>
     prisma.$transaction(async (tx) => {
       for (const tenantId of person.assigned) {
@@ -675,6 +682,8 @@ export async function deleteMember(formData: FormData) {
       await tx.employee.delete({ where: { id } });
     }, TX_OPTIONS),
   );
+  // 人を消すと Google の連携も一緒に消える。Google 側にも以後読ませないよう伝える
+  if (googleConnection) await revokeGoogleToken(googleConnection.refreshToken);
 
   refreshAll();
   done(LIST, [`「${person.employee.name}」さんの登録を取り消しました。`]);

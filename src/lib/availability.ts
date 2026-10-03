@@ -9,9 +9,10 @@ import { fetchPersonBusy } from "./person-busy";
 import { dayOfWeekOf } from "./time";
 
 /**
- * 対象スタッフのうち、Googleカレンダー連携をしている人の分だけ、
+ * 対象スタッフのうち、その人（名簿）が Google カレンダーをつないでいる分だけ、
  * 指定した日付ぶんの busy（分単位）をまとめて取ってくる。
- * 連携していないスタッフは空配列になる。
+ * 連携は人に付くので、兼任先の部署からつないだ分もここで効く。
+ * つないでいない・名簿とひも付いていないスタッフは入らない。
  */
 async function fetchGoogleBusyByStaff(
   staffIds: string[],
@@ -20,15 +21,23 @@ async function fetchGoogleBusyByStaff(
   const result = new Map<string, Map<string, { start: number; end: number }[]>>();
   if (!isGoogleCalendarConfigured() || staffIds.length === 0) return result;
 
+  const staffs = await prisma.staff.findMany({
+    where: { id: { in: staffIds }, employeeId: { not: null } },
+    select: { id: true, employeeId: true },
+  });
+  if (staffs.length === 0) return result;
+
   const connections = await prisma.googleCalendarConnection.findMany({
-    where: { staffId: { in: staffIds } },
+    where: { employeeId: { in: staffs.map((s) => s.employeeId!) } },
   });
   if (connections.length === 0) return result;
 
   await Promise.all(
     connections.map(async (connection) => {
       const busyByDate = await fetchGoogleBusyByDate(connection, dates);
-      result.set(connection.staffId, busyByDate);
+      for (const staff of staffs) {
+        if (staff.employeeId === connection.employeeId) result.set(staff.id, busyByDate);
+      }
     }),
   );
   return result;
@@ -153,7 +162,7 @@ export async function findAvailabilityForDates(params: {
       fetchGoogleBusyByStaff(staffIds, dates),
       // 兼任先の部署での予約・予定と、その人自身の予定（社員名簿でひも付いている人だけ）。
       // 時間帯だけが返り、他部署の中身はここには来ない
-      fetchPersonBusy(prisma, { staffIds, dates, excludeReservationId, includeGoogle: true }),
+      fetchPersonBusy(prisma, { staffIds, dates, excludeReservationId }),
     ]);
 
   for (const date of dates) {

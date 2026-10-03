@@ -2,8 +2,17 @@ import Link from "next/link";
 import { AppHeader } from "@/components/app-header";
 import { Banner } from "@/components/banner";
 import { updateOwnAccount } from "@/lib/account-actions";
+import { SubmitButton } from "@/components/submit-button";
 import { requireTeamSession } from "@/lib/auth";
+import { isGoogleCalendarConfigured } from "@/lib/google-calendar";
+import {
+  connectGoogleCalendar,
+  disconnectGoogleCalendar,
+  setGoogleShowTitles,
+} from "@/lib/google-calendar-actions";
+import { CACHE_MINUTES } from "@/lib/google-calendar-cache";
 import { prisma } from "@/lib/prisma";
+import { getTeamViewer } from "@/lib/team";
 
 const ROLE_LABEL: Record<string, string> = {
   owner: "オーナー",
@@ -20,10 +29,17 @@ export default async function AccountPage({
   const sp = await searchParams;
   const session = await requireTeamSession();
 
-  const user = await prisma.user.findUnique({
-    where: { id: session.userId },
-    select: { email: true },
-  });
+  const [user, viewer] = await Promise.all([
+    prisma.user.findUnique({ where: { id: session.userId }, select: { email: true } }),
+    getTeamViewer(session),
+  ]);
+  // Google カレンダーの連携は人（名簿）に付く
+  const google = viewer.employeeId
+    ? await prisma.googleCalendarConnection.findUnique({
+        where: { employeeId: viewer.employeeId },
+        select: { googleEmail: true, showTitles: true },
+      })
+    : null;
 
   return (
     <main className="mx-auto w-full max-w-2xl p-4 sm:p-6">
@@ -93,6 +109,69 @@ export default async function AccountPage({
             変更する
           </button>
         </form>
+      </section>
+
+      <section className="mt-5 rounded-lg border border-neutral-200 bg-white p-4">
+        <h2 className="mb-1 font-semibold">Googleカレンダーをつなぐ</h2>
+        <p className="mb-4 text-xs leading-relaxed text-neutral-500">
+          つなぐと、自分のGoogleカレンダーの予定が全体スケジュールに出て、担当している全部の部署の予約受付で
+          「空いていない時間」になります。予定をこちらに入れ直す必要はありません。
+          全体スケジュールへの反映は最大{CACHE_MINUTES}分遅れます（予約受付はその場で確かめます）。
+          読み取りだけで、Googleカレンダーの予定を書き換えたり消したりはしません。
+        </p>
+
+        {!isGoogleCalendarConfigured() ? (
+          <p className="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-500">
+            Googleカレンダー連携はまだ準備中です。
+          </p>
+        ) : !viewer.employeeId ? (
+          <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            このアカウントは社員名簿とひも付いていないため、つなげません。全社管理者に依頼してください。
+          </p>
+        ) : google ? (
+          <div className="space-y-4">
+            <p className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+              つないでいます：{google.googleEmail}
+            </p>
+
+            <form action={setGoogleShowTitles} className="space-y-2">
+              <p className="text-xs font-medium text-neutral-600">全体スケジュールでの見せ方（社員全員が見ます）</p>
+              <label className="flex items-center gap-2 text-sm text-neutral-700">
+                <input type="radio" name="showTitles" value="0" defaultChecked={!google.showTitles} />
+                「予定あり」とだけ出す
+              </label>
+              <label className="flex items-center gap-2 text-sm text-neutral-700">
+                <input type="radio" name="showTitles" value="1" defaultChecked={google.showTitles} />
+                件名も出す（Googleで「非公開」にした予定は件名を出しません）
+              </label>
+              <SubmitButton
+                pendingText="保存中…"
+                className="rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
+              >
+                見せ方を保存
+              </SubmitButton>
+            </form>
+
+            <form action={disconnectGoogleCalendar}>
+              <SubmitButton
+                pendingText="外しています…"
+                confirmText="Googleカレンダーとのつながりを外しますか？全体スケジュールと予約受付に、Googleの予定が出なくなります。"
+                className="rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-800 hover:bg-red-50"
+              >
+                つながりを外す
+              </SubmitButton>
+            </form>
+          </div>
+        ) : (
+          <form action={connectGoogleCalendar}>
+            <button
+              type="submit"
+              className="rounded-md bg-neutral-800 px-4 py-1.5 text-sm font-medium text-white hover:bg-neutral-700"
+            >
+              Googleカレンダーをつなぐ
+            </button>
+          </form>
+        )}
       </section>
     </main>
   );

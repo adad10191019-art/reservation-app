@@ -55,7 +55,10 @@ export default async function MySchedulePage({
       orderBy: { startMinutes: "asc" },
     }),
     isGoogleCalendarConfigured()
-      ? prisma.googleCalendarConnection.findUnique({ where: { staffId } })
+      ? // Google カレンダーの連携は人（名簿）に付く
+        prisma.staff
+          .findUnique({ where: { id: staffId }, select: { employee: { select: { googleCalendarConnection: true } } } })
+          .then((staff) => staff?.employee?.googleCalendarConnection ?? null)
       : null,
     fetchMyElsewhere({ userId: session.userId, tenantId: tenant.id, staffId, date }),
   ]);

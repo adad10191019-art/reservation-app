@@ -5,12 +5,7 @@ import { requireSession } from "@/lib/auth";
 import { formatRanges } from "@/lib/ranges";
 import { getTenant } from "@/lib/schedule";
 import { prisma } from "@/lib/prisma";
-import {
-  connectGoogleCalendar,
-  disconnectGoogleCalendar,
-  issueCalendarToken,
-  saveOwnDayOverride,
-} from "@/lib/staff-schedule-actions";
+import { issueCalendarToken, saveOwnDayOverride } from "@/lib/staff-schedule-actions";
 import { isGoogleCalendarConfigured } from "@/lib/google-calendar";
 import { dayOfWeekOf, formatDateLabel, sanitizeDate, toHm } from "@/lib/time";
 
@@ -37,7 +32,7 @@ export default async function MyScheduleSettingsPage({
 
   const staffId = session.staffId;
 
-  const [businessHours, ownOverrides, staffRecord, googleConnection] = await Promise.all([
+  const [businessHours, ownOverrides, staffRecord] = await Promise.all([
     prisma.businessHour.findMany({
       where: {
         tenantId: tenant.id,
@@ -46,12 +41,16 @@ export default async function MyScheduleSettingsPage({
       },
     }),
     prisma.dateOverride.findMany({ where: { tenantId: tenant.id, date, staffId } }),
-    prisma.staff.findUnique({ where: { id: staffId }, select: { calendarToken: true } }),
-    prisma.googleCalendarConnection.findUnique({
-      where: { staffId },
-      select: { googleEmail: true },
+    prisma.staff.findUnique({
+      where: { id: staffId },
+      select: {
+        calendarToken: true,
+        // Google カレンダーの連携は人（名簿）に付く
+        employee: { select: { googleCalendarConnection: { select: { googleEmail: true } } } },
+      },
     }),
   ]);
+  const googleConnection = staffRecord?.employee?.googleCalendarConnection ?? null;
 
   const calendarFeedUrl = staffRecord?.calendarToken
     ? `${process.env.APP_URL ?? "http://localhost:3000"}/api/staff-calendar/${staffRecord.calendarToken}`
@@ -195,31 +194,21 @@ export default async function MyScheduleSettingsPage({
           <p className="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-500">
             Googleカレンダー連携はまだ準備中です。
           </p>
-        ) : googleConnection ? (
-          <div className="space-y-3">
-            <p className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
-              連携中：{googleConnection.googleEmail}
-            </p>
-            <form action={disconnectGoogleCalendar}>
-              <input type="hidden" name="date" value={date} />
-              <button
-                type="submit"
-                className="rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-800 hover:bg-red-50"
-              >
-                連携を解除する
-              </button>
-            </form>
-          </div>
         ) : (
-          <form action={connectGoogleCalendar}>
-            <input type="hidden" name="date" value={date} />
-            <button
-              type="submit"
-              className="rounded-md bg-neutral-800 px-4 py-1.5 text-sm font-medium text-white hover:bg-neutral-700"
-            >
-              Googleカレンダーと連携する
-            </button>
-          </form>
+          <div className="space-y-2">
+            {googleConnection && (
+              <p className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+                連携中：{googleConnection.googleEmail}
+              </p>
+            )}
+            <p className="text-sm text-neutral-700">
+              つなぐ・外す・全体スケジュールに件名を出すかは
+              <Link href="/account" className="mx-1 text-sky-700 underline">
+                アカウント情報
+              </Link>
+              で行います（1回つなげば、担当している全部の部署に効きます）。
+            </p>
+          </div>
         )}
 
         <p className="mt-3 text-xs leading-relaxed text-neutral-500">

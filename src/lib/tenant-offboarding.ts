@@ -9,7 +9,6 @@
  * ここで子テーブルから順に明示的に消してから Tenant 本体を消す。
  */
 import { prisma } from "./prisma";
-import { revokeGoogleToken } from "./google-calendar";
 
 export type TenantExport = {
   exportedAt: string;
@@ -91,18 +90,13 @@ export async function buildTenantExport(tenantId: string): Promise<TenantExport 
 /**
  * テナントを完全に削除する（解約処理）。取り消せない。
  *
- * 1. Googleカレンダー連携のリフレッシュトークンを、消す前に読み出してGoogleに
- *    失効を伝える（ベストエフォート。失敗してもDBの削除は進める）。
- * 2. 子テーブルを外部キーの向きに沿って先に消し、最後にTenant本体を消す。
- *    1つの取引にまとめ、途中で失敗しても中途半端な状態を残さない。
+ * 子テーブルを外部キーの向きに沿って先に消し、最後にTenant本体を消す。
+ * 1つの取引にまとめ、途中で失敗しても中途半端な状態を残さない。
+ *
+ * Googleカレンダーの連携は人（社員名簿）に付くので、部署を消しても残す
+ * （その人はほかの部署や全体スケジュールで使い続けるため）。
  */
 export async function deleteTenantCompletely(tenantId: string): Promise<void> {
-  const connections = await prisma.googleCalendarConnection.findMany({
-    where: { tenantId },
-    select: { refreshToken: true },
-  });
-  await Promise.all(connections.map((c) => revokeGoogleToken(c.refreshToken)));
-
   // この部署だけを担当していたアカウントは、担当を外すと使い道が無くなるので一緒に消す。
   // 名簿の人にひも付いていれば「全体スケジュール」を使う社員として残し、全社管理者・兼任の人も残す
   const onlyHere = await prisma.user.findMany({
@@ -116,7 +110,6 @@ export async function deleteTenantCompletely(tenantId: string): Promise<void> {
 
   await prisma.$transaction([
     prisma.reservation.deleteMany({ where: { tenantId } }),
-    prisma.googleCalendarConnection.deleteMany({ where: { tenantId } }),
     prisma.staffMenu.deleteMany({ where: { tenantId } }),
     prisma.businessHour.deleteMany({ where: { tenantId } }),
     prisma.dateOverride.deleteMany({ where: { tenantId } }),
