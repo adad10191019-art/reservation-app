@@ -253,7 +253,10 @@ export default async function TeamPage({
         <>
           <p className="mb-2 text-sm text-neutral-600">
             <span className="font-medium text-neutral-900">{personName}</span> さんの予定
-            {view === "month" && "（日付を押すと、その日の全員の予定が出ます）"}
+            {view === "month" &&
+              (canTapAdd(person)
+                ? "（マスを押すとその日の予定を入力できます。日付の数字を押すと、その日の全員の予定が出ます）"
+                : "（日付を押すと、その日の全員の予定が出ます）")}
           </p>
           {view === "week" ? (
             <TimelineGrid
@@ -274,6 +277,7 @@ export default async function TeamPage({
               today={today}
               entriesByDate={new Map(dates.map((d) => [d, personEntries(d)]))}
               dayHref={(d) => scheduleHref(PATH, "day", d)}
+              tapToAdd={canTapAdd(person) ? { employeeId: person ?? undefined } : undefined}
             />
           )}
         </>

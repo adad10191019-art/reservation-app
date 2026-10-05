@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { type QuickAddDetail, sendQuickAdd } from "@/lib/quick-add";
 import { toHm } from "@/lib/time";
 import { TAP_MINUTES, tappedStart } from "@/lib/time-choices";
@@ -36,6 +36,37 @@ export function TapToAddLayer({
           ＋ {toHm(hover)}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * 月のマス。押すとその日付で上の「＋ 予定を追加」が開く（時刻は入力欄のまま）。
+ * 月を見ながら休みなどを続けて入れられるよう、ページは移らない。マスの中のリンク（日付の数字）は今まで通り開く。
+ */
+export function MonthDayCell({
+  date,
+  employeeId,
+  className,
+  children,
+}: Omit<QuickAddDetail, "start"> & { className: string; children: ReactNode }) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      aria-label={`${Number(date.slice(5, 7))}月${Number(date.slice(8))}日の予定を入力する`}
+      className={`cursor-pointer ${className}`}
+      onClick={(e) => {
+        if ((e.target as HTMLElement).closest("a")) return;
+        sendQuickAdd({ date, employeeId });
+      }}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
+        e.preventDefault();
+        sendQuickAdd({ date, employeeId });
+      }}
+    >
+      {children}
     </div>
   );
 }

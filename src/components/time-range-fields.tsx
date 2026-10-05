@@ -45,6 +45,7 @@ export function TimeRangeFields({ defaultStart, titleName }: { defaultStart: num
   useEffect(
     () =>
       onQuickAdd(({ start: next }) => {
+        if (next === undefined) return;
         setStart(next);
         setEnd(defaultEnd(next));
       }),

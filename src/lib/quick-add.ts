@@ -1,5 +1,5 @@
 /**
- * 予定の表（週・1日）の空いているところを押したときに、上の「＋ 予定を追加」の欄へ日付・時刻を渡す合図。
+ * 予定の表（週・1日）の空いているところ、または月のマスを押したときに、上の「＋ 予定を追加」の欄へ日付・時刻を渡す合図。
  * 押した側（components/tap-to-add-layer.tsx）が送り、入力欄（add-entry-panel.tsx・time-range-fields.tsx）が受け取る。
  * ページを読み込み直さずにその場で入力欄を開くため、ブラウザの中のイベントでやり取りする。
  */
@@ -7,8 +7,8 @@ export const QUICK_ADD_EVENT = "schedule:quick-add";
 
 export type QuickAddDetail = {
   date: string;
-  /** 開始（0時からの分） */
-  start: number;
+  /** 開始（0時からの分）。月のマスを押したときは無し（時刻は入力欄のまま） */
+  start?: number;
   /** 全体スケジュールで、誰の予定にするか（全社管理者がほかの人の列を押したとき） */
   employeeId?: string;
 };

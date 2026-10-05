@@ -15,7 +15,7 @@ export function AddEntryPanel({ label = "予定を追加", children }: { label?:
 
   useEffect(
     () =>
-      onQuickAdd(({ date, employeeId }) => {
+      onQuickAdd(({ date, employeeId, start }) => {
         const panel = ref.current;
         if (!panel) return;
         panel.open = true;
@@ -24,7 +24,10 @@ export function AddEntryPanel({ label = "予定を追加", children }: { label?:
         const who = panel.querySelector<HTMLSelectElement>('select[name="employeeId"]');
         if (who && employeeId) who.value = employeeId;
         panel.scrollIntoView({ behavior: "smooth", block: "start" });
-        panel.querySelector<HTMLInputElement>('input[type="text"]')?.focus({ preventScroll: true });
+        // 月のマスから開いたときは「休み」などのボタンで済むことが多いので、スマホのキーボードを出さない
+        if (start !== undefined) {
+          panel.querySelector<HTMLInputElement>('input[type="text"]')?.focus({ preventScroll: true });
+        }
       }),
     [],
   );

@@ -3,7 +3,8 @@
  *
  *   ・ScheduleNav  … 日・週・月の切り替え、前へ／次へ、日付を選んで飛ぶ欄
  *   ・TimelineGrid … 列ごとに時刻に沿って並べる表（全体スケジュールの1日＝1人1列、週＝1日1列）
- *   ・MonthGrid    … 月のマス目。マスには「10:00 打ち合わせ」を数件、押すとその日の1日表示へ
+ *   ・MonthGrid    … 月のマス目。マスには「10:00 打ち合わせ」を数件。予定を入れられるなら、マスを押すとその日付で入力欄が開き、
+ *                    日付の数字を押すとその日の1日表示へ（入れられないならマス全体が1日表示へのリンク）
  */
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -15,7 +16,7 @@ import {
   viewTitle,
 } from "@/lib/schedule-range";
 import { isAllDay, layoutLanes, timeRangeOf, timeRangeText } from "@/lib/team-view";
-import { TapToAddLayer } from "./tap-to-add-layer";
+import { MonthDayCell, TapToAddLayer } from "./tap-to-add-layer";
 
 export { AddEntryPanel } from "./add-entry-panel";
 import { dayTint, holidayName } from "@/lib/jp-holidays";
@@ -306,6 +307,7 @@ export function MonthGrid({
   today,
   entriesByDate,
   dayHref,
+  tapToAdd,
 }: {
   weeks: string[][];
   /** 見ている月 "YYYY-MM"（前後の月の日は薄くする） */
@@ -313,6 +315,8 @@ export function MonthGrid({
   today: string;
   entriesByDate: Map<string, ScheduleEntry[]>;
   dayHref: (date: string) => string;
+  /** マスを押して予定を入れられるか（全体スケジュールでは誰の予定にするかも） */
+  tapToAdd?: { employeeId?: string };
 }) {
   return (
     <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
@@ -333,27 +337,26 @@ export function MonthGrid({
             const day = Number(date.slice(8));
             const tint = dayTint(date);
             const holiday = holidayName(date);
-            return (
-              <Link
-                key={date}
-                href={dayHref(date)}
-                aria-label={`${Number(date.slice(5, 7))}月${day}日（${entries.length}件）を1日表示で見る`}
-                className={`block min-h-20 min-w-0 border-r border-neutral-100 p-0.5 last:border-r-0 hover:bg-neutral-50 sm:min-h-24 sm:p-1 ${
-                  inMonth ? (tint ? TINT_BG[tint] : "") : "bg-neutral-50/70 text-neutral-400"
-                }`}
-              >
+            const dayNumberClass = `flex size-5 shrink-0 items-center justify-center rounded-full text-xs tabular-nums ${
+              date === today ? "bg-neutral-800 font-semibold text-white" : tint && inMonth ? TINT_TEXT[tint] : ""
+            }`;
+            const cellClass = `block min-h-20 min-w-0 border-r border-neutral-100 p-0.5 last:border-r-0 hover:bg-neutral-50 sm:min-h-24 sm:p-1 ${
+              inMonth ? (tint ? TINT_BG[tint] : "") : "bg-neutral-50/70 text-neutral-400"
+            }`;
+            const content = (
+              <>
                 <div className="mb-0.5 flex min-w-0 items-center justify-center gap-1 sm:justify-start">
-                  <span
-                    className={`flex size-5 shrink-0 items-center justify-center rounded-full text-xs tabular-nums ${
-                      date === today
-                        ? "bg-neutral-800 font-semibold text-white"
-                        : tint && inMonth
-                          ? TINT_TEXT[tint]
-                          : ""
-                    }`}
-                  >
-                    {day}
-                  </span>
+                  {tapToAdd ? (
+                    <Link
+                      href={dayHref(date)}
+                      aria-label={`${Number(date.slice(5, 7))}月${day}日（${entries.length}件）を1日表示で見る`}
+                      className={`${dayNumberClass} underline-offset-2 hover:underline hover:ring-1 hover:ring-neutral-400`}
+                    >
+                      {day}
+                    </Link>
+                  ) : (
+                    <span className={dayNumberClass}>{day}</span>
+                  )}
                   {/* 祝日の名前。スマホではマスが狭いので、少し広い画面からだけ出す */}
                   {holiday && (
                     <span
@@ -382,6 +385,20 @@ export function MonthGrid({
                     <div className="px-0.5 text-[10px] text-neutral-500">他{entries.length - MAX_PER_DAY}件</div>
                   )}
                 </div>
+              </>
+            );
+            return tapToAdd ? (
+              <MonthDayCell key={date} date={date} employeeId={tapToAdd.employeeId} className={cellClass}>
+                {content}
+              </MonthDayCell>
+            ) : (
+              <Link
+                key={date}
+                href={dayHref(date)}
+                aria-label={`${Number(date.slice(5, 7))}月${day}日（${entries.length}件）を1日表示で見る`}
+                className={cellClass}
+              >
+                {content}
               </Link>
             );
           })}

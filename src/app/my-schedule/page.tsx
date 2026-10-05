@@ -112,6 +112,7 @@ export default async function MySchedulePage({
               today={today}
               entriesByDate={new Map(dates.map((d) => [d, entriesOf(d)]))}
               dayHref={(d) => scheduleHref(PATH, "day", d)}
+              tapToAdd={{}}
             />
           )}
           <p className="mt-2 text-xs text-neutral-500">
