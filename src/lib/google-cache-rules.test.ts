@@ -32,3 +32,17 @@ describe("parseCachedItems", () => {
     expect(parseCachedItems({})).toEqual([]);
   });
 });
+
+describe("parseCachedItems の ID", () => {
+  it("ID と直せる印を読み戻す。ID の無い古い控えはそのまま", () => {
+    expect(
+      parseCachedItems([
+        { start: 600, end: 660, title: null, id: "a", editable: true },
+        { start: 700, end: 760, title: "x" },
+      ]),
+    ).toEqual([
+      { start: 600, end: 660, title: null, id: "a", editable: true },
+      { start: 700, end: 760, title: "x" },
+    ]);
+  });
+});

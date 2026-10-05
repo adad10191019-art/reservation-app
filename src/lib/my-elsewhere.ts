@@ -30,7 +30,15 @@ export type ElsewhereItem =
       tenantName: string;
       reason: string;
     }
-  | { kind: "event"; id: string; date: string; startMinutes: number; endMinutes: number; title: string };
+  | {
+      kind: "event";
+      id: string;
+      date: string;
+      startMinutes: number;
+      endMinutes: number;
+      title: string;
+      isPrivate: boolean;
+    };
 
 export async function fetchMyElsewhere(params: {
   userId: string;
@@ -99,7 +107,7 @@ export async function fetchMyElsewhere(params: {
     employeeId
       ? prisma.employeeEvent.findMany({
           where: { employeeId, date },
-          select: { id: true, date: true, startMinutes: true, endMinutes: true, title: true },
+          select: { id: true, date: true, startMinutes: true, endMinutes: true, title: true, isPrivate: true },
         })
       : [],
   ]);

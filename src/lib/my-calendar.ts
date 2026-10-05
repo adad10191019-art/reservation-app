@@ -8,6 +8,7 @@
  * 本人しか見ない画面なので、全体スケジュール（team-view.ts）と違い中身まで出す。
  */
 import { type GoogleEventItem, fetchGoogleEventsOfDates, isGoogleCalendarConfigured } from "./google-calendar";
+import { type EditTarget, googleEditTarget } from "./entry-edit";
 import { fetchMyElsewhere } from "./my-elsewhere";
 import { prisma } from "./prisma";
 
@@ -20,6 +21,8 @@ export type MyCalendarItem = {
   label: string;
   note: string | null;
   href?: string;
+  /** 押すと直す・消す欄が開く予定なら、その中身 */
+  edit?: EditTarget;
 };
 
 export async function fetchMyCalendar(params: {
@@ -80,6 +83,19 @@ export async function fetchMyCalendar(params: {
         endMinutes: b.endMinutes,
         label: b.reason,
         note: b.staffId === null ? "店舗全体" : null,
+        // 店舗全体のブロック枠は 設定→日付ごと で直す。自分の分だけここで直せる
+        ...(b.staffId === staffId
+          ? {
+              edit: {
+                kind: "block" as const,
+                id: b.id,
+                date: b.date,
+                start: b.startMinutes,
+                end: b.endMinutes,
+                title: b.reason,
+              },
+            }
+          : {}),
       }),
     ),
     ...elsewhere.map((e): MyCalendarItem => {
@@ -113,6 +129,15 @@ export async function fetchMyCalendar(params: {
         endMinutes: e.endMinutes,
         label: e.title,
         note: "全体スケジュールの予定",
+        edit: {
+          kind: "event",
+          id: e.id,
+          date: e.date,
+          start: e.startMinutes,
+          end: e.endMinutes,
+          title: e.title,
+          isPrivate: e.isPrivate,
+        },
       };
     }),
     ...[...(google ?? new Map<string, GoogleEventItem[]>())].flatMap(([date, list]) =>
@@ -125,6 +150,7 @@ export async function fetchMyCalendar(params: {
           endMinutes: g.end,
           label: g.title ?? "予定あり",
           note: "Googleカレンダー",
+          edit: googleEditTarget(g, { date, start: g.start, end: g.end }, googleConnection?.canEdit ?? false),
         }),
       ),
     ),

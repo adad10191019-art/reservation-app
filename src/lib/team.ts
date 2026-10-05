@@ -94,6 +94,8 @@ export async function getTeamDays(
               startMinutes: g.start,
               endMinutes: g.end,
               title: g.title,
+              id: g.id,
+              editable: g.editable,
             })),
           ),
         },

@@ -1,7 +1,11 @@
 import Link from "next/link";
 import { AppHeader } from "@/components/app-header";
 import { Banner } from "@/components/banner";
+import { EntryButton } from "@/components/entry-button";
+import { EntryEditor } from "@/components/entry-editor";
 import { HelpTip, SidebarHelp } from "@/components/help-tip";
+import { type EditTarget, googleEditTarget } from "@/lib/entry-edit";
+import { deleteEmployeeEvent, deleteMyGoogleEvent, updateEmployeeEvent, updateMyGoogleEvent } from "@/lib/team-actions";
 import {
   AddEntryPanel,
   ColorLegend,
@@ -22,7 +26,7 @@ import { type ElsewhereItem, fetchMyElsewhere } from "@/lib/my-elsewhere";
 import { prisma } from "@/lib/prisma";
 import { getDaySchedule, getTenant } from "@/lib/schedule";
 import { monthWeeks, parseView, viewDates } from "@/lib/schedule-range";
-import { createOwnBlock, deleteOwnBlock } from "@/lib/staff-schedule-actions";
+import { createOwnBlock, deleteOwnBlock, updateOwnBlock } from "@/lib/staff-schedule-actions";
 import { isAllDay, timeRangeText } from "@/lib/team-view";
 import { formatDateLabel, sanitizeDate, toHm, todayString } from "@/lib/time";
 import { defaultStart } from "@/lib/time-choices";
@@ -32,7 +36,14 @@ const PATH = "/my-schedule";
 type AgendaItem =
   | { kind: "reservation"; id: string; startMinutes: number; endMinutes: number; menuName: string; customerName: string }
   | { kind: "block"; id: string; startMinutes: number; endMinutes: number; reason: string; wholeShop: boolean }
-  | { kind: "google"; startMinutes: number; endMinutes: number; title: string | null }
+  | {
+      kind: "google";
+      startMinutes: number;
+      endMinutes: number;
+      title: string | null;
+      id?: string;
+      editable?: boolean;
+    }
   | ElsewhereItem;
 
 export default async function MySchedulePage({
@@ -165,6 +176,14 @@ export default async function MySchedulePage({
             />
           )}
         </section>
+        <EntryEditor
+          returnTo={returnTo}
+          actions={{
+            block: { update: updateOwnBlock, remove: deleteOwnBlock },
+            event: { update: updateEmployeeEvent, remove: deleteEmployeeEvent },
+            google: { update: updateMyGoogleEvent, remove: deleteMyGoogleEvent },
+          }}
+        />
       </main>
     );
   }
@@ -184,7 +203,7 @@ export default async function MySchedulePage({
     fetchMyElsewhere({ userId: session.userId, tenantId: tenant.id, staffId, dates: [date] }),
   ]);
 
-  // 連携していれば、Googleカレンダーの予定も「見るだけ」の項目として混ぜる（本人の分なので件名も出す）
+  // 連携していれば、Googleカレンダーの予定も混ぜる（本人の分なので件名も出す。押すと直す・消す欄が開く）
   const googleBusy = googleConnection
     ? ((await fetchGoogleEventsOfDates(googleConnection, [date], true))?.get(date) ?? [])
     : [];
@@ -218,7 +237,14 @@ export default async function MySchedulePage({
     ),
     ...elsewhere,
     ...googleBusy.map(
-      (g): AgendaItem => ({ kind: "google", startMinutes: g.start, endMinutes: g.end, title: g.title }),
+      (g): AgendaItem => ({
+        kind: "google",
+        startMinutes: g.start,
+        endMinutes: g.end,
+        title: g.title,
+        id: g.id,
+        editable: g.editable,
+      }),
     ),
   ].sort((a, b) => a.startMinutes - b.startMinutes);
 
@@ -277,8 +303,21 @@ export default async function MySchedulePage({
                   </Link>
                 </li>
               ) : item.kind === "block" ? (
-                <li
+                <AgendaRow
                   key={`b-${item.id}`}
+                  // 店舗全体のブロック枠は 設定→日付ごと で直す
+                  target={
+                    item.wholeShop
+                      ? undefined
+                      : {
+                          kind: "block",
+                          id: item.id,
+                          date,
+                          start: item.startMinutes,
+                          end: item.endMinutes,
+                          title: item.reason,
+                        }
+                  }
                   className="flex items-center gap-3 rounded-lg border border-dashed border-amber-300 bg-amber-50 px-3 py-2.5"
                 >
                   <span className="w-11 shrink-0 text-sm font-medium tabular-nums text-amber-800">
@@ -295,7 +334,7 @@ export default async function MySchedulePage({
                       {durationText(item)}
                     </span>
                   </span>
-                </li>
+                </AgendaRow>
               ) : item.kind === "elsewhere-reservation" ? (
                 // 兼任先の部署の予約。詳しく見る・動かすのはその部署に切り替えてから
                 <li
@@ -334,11 +373,19 @@ export default async function MySchedulePage({
                   </span>
                 </li>
               ) : item.kind === "event" ? (
-                <li key={`ev-${item.id}`}>
-                  <Link
-                    href={`/team?date=${date}`}
-                    className="flex items-center gap-3 rounded-lg border border-dashed border-neutral-300 bg-neutral-100 px-3 py-2.5 hover:bg-neutral-200"
-                  >
+                <AgendaRow
+                  key={`ev-${item.id}`}
+                  target={{
+                    kind: "event",
+                    id: item.id,
+                    date,
+                    start: item.startMinutes,
+                    end: item.endMinutes,
+                    title: item.title,
+                    isPrivate: item.isPrivate,
+                  }}
+                  className="flex items-center gap-3 rounded-lg border border-dashed border-neutral-300 bg-neutral-100 px-3 py-2.5"
+                >
                     <span className="w-11 shrink-0 text-sm font-medium tabular-nums text-neutral-700">
                       {isAllDay(item) ? "終日" : toHm(item.startMinutes)}
                     </span>
@@ -350,11 +397,15 @@ export default async function MySchedulePage({
                         {durationText(item)}・全体スケジュールで入れた予定
                       </span>
                     </span>
-                  </Link>
-                </li>
+                </AgendaRow>
               ) : (
-                <li
-                  key={`g-${item.startMinutes}-${item.endMinutes}-${item.title ?? ""}`}
+                <AgendaRow
+                  key={`g-${item.id ?? ""}-${item.startMinutes}-${item.endMinutes}-${item.title ?? ""}`}
+                  target={googleEditTarget(
+                    item,
+                    { date, start: item.startMinutes, end: item.endMinutes },
+                    googleConnection?.canEdit ?? false,
+                  )}
                   className="flex items-center gap-3 rounded-lg border border-dashed border-violet-300 bg-violet-50 px-3 py-2.5"
                 >
                   <span className="w-11 shrink-0 text-sm font-medium tabular-nums text-violet-800">
@@ -368,7 +419,7 @@ export default async function MySchedulePage({
                       {durationText(item)}・Googleカレンダーの予定
                     </span>
                   </span>
-                </li>
+                </AgendaRow>
               ),
             )}
           </ul>
@@ -422,6 +473,14 @@ export default async function MySchedulePage({
           </ul>
         )}
       </section>
+      <EntryEditor
+        returnTo={returnTo}
+        actions={{
+          block: { update: updateOwnBlock, remove: deleteOwnBlock },
+          event: { update: updateEmployeeEvent, remove: deleteEmployeeEvent },
+          google: { update: updateMyGoogleEvent, remove: deleteMyGoogleEvent },
+        }}
+      />
     </main>
   );
 }
@@ -502,4 +561,24 @@ function AddOwnBlockForm({ date, returnTo }: { date: string; returnTo: string })
 /** 一覧に出す長さ（終日なら「1日まるごと」） */
 function durationText(item: { startMinutes: number; endMinutes: number }): string {
   return isAllDay(item) ? "1日まるごと" : `${item.endMinutes - item.startMinutes}分`;
+}
+
+/** 1日表示の一覧の1行。直せる予定なら、押すと直す・消す欄が開く */
+function AgendaRow({
+  target,
+  className,
+  children,
+}: {
+  target: EditTarget | undefined;
+  className: string;
+  children: React.ReactNode;
+}) {
+  if (!target) return <li className={className}>{children}</li>;
+  return (
+    <li>
+      <EntryButton target={target} className={`w-full ${className}`}>
+        {children}
+      </EntryButton>
+    </li>
+  );
 }

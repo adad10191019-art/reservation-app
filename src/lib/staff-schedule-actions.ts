@@ -224,3 +224,41 @@ export async function deleteOwnBlock(formData: FormData) {
   revalidatePath(PATH);
   back(date, undefined, PATH, returnTo);
 }
+
+/** 自分の予定（ブロック枠）の日時・内容を直す。自分の分だけ */
+export async function updateOwnBlock(formData: FormData) {
+  const { tenantId, staffId, name } = await requireOwnStaffId();
+  const returnTo = formData.get("returnTo") ?? undefined;
+  const id = String(formData.get("id") ?? "");
+  const date = String(formData.get("date") ?? "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) back(date, "日付の形式が正しくありません", PATH, returnTo);
+
+  const reason = String(formData.get("title") ?? "").trim();
+  if (!reason) back(date, "内容を入力してください", PATH, returnTo);
+  const result = parseRanges(`${formData.get("start") ?? ""}-${formData.get("end") ?? ""}`);
+  if (!result.ok) back(date, result.message, PATH, returnTo);
+  if (result.intervals.length !== 1) back(date, "時間の指定が正しくありません", PATH, returnTo);
+  const interval = result.intervals[0];
+
+  const block = await prisma.block.findFirst({ where: { id, tenantId, staffId } });
+  if (!block) back(date, "見つかりません（他の人の予定は直せません）", PATH, returnTo);
+
+  await prisma.block.update({
+    where: { id },
+    data: { date, startMinutes: interval.start, endMinutes: interval.end, reason },
+  });
+
+  await logChange({
+    tenantId,
+    actorName: name,
+    entity: "block",
+    action: "updated",
+    summary: `${formatDateLabel(block.date)} ${toHm(block.startMinutes)}-${toHm(block.endMinutes)} ${block.reason} を ${formatDateLabel(date)} ${toHm(interval.start)}-${toHm(interval.end)} ${reason} に変更（${name} 本人）`,
+  });
+
+  revalidatePath("/calendar");
+  revalidatePath("/calendar/week");
+  revalidatePath("/booking");
+  revalidatePath(PATH);
+  back(date, undefined, PATH, returnTo);
+}

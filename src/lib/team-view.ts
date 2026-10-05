@@ -29,6 +29,10 @@ export type TeamItem = {
   note: string | null;
   /** 削除できる社員の予定なら、そのID */
   deletableEventId: string | null;
+  /** 直せる社員の予定の、本当の件名と私用の印（予定を押して開く編集の欄に入れる） */
+  editable?: { title: string; isPrivate: boolean };
+  /** Google の予定のID（本人の列だけ。予定を押して直す・消すのに使う）と、日時を直せる予定か */
+  google?: { id: string; editable: boolean; title: string | null };
 };
 
 export type TeamColumn = {
@@ -55,7 +59,14 @@ export type TeamSource = {
   reservations: { id: string; staffId: string; startMinutes: number; endMinutes: number }[];
   blocks: { id: string; staffId: string; startMinutes: number; endMinutes: number; reason: string }[];
   /** 連携している Google カレンダーの予定（google-calendar-cache.ts） */
-  googleEvents: { employeeId: string; startMinutes: number; endMinutes: number; title: string | null }[];
+  googleEvents: {
+    employeeId: string;
+    startMinutes: number;
+    endMinutes: number;
+    title: string | null;
+    id?: string;
+    editable?: boolean;
+  }[];
 };
 
 const DAY_END = 24 * 60;
@@ -92,6 +103,7 @@ export function buildTeamColumns(source: TeamSource, viewer: TeamViewer): TeamCo
         label: hidden ? "予定あり" : e.title,
         note: e.isPrivate && isMe ? "私用（他の人には件名を隠しています）" : null,
         deletableEventId: isMe || viewer.isAdmin ? e.id : null,
+        ...(isMe || viewer.isAdmin ? { editable: { title: e.title, isPrivate: e.isPrivate } } : {}),
       });
     }
 
@@ -134,6 +146,8 @@ export function buildTeamColumns(source: TeamSource, viewer: TeamViewer): TeamCo
         label: g.title ?? "予定あり",
         note: allDay ? "終日（Googleカレンダー）" : "Googleカレンダー",
         deletableEventId: null,
+        // Google の予定を直せるのは本人だけ（全社管理者でも、ほかの人の Google カレンダーは触らない）
+        ...(isMe && g.id ? { google: { id: g.id, editable: g.editable === true, title: g.title } } : {}),
       });
     });
 

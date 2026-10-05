@@ -12,7 +12,7 @@ import { prisma } from "./prisma";
 import { formatDateLabel, toHm } from "./time";
 
 export type ChangeEntity = "block" | "dateOverride" | "reservation";
-export type ChangeAction = "created" | "deleted" | "moved";
+export type ChangeAction = "created" | "deleted" | "moved" | "updated";
 
 export async function logChange(params: {
   tenantId: string;

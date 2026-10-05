@@ -9,10 +9,15 @@
  */
 import { dateMinutesToUtcIso } from "./time";
 
-/** 全体スケジュールに出す Google の予定1件。title は件名を出さない設定なら null */
-export type GoogleEventItem = { start: number; end: number; title: string | null };
+/**
+ * 全体スケジュールに出す Google の予定1件。title は件名を出さない設定なら null。
+ * id は Google の予定のID（アプリから直す・消すのに使う。2026-10-05 より前の控えには無い）。
+ * editable は、その日の中で収まる予定か（何日にもまたがる予定は、1日分の画面から直すと形が崩れるので直させない）
+ */
+export type GoogleEventItem = { start: number; end: number; title: string | null; id?: string; editable?: boolean };
 
 export type GoogleEvent = {
+  id?: string;
   status?: string;
   summary?: string;
   visibility?: string;
@@ -38,6 +43,7 @@ export function splitGoogleEventsByDate(
     const hidden = e.visibility === "private" || e.visibility === "confidential";
     const title = withTitles && !hidden && e.summary ? e.summary.slice(0, 100) : null;
 
+    const spansDays = spansSeveralDays(e);
     for (const day of days) {
       let s: number;
       let t: number;
@@ -57,10 +63,23 @@ export function splitGoogleEventsByDate(
         start: Math.round((s - day.startMs) / 60000),
         end: Math.round((t - day.startMs) / 60000),
         title,
+        ...(e.id ? { id: e.id, editable: !spansDays } : {}),
       });
     }
   }
 
   for (const list of result.values()) list.sort((a, b) => a.start - b.start || a.end - b.end);
   return result;
+}
+
+/** 何日にもまたがる予定か（終日の予定は2日以上、時刻つきは日本時間で開始と終了の日が違えば。終わりがちょうど0時なら前の日のうち） */
+function spansSeveralDays(e: GoogleEvent): boolean {
+  if (e.start?.date && e.end?.date) {
+    return Date.parse(`${e.end.date}T00:00:00Z`) - Date.parse(`${e.start.date}T00:00:00Z`) > 86_400_000;
+  }
+  if (e.start?.dateTime && e.end?.dateTime) {
+    const jstDate = (ms: number) => new Date(ms + 9 * 3_600_000).toISOString().slice(0, 10);
+    return jstDate(Date.parse(e.start.dateTime)) !== jstDate(Date.parse(e.end.dateTime) - 1);
+  }
+  return false;
 }

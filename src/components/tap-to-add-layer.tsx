@@ -57,7 +57,7 @@ export function MonthDayCell({
       aria-label={`${Number(date.slice(5, 7))}月${Number(date.slice(8))}日の予定を入力する`}
       className={`cursor-pointer ${className}`}
       onClick={(e) => {
-        if ((e.target as HTMLElement).closest("a")) return;
+        if ((e.target as HTMLElement).closest("a, [data-entry]")) return;
         sendQuickAdd({ date, employeeId });
       }}
       onKeyDown={(e) => {

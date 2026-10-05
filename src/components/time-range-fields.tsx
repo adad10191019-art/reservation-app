@@ -23,9 +23,18 @@ import {
  * 「終日」は 0:00〜24:00 にする。titleName を渡すと「休み」「対応不可」のボタンも出し、
  * 押すと同じフォームの件名の欄（name が titleName）に入れて終日にする。
  */
-export function TimeRangeFields({ defaultStart, titleName }: { defaultStart: number; titleName?: string }) {
+export function TimeRangeFields({
+  defaultStart,
+  defaultEnd: initialEnd,
+  titleName,
+}: {
+  defaultStart: number;
+  /** 最初の終了（予定を直すとき）。無ければ開始の1時間後 */
+  defaultEnd?: number;
+  titleName?: string;
+}) {
   const [start, setStart] = useState(defaultStart);
-  const [end, setEnd] = useState(() => defaultEnd(defaultStart));
+  const [end, setEnd] = useState(() => initialEnd ?? defaultEnd(defaultStart));
   const length = end - start;
   const allDay = start === ALL_DAY.start && end === ALL_DAY.end;
   const ref = useRef<HTMLDivElement>(null);
@@ -74,7 +83,7 @@ export function TimeRangeFields({ defaultStart, titleName }: { defaultStart: num
           }}
           className={selectClass}
         >
-          {startChoices().map((m) => (
+          {withValue(startChoices(), start).map((m) => (
             <option key={m} value={toHm(m)}>
               {label(m)}
             </option>
@@ -89,7 +98,7 @@ export function TimeRangeFields({ defaultStart, titleName }: { defaultStart: num
           onChange={(e) => setEnd(hm(e.target.value))}
           className={selectClass}
         >
-          {endChoices(start).map((m) => (
+          {withValue(endChoices(start), end).map((m) => (
             <option key={m} value={toHm(m)}>
               {label(m)}（{lengthLabel(m - start)}）
             </option>
@@ -132,6 +141,11 @@ export function TimeRangeFields({ defaultStart, titleName }: { defaultStart: num
       )}
     </div>
   );
+}
+
+/** 15分刻みでない時刻（Google で入れた 10:10 など）も一覧に入れて、選ばれたままにする */
+function withValue(choices: number[], value: number): number[] {
+  return choices.includes(value) ? choices : [...choices, value].sort((a, b) => a - b);
 }
 
 /** 一覧の見出しは先頭の0を付けない（9:00、24:00） */

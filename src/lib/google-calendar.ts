@@ -3,7 +3,8 @@
  *
  * アプリ→カレンダーは calendarToken によるURL購読（ics.ts）が別にあるので、
  * ここが担うのはカレンダー→アプリの向き（本人のGoogleカレンダーにある予定を
- * 「空いていない時間」として取り込み、全体スケジュールにも出す）だけ。
+ * 「空いていない時間」として取り込み、全体スケジュールにも出す）と、
+ * アプリの画面から本人が自分の Google の予定を直す・消すこと（2026-10-05 から。ユーザーの希望）。
  *
  * 連携は人（社員名簿）に付く。本人が自分のGoogleアカウントで許可し、以後はリフレッシュトークンで
  * 裏側からアクセストークンを取り直し続ける（LINEログインと同じ、fetchだけの実装）。
@@ -11,7 +12,7 @@
 import { prisma } from "./prisma";
 import { type GoogleEvent, type GoogleEventItem, splitGoogleEventsByDate } from "./google-event-split";
 import { GoogleGrantRevokedError, isRevokedGrantResponse } from "./google-grant";
-import { dateMinutesToUtcIso } from "./time";
+import { addDays, dateMinutesToUtcIso } from "./time";
 
 export type { GoogleEventItem } from "./google-event-split";
 
@@ -21,6 +22,9 @@ const REVOKE_URL = "https://oauth2.googleapis.com/revoke";
 const FREEBUSY_URL = "https://www.googleapis.com/calendar/v3/freeBusy";
 const EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
 const USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo";
+
+const READ_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
+const EDIT_SCOPE = "https://www.googleapis.com/auth/calendar.events";
 
 export function isGoogleCalendarConfigured(): boolean {
   return Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
@@ -43,8 +47,9 @@ export function buildAuthorizeUrl(state: string): string {
     // リフレッシュトークンを毎回必ずもらうための指定
     access_type: "offline",
     prompt: "consent",
+    // 空き具合・予定を読む（readonly）、アプリから予定を直す・消す（events）。
     // 画面に表示する連携先メールアドレスの取得のため、email も一緒に求める
-    scope: "https://www.googleapis.com/auth/calendar.readonly email",
+    scope: `${READ_SCOPE} ${EDIT_SCOPE} email`,
     state,
   });
   return `${AUTHORIZE_URL}?${query.toString()}`;
@@ -53,7 +58,7 @@ export function buildAuthorizeUrl(state: string): string {
 /** 認可コードを、リフレッシュトークン等と交換する */
 export async function exchangeCodeForTokens(
   code: string,
-): Promise<{ refreshToken: string; accessToken: string; expiresIn: number; email: string }> {
+): Promise<{ refreshToken: string; accessToken: string; expiresIn: number; email: string; canEdit: boolean }> {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   if (!clientId || !clientSecret) throw new Error("Googleの認証情報が設定されていません");
@@ -75,6 +80,8 @@ export async function exchangeCodeForTokens(
     access_token?: string;
     refresh_token?: string;
     expires_in?: number;
+    /** 実際に許可された範囲（空白区切り）。許可画面で書き換えの許可を外されることもある */
+    scope?: string;
   };
   if (!token.access_token || !token.refresh_token) {
     // すでに連携済みの状態で連携し直そうとすると refresh_token が来ないことがある。
@@ -94,6 +101,7 @@ export async function exchangeCodeForTokens(
     accessToken: token.access_token,
     expiresIn: token.expires_in ?? 3600,
     email: user.email ?? "不明なアカウント",
+    canEdit: (token.scope ?? "").split(" ").includes(EDIT_SCOPE),
   };
 }
 
@@ -318,7 +326,7 @@ export async function fetchGoogleEventsOfDates(
     orderBy: "startTime",
     // 1か月分（月表示は最大6週）でも1回で収まるよう、上限いっぱいにする
     maxResults: "2500",
-    fields: "items(status,summary,visibility,transparency,start,end)",
+    fields: "items(id,status,summary,visibility,transparency,start,end)",
   });
 
   let res: Response;
@@ -333,4 +341,72 @@ export async function fetchGoogleEventsOfDates(
 
   const data = (await res.json()) as { items?: GoogleEvent[] };
   return splitGoogleEventsByDate(data.items ?? [], dates, withTitles);
+}
+
+/** Google の予定を直す・消すときの失敗（画面にそのまま出す文） */
+export class GoogleEditError extends Error {}
+
+type EditableConnection = ConnectionRow & { canEdit: boolean };
+
+async function editRequest(connection: EditableConnection, eventId: string, init: RequestInit): Promise<Response> {
+  if (!connection.canEdit) {
+    throw new GoogleEditError(
+      "Google の予定を直すには、アカウント情報で Google をつなぎ直してください（書き換えの許可が足りません）",
+    );
+  }
+  let accessToken: string;
+  try {
+    accessToken = await getValidAccessToken(connection);
+  } catch {
+    throw new GoogleEditError("Google との連携が切れています。アカウント情報でつなぎ直してください");
+  }
+  try {
+    return await fetch(`${EVENTS_URL}/${encodeURIComponent(eventId)}`, {
+      ...init,
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    });
+  } catch {
+    throw new GoogleEditError("Google とやり取りできませんでした。少し待ってからもう一度お試しください");
+  }
+}
+
+function failureMessage(status: number): string {
+  if (status === 403) {
+    return "この予定はアプリから直せません（ほかの人が作った予定など）。Google カレンダーで直してください";
+  }
+  if (status === 404 || status === 410) {
+    return "Google カレンダーにこの予定が見つかりません（すでに消えている可能性があります）";
+  }
+  return "Google の予定を直せませんでした。少し待ってからもう一度お試しください";
+}
+
+/**
+ * Google の予定（繰り返しの予定なら、その回だけ）の日時・件名を直す。
+ * 0:00〜24:00 は終日の予定にする。title が null なら件名は変えない（件名を出さない設定で取ってきた予定のため）。
+ */
+export async function updateGoogleEvent(
+  connection: EditableConnection,
+  eventId: string,
+  change: { date: string; start: number; end: number; title: string | null },
+): Promise<void> {
+  const allDay = change.start === 0 && change.end === 24 * 60;
+  const body: Record<string, unknown> = allDay
+    ? {
+        start: { date: change.date, dateTime: null },
+        end: { date: addDays(change.date, 1), dateTime: null },
+      }
+    : {
+        start: { dateTime: dateMinutesToUtcIso(change.date, change.start), date: null },
+        end: { dateTime: dateMinutesToUtcIso(change.date, change.end), date: null },
+      };
+  if (change.title !== null) body.summary = change.title;
+
+  const res = await editRequest(connection, eventId, { method: "PATCH", body: JSON.stringify(body) });
+  if (!res.ok) throw new GoogleEditError(failureMessage(res.status));
+}
+
+/** Google の予定（繰り返しの予定なら、その回だけ）を消す。すでに消えていれば何もしない */
+export async function deleteGoogleEvent(connection: EditableConnection, eventId: string): Promise<void> {
+  const res = await editRequest(connection, eventId, { method: "DELETE" });
+  if (!res.ok && res.status !== 410 && res.status !== 404) throw new GoogleEditError(failureMessage(res.status));
 }

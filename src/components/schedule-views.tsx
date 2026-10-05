@@ -16,6 +16,8 @@ import {
   viewTitle,
 } from "@/lib/schedule-range";
 import { isAllDay, layoutLanes, timeRangeOf, timeRangeText } from "@/lib/team-view";
+import type { EditTarget } from "@/lib/entry-edit";
+import { EntryButton } from "./entry-button";
 import { MonthDayCell, TapToAddLayer } from "./tap-to-add-layer";
 
 export { AddEntryPanel } from "./add-entry-panel";
@@ -34,6 +36,8 @@ export type ScheduleEntry = {
   href?: string;
   /** 項目の右上に置く操作（× で消すフォームなど） */
   action?: ReactNode;
+  /** 押すと直す・消す欄が開く予定なら、その中身（entry-edit.ts） */
+  edit?: EditTarget;
 };
 
 export const ENTRY_STYLE: Record<ScheduleEntry["kind"], string> = {
@@ -259,6 +263,13 @@ export function TimelineGrid({
                   width: `calc(${100 / lanes}% - 4px)`,
                 };
                 const title = `${timeRangeText(item)} ${item.label}${item.note ? `（${item.note}）` : ""}`;
+                if (item.edit) {
+                  return (
+                    <EntryButton key={item.key} target={item.edit} title={title} className={className} style={style}>
+                      {body}
+                    </EntryButton>
+                  );
+                }
                 return item.href ? (
                   <Link key={item.key} href={item.href} title={title} className={`${className} hover:brightness-95`} style={style}>
                     {body}
@@ -368,19 +379,27 @@ export function MonthGrid({
                   )}
                 </div>
                 <div className="space-y-0.5">
-                  {entries.slice(0, MAX_PER_DAY).map((e) => (
-                    <div
-                      key={e.key}
-                      title={`${timeRangeText(e)} ${e.label}`}
-                      className={`truncate rounded border px-0.5 text-[10px] leading-snug sm:text-[11px] ${ENTRY_STYLE[e.kind]} ${
-                        inMonth ? "" : "opacity-60"
-                      }`}
-                    >
-                      <span className="tabular-nums">{isAllDay(e) ? "終日" : toHm(e.startMinutes)}</span>
-                      {/* スマホではマスが狭いので、件名は少し広い画面からだけ出す */}
-                      <span className="ml-0.5 hidden sm:inline">{e.label}</span>
-                    </div>
-                  ))}
+                  {entries.slice(0, MAX_PER_DAY).map((e) => {
+                    const chipClass = `block w-full truncate rounded border px-0.5 text-[10px] leading-snug sm:text-[11px] ${ENTRY_STYLE[e.kind]} ${
+                      inMonth ? "" : "opacity-60"
+                    }`;
+                    const chip = (
+                      <>
+                        <span className="tabular-nums">{isAllDay(e) ? "終日" : toHm(e.startMinutes)}</span>
+                        {/* スマホではマスが狭いので、件名は少し広い画面からだけ出す */}
+                        <span className="ml-0.5 hidden sm:inline">{e.label}</span>
+                      </>
+                    );
+                    return e.edit && tapToAdd ? (
+                      <EntryButton key={e.key} target={e.edit} title={`${timeRangeText(e)} ${e.label}`} className={chipClass}>
+                        {chip}
+                      </EntryButton>
+                    ) : (
+                      <div key={e.key} title={`${timeRangeText(e)} ${e.label}`} className={chipClass}>
+                        {chip}
+                      </div>
+                    );
+                  })}
                   {entries.length > MAX_PER_DAY && (
                     <div className="px-0.5 text-[10px] text-neutral-500">他{entries.length - MAX_PER_DAY}件</div>
                   )}

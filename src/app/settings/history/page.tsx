@@ -11,12 +11,14 @@ const ACTION_STYLE: Record<string, string> = {
   created: "border-sky-300 bg-sky-50 text-sky-800",
   deleted: "border-red-300 bg-red-50 text-red-800",
   moved: "border-amber-300 bg-amber-50 text-amber-800",
+  updated: "border-amber-300 bg-amber-50 text-amber-800",
 };
 
 const ACTION_LABEL: Record<string, string> = {
   created: "追加",
   deleted: "削除",
   moved: "移動",
+  updated: "変更",
 };
 
 /** 件数が多くなりすぎないよう、直近の分だけ見せる */

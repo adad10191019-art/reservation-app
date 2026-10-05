@@ -44,7 +44,7 @@ export default async function AccountPage({
   const google = viewer.employeeId
     ? await prisma.googleCalendarConnection.findUnique({
         where: { employeeId: viewer.employeeId },
-        select: { googleEmail: true, showTitles: true, brokenAt: true },
+        select: { googleEmail: true, showTitles: true, brokenAt: true, canEdit: true },
       })
     : null;
 
@@ -124,7 +124,8 @@ export default async function AccountPage({
           つなぐと、自分のGoogleカレンダーの予定が全体スケジュールに出て、担当している全部の部署の予約受付で
           「空いていない時間」になります。予定をこちらに入れ直す必要はありません。
           全体スケジュールへの反映は最大{CACHE_MINUTES}分遅れます（予約受付はその場で確かめます）。
-          読み取りだけで、Googleカレンダーの予定を書き換えたり消したりはしません。
+          自分の予定・全体スケジュールで Google の予定を押すと、その予定の日時・件名を直したり消したりもできます
+          （Googleカレンダーにもそのまま反映されます）。アプリが勝手に書き換えることはありません。
         </p>
 
         {!isGoogleCalendarConfigured() ? (
@@ -159,6 +160,20 @@ export default async function AccountPage({
               <p className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
                 つないでいます：{google.googleEmail}
               </p>
+            )}
+            {!google.brokenAt && !google.canEdit && (
+              // 2026-10-05 より前につないだ人は、予定を直す・消す許可をまだもらっていない
+              <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-relaxed text-amber-900">
+                <p>Google の予定をアプリから直す・消すには、つなぎ直して書き換えの許可を足してください。</p>
+                <form action={connectGoogleCalendar}>
+                  <button
+                    type="submit"
+                    className="rounded-md bg-neutral-800 px-4 py-1.5 text-sm font-medium text-white hover:bg-neutral-700"
+                  >
+                    Googleカレンダーをつなぎ直す
+                  </button>
+                </form>
+              </div>
             )}
 
             <form action={setGoogleShowTitles} className="space-y-2">

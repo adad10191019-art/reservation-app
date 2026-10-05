@@ -16,8 +16,15 @@ export function parseCachedItems(value: unknown): GoogleEventItem[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((v) => {
     if (typeof v !== "object" || v === null) return [];
-    const { start, end, title } = v as Record<string, unknown>;
+    const { start, end, title, id, editable } = v as Record<string, unknown>;
     if (typeof start !== "number" || typeof end !== "number") return [];
-    return [{ start, end, title: typeof title === "string" ? title : null }];
+    return [
+      {
+        start,
+        end,
+        title: typeof title === "string" ? title : null,
+        ...(typeof id === "string" ? { id, editable: editable === true } : {}),
+      },
+    ];
   });
 }

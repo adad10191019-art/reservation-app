@@ -226,6 +226,9 @@ model GoogleCalendarConnection {
   /// Google が許可を無効と返した（取り消された・期限が切れた）時刻。以後は問い合わせず、
   /// 本人と全体スケジュールに「つなぎ直してください」と出す。つなぎ直すと消える
   brokenAt             DateTime?
+  /// 予定の書き換え・削除の許可（calendar.events）ももらえているか。2026-10-05 より前につないだ人は false で、
+  /// つなぎ直すと true になる。false の間はアプリから Google の予定を編集・削除できない
+  canEdit              Boolean   @default(false)
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 

@@ -22,7 +22,15 @@ import { prisma } from "@/lib/prisma";
 import { getTenant } from "@/lib/schedule";
 import { monthWeeks, parseView, viewDates } from "@/lib/schedule-range";
 import { getTeamDays, getTeamViewer } from "@/lib/team";
-import { createEmployeeEvent, deleteEmployeeEvent } from "@/lib/team-actions";
+import { EntryEditor } from "@/components/entry-editor";
+import { type EditTarget, googleEditTarget } from "@/lib/entry-edit";
+import {
+  createEmployeeEvent,
+  deleteEmployeeEvent,
+  deleteMyGoogleEvent,
+  updateEmployeeEvent,
+  updateMyGoogleEvent,
+} from "@/lib/team-actions";
 import { type TeamColumn, type TeamItem, timeRangeText } from "@/lib/team-view";
 import { formatDateLabel, sanitizeDate, todayString } from "@/lib/time";
 import { defaultStart } from "@/lib/time-choices";
@@ -84,32 +92,47 @@ export default async function TeamPage({
     view === "day" || person
       ? await getTeamDays(dates, viewer, person ?? undefined)
       : new Map<string, TeamColumn[]>();
+  // 自分の Google の予定を、ここから直せるか（書き換えの許可をもらえているか）
+  const googleCanEdit = viewer.employeeId
+    ? ((await prisma.googleCalendarConnection.findUnique({
+        where: { employeeId: viewer.employeeId },
+        select: { canEdit: true },
+      }))?.canEdit ?? false)
+    : false;
+
   // Google の連携が切れている人。1日表示の列に出し、本人以外（管理者など）も気づけるようにする
   const googleBroken =
     view === "day" ? await findBrokenGoogleEmployeeIds(employees.map((e) => e.id)) : new Set<string>();
 
-  /** 全体スケジュールの1件を、並べる部品の形にする（消せる予定には × を付ける） */
-  const toEntry = (item: TeamItem, itemDate: string): ScheduleEntry => ({
+  /** 全体スケジュールの1件を、並べる部品の形にする（直せる予定は押すと編集の欄が開く） */
+  const toEntry = (item: TeamItem, itemDate: string, owner: { name: string; isMe: boolean }): ScheduleEntry => ({
     ...item,
-    action: item.deletableEventId ? (
-      <form action={deleteEmployeeEvent}>
-        <input type="hidden" name="id" value={item.deletableEventId} />
-        <input type="hidden" name="date" value={itemDate} />
-        <input type="hidden" name="returnTo" value={returnTo} />
-        <SubmitButton
-          pendingText="…"
-          ariaLabel={`${item.label} を削除`}
-          confirmText={`「${item.label}」（${timeRangeText(item)}）を消しますか？`}
-          className="rounded px-0.5 text-neutral-500 hover:bg-white hover:text-red-700"
-        >
-          ×
-        </SubmitButton>
-      </form>
-    ) : undefined,
+    edit: toEditTarget(item, itemDate, owner),
   });
+  const toEditTarget = (
+    item: TeamItem,
+    itemDate: string,
+    owner: { name: string; isMe: boolean },
+  ): EditTarget | undefined => {
+    const base = { date: itemDate, start: item.startMinutes, end: item.endMinutes };
+    if (item.deletableEventId && item.editable) {
+      return {
+        ...base,
+        kind: "event",
+        id: item.deletableEventId,
+        title: item.editable.title,
+        isPrivate: item.editable.isPrivate,
+        who: owner.isMe ? undefined : owner.name,
+      };
+    }
+    if (item.google) return googleEditTarget(item.google, base, googleCanEdit);
+    return undefined;
+  };
   /** 週・月で見ている人の、その日の予定 */
-  const personEntries = (d: string): ScheduleEntry[] =>
-    (byDate.get(d)?.[0]?.items ?? []).map((item) => toEntry(item, d));
+  const personEntries = (d: string): ScheduleEntry[] => {
+    const col = byDate.get(d)?.[0];
+    return (col?.items ?? []).map((item) => toEntry(item, d, { name: col?.name ?? "", isMe: col?.isMe ?? false }));
+  };
 
   const canAdd = viewer.employeeId !== null || viewer.isAdmin;
   /** 空いているところを押して予定を足せる人の列か（自分の列。全社管理者は全員の列） */
@@ -306,7 +329,7 @@ export default async function TeamPage({
                 </div>
               </>
             ),
-            entries: col.items.map((item) => toEntry(item, date)),
+            entries: col.items.map((item) => toEntry(item, date, col)),
             tapToAdd: canTapAdd(col.employeeId) ? { date, employeeId: col.employeeId } : undefined,
           }))}
         />
@@ -342,6 +365,13 @@ export default async function TeamPage({
           )}
         </>
       )}
+      <EntryEditor
+        returnTo={returnTo}
+        actions={{
+          event: { update: updateEmployeeEvent, remove: deleteEmployeeEvent },
+          google: { update: updateMyGoogleEvent, remove: deleteMyGoogleEvent },
+        }}
+      />
     </main>
   );
 }

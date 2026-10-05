@@ -50,15 +50,15 @@ export async function GET(request: Request) {
   }
 
   try {
-    const { refreshToken, email: googleEmail, accessToken, expiresIn } =
+    const { refreshToken, email: googleEmail, accessToken, expiresIn, canEdit } =
       await exchangeCodeForTokens(code);
     const accessTokenExpiresAt = new Date(Date.now() + expiresIn * 1000);
 
     await prisma.googleCalendarConnection.upsert({
       where: { employeeId },
-      create: { employeeId, googleEmail, refreshToken, accessToken, accessTokenExpiresAt },
+      create: { employeeId, googleEmail, refreshToken, accessToken, accessTokenExpiresAt, canEdit },
       // つなぎ直したら、切れていた印も消す
-      update: { googleEmail, refreshToken, accessToken, accessTokenExpiresAt, brokenAt: null },
+      update: { googleEmail, refreshToken, accessToken, accessTokenExpiresAt, brokenAt: null, canEdit },
     });
     // 別の Google アカウントでつなぎ直したときに、前のアカウントの予定を出さないように
     await clearGoogleEventCache(employeeId);

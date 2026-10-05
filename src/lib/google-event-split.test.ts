@@ -52,3 +52,35 @@ describe("splitGoogleEventsByDate", () => {
     expect(noTitles.get("2026-10-07")).toEqual([{ start: 540, end: 600, title: null }]);
   });
 });
+
+describe("splitGoogleEventsByDate の ID と直せるか", () => {
+  it("ID のある1日の予定は、ID つきで直せる印を付ける（0時ちょうどに終わる予定もその日のうち）", () => {
+    const result = splitGoogleEventsByDate(
+      [
+        { id: "a", summary: "面談", start: { dateTime: "2026-10-06T10:00:00+09:00" }, end: { dateTime: "2026-10-06T11:00:00+09:00" } },
+        { id: "b", summary: "夜", start: { dateTime: "2026-10-06T22:00:00+09:00" }, end: { dateTime: "2026-10-07T00:00:00+09:00" } },
+      ],
+      dates,
+      true,
+    );
+    expect(result.get("2026-10-06")).toEqual([
+      { start: 600, end: 660, title: "面談", id: "a", editable: true },
+      { start: 1320, end: 1440, title: "夜", id: "b", editable: true },
+    ]);
+  });
+
+  it("何日にもまたがる予定は直せない印にする（消すことはできる）", () => {
+    const result = splitGoogleEventsByDate(
+      [
+        { id: "c", summary: "夜勤", start: { dateTime: "2026-10-05T22:00:00+09:00" }, end: { dateTime: "2026-10-06T06:00:00+09:00" } },
+        { id: "d", summary: "出張", start: { date: "2026-10-05" }, end: { date: "2026-10-07" } },
+      ],
+      dates,
+      true,
+    );
+    expect(result.get("2026-10-05")?.map((i) => [i.id, i.editable])).toEqual([
+      ["d", false],
+      ["c", false],
+    ]);
+  });
+});

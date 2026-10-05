@@ -212,7 +212,8 @@ export default async function MyScheduleSettingsPage({
         )}
 
         <p className="mt-3 text-xs leading-relaxed text-neutral-500">
-          読み取り（予定があるかどうかの確認）だけを行います。内容の書き換えや削除はしません。
+          予定があるかどうかを確かめて、予約受付で「空いていない時間」にします。Google の予定は、自分の予定の画面で
+          押すと直したり消したりできます（アプリが勝手に書き換えることはありません）。
         </p>
       </section>
     </main>
