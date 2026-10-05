@@ -408,3 +408,17 @@ export function MonthGrid({
   );
 }
 
+
+/** 色の見方（サイドバーの「？ 使い方・色の見方」に出す）。見本の色は表の予定と同じ */
+export function ColorLegend({ items }: { items: { kind: ScheduleEntry["kind"]; label: ReactNode }[] }) {
+  return (
+    <ul className="space-y-1">
+      {items.map((item) => (
+        <li key={item.kind} className="flex items-start gap-1.5">
+          <span className={`mt-0.5 size-3 shrink-0 rounded-sm border ${ENTRY_STYLE[item.kind]}`} />
+          <span>{item.label}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}

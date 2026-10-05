@@ -36,6 +36,7 @@ const ROLE_LABEL: Record<string, string> = {
  * どの画面にも出る、画面の名前と、左のサイドバー（スマホなどでは「≡」で横から出す）。
  * 毎日使う画面・設定・部署の切り替え・アカウントはサイドバーに、
  * その画面だけの操作（週表示へ・予約を追加・戻る など）は children として画面の上に出す。
+ * たまにしか使わない画面ごとの切り替えや説明（見る人・使い方・色の見方）は sidebarExtra としてサイドバーの「この画面」にしまう。
  */
 export async function AppHeader({
   tenantName,
@@ -43,6 +44,7 @@ export async function AppHeader({
   session,
   children,
   menuLinks,
+  sidebarExtra,
 }: {
   tenantName: string;
   subtitle: string;
@@ -52,6 +54,8 @@ export async function AppHeader({
   children?: React.ReactNode;
   /** 画面ごとの補助のリンク（予定の設定など）。操作ボタンの前に出す */
   menuLinks?: { href: string; label: string }[];
+  /** サイドバーの「この画面」に入れるもの */
+  sidebarExtra?: React.ReactNode;
 }) {
   // 部署を切り替えるための一覧。全社管理者は全部署、兼任の人は自分の担当部署（2つ以上のとき）
   const tenants =
@@ -97,6 +101,13 @@ export async function AppHeader({
         <NavLinks items={nav.main} />
         {nav.settings && <SettingsGroup items={nav.settings} pinned={settingsPinned} />}
       </nav>
+
+      {sidebarExtra && (
+        <section aria-label="この画面" className="space-y-1 border-t border-neutral-200 pt-3">
+          <p className="px-1 text-xs text-neutral-500">この画面</p>
+          {sidebarExtra}
+        </section>
+      )}
 
       <div className="mt-auto space-y-0.5 border-t border-neutral-200 pt-3">
         <p className="flex flex-wrap items-center gap-1.5 px-3 pb-1 text-sm text-neutral-700">

@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { AppHeader } from "@/components/app-header";
 import { Banner } from "@/components/banner";
+import { HelpTip, SidebarHelp } from "@/components/help-tip";
 import {
   AddEntryPanel,
+  ColorLegend,
   DayColumnHeader,
   MonthGrid,
   ScheduleNav,
@@ -105,18 +107,37 @@ export default async function MySchedulePage({
 
     return (
       <main className="mx-auto w-full max-w-5xl p-4 sm:p-6">
-        <MyScheduleHeader tenantName={tenant.name} session={session} date={date} />
+        <MyScheduleHeader
+          tenantName={tenant.name}
+          session={session}
+          date={date}
+          help={
+            <SidebarHelp title="使い方・色の見方">
+              <p>
+                ここにある内容は<strong>自分（{session.name}）の分だけ</strong>です。
+                兼任先の部署の予約・全体スケジュールの予定・Googleカレンダーの予定もまとめて出します。
+              </p>
+              <p>
+                「＋ 追加」か、表の空いているところを押すと予定を入れられます。月表示ではマスを押すとその日付で開き、
+                日付の数字を押すとその日の一覧が出ます。
+              </p>
+              <ColorLegend
+                items={[
+                  { kind: "reservation", label: `${tenant.name}の予約（押すと詳細）` },
+                  { kind: "elsewhere", label: "兼任先の部署の予約" },
+                  { kind: "block", label: "ブロック枠（ここで入れた自分の予定）" },
+                  { kind: "event", label: "全体スケジュールで入れた予定" },
+                  { kind: "google", label: "Googleカレンダーの予定" },
+                ]}
+              />
+            </SidebarHelp>
+          }
+        />
         {banner}
         <GoogleBrokenNotice employeeId={myEmployeeId} />
         <ScheduleNav basePath={PATH} view={view} date={date} today={today} />
 
-        <p className="mb-3 text-xs leading-relaxed text-neutral-500">
-          ここにある内容は<strong>自分（{session.name}）の分だけ</strong>です。
-          兼任先の部署の予約・全体スケジュールの予定・Googleカレンダーの予定もまとめて出します。
-          日付を押すと、その日の一覧が出ます。
-        </p>
-
-        <AddEntryPanel label="自分の予定を追加">
+        <AddEntryPanel>
           <AddOwnBlockForm date={date} returnTo={returnTo} />
         </AddEntryPanel>
 
@@ -143,10 +164,6 @@ export default async function MySchedulePage({
               tapToAdd={{}}
             />
           )}
-          <p className="mt-2 text-xs text-neutral-500">
-            青は{tenant.name}の予約（押すと詳細）、水色は兼任先の部署の予約、破線はブロック枠、
-            緑は全体スケジュールで入れた予定、紫はGoogleカレンダーの予定です。
-          </p>
         </section>
       </main>
     );
@@ -207,17 +224,24 @@ export default async function MySchedulePage({
 
   return (
     <main className="mx-auto w-full max-w-2xl p-4 sm:p-6">
-      <MyScheduleHeader tenantName={tenant.name} session={session} date={date} />
+      <MyScheduleHeader
+        tenantName={tenant.name}
+        session={session}
+        date={date}
+        help={
+          <SidebarHelp title="使い方">
+            <p>
+              ここにある内容は<strong>自分（{session.name}）の分だけ</strong>です。
+              他のスタッフの予定は見えません・触れません。
+            </p>
+          </SidebarHelp>
+        }
+      />
 
       {banner}
       <GoogleBrokenNotice employeeId={myEmployeeId} />
 
       <ScheduleNav basePath={PATH} view={view} date={date} today={today} />
-
-      <p className="mb-3 text-xs leading-relaxed text-neutral-500">
-        ここにある内容は<strong>自分（{session.name}）の分だけ</strong>です。
-        他のスタッフの予定は見えません・触れません。
-      </p>
 
       {/* 今日の予定（時刻順のカードリスト） */}
       <section className="mb-5">
@@ -355,14 +379,9 @@ export default async function MySchedulePage({
       <section className="mb-5 rounded-lg border border-neutral-200 bg-white p-4">
         <div className="mb-3 flex items-center gap-1.5">
           <h3 className="font-semibold">自分の予定を追加</h3>
-          <details className="group relative">
-            <summary className="flex size-4 cursor-pointer list-none items-center justify-center rounded-full bg-neutral-200 text-[10px] text-neutral-600 marker:content-none hover:bg-neutral-300">
-              ?
-            </summary>
-            <p className="absolute left-0 top-6 z-10 w-64 rounded-md border border-neutral-200 bg-white p-2.5 text-xs leading-relaxed text-neutral-600 shadow-lg">
-              商談・私用など、予約ではないが時間を空けたくないときに使います。お客様や他のスタッフからは「空いていない時間」として扱われます。
-            </p>
-          </details>
+          <HelpTip>
+            商談・私用など、予約ではないが時間を空けたくないときに使います。お客様や他のスタッフからは「空いていない時間」として扱われます。
+          </HelpTip>
         </div>
 
         <div className="mb-4">
@@ -411,31 +430,40 @@ function MyScheduleHeader({
   tenantName,
   session,
   date,
+  help,
 }: {
   tenantName: string;
   session: Awaited<ReturnType<typeof requireSession>>;
   date: string;
+  /** サイドバーの「この画面」に入れる使い方 */
+  help: React.ReactNode;
 }) {
+  // たまにしか使わない移動先は、画面の上に並べずサイドバーの「この画面」にしまう
+  const links = [
+    { href: `/my-schedule/settings?date=${date}`, label: "予定の設定" },
+    { href: `/calendar?date=${date}`, label: "全体を見る（日表示）" },
+    { href: `/calendar/week?date=${date}`, label: "全体を見る（週表示）" },
+  ];
   return (
     <AppHeader
       tenantName={tenantName}
       subtitle="自分の予定"
       session={session}
-      menuLinks={[{ href: `/my-schedule/settings?date=${date}`, label: "予定の設定" }]}
-    >
-      <Link
-        href={`/calendar?date=${date}`}
-        className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
-      >
-        全体を見る（日表示）
-      </Link>
-      <Link
-        href={`/calendar/week?date=${date}`}
-        className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
-      >
-        全体を見る（週表示）
-      </Link>
-    </AppHeader>
+      sidebarExtra={
+        <>
+          {links.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className="block rounded-md px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-100"
+            >
+              {link.label}
+            </Link>
+          ))}
+          {help}
+        </>
+      }
+    />
   );
 }
 

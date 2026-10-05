@@ -2,8 +2,10 @@ import Link from "next/link";
 import { AppHeader } from "@/components/app-header";
 import { AutoSubmitSelect } from "@/components/auto-submit-select";
 import { Banner } from "@/components/banner";
+import { SidebarHelp } from "@/components/help-tip";
 import {
   AddEntryPanel,
+  ColorLegend,
   DayColumnHeader,
   MonthGrid,
   ScheduleNav,
@@ -117,7 +119,58 @@ export default async function TeamPage({
 
   return (
     <main className="mx-auto w-full max-w-7xl p-4 sm:p-6">
-      <AppHeader tenantName={tenant.name} subtitle="全体スケジュール" session={session}>
+      <AppHeader
+        tenantName={tenant.name}
+        subtitle="全体スケジュール"
+        session={session}
+        sidebarExtra={
+          <>
+            {view !== "day" && employees.length > 0 && (
+              // 週・月で見る人を選ぶ。選んだらすぐ切り替わる。ふだんは自分を見るだけなのでサイドバーにしまう
+              <form method="get" action={PATH} className="px-3 py-1">
+                <input type="hidden" name="view" value={view} />
+                <input type="hidden" name="date" value={date} />
+                <label className="block">
+                  <span className="mb-1 block text-xs text-neutral-600">見る人</span>
+                  <AutoSubmitSelect
+                    key={person ?? ""}
+                    name="person"
+                    defaultValue={person ?? undefined}
+                    aria-label="予定を見る人"
+                    className="w-full rounded-md border border-neutral-300 px-2 py-1 text-sm"
+                  >
+                    {employees.map((e) => (
+                      <option key={e.id} value={e.id}>
+                        {e.id === viewer.employeeId ? `${e.name}（自分）` : e.name}
+                      </option>
+                    ))}
+                  </AutoSubmitSelect>
+                </label>
+              </form>
+            )}
+            <SidebarHelp title="使い方・色の見方">
+              <p>
+                「＋ 追加」か、表の空いているところを押すと予定を入れられます。月表示ではマスを押すとその日付で開き、
+                日付の数字を押すとその日の全員の予定が出ます。
+                {!viewer.isAdmin && "ほかの人の週・月を見ていても、追加する予定は自分の予定として入ります。"}
+              </p>
+              <ColorLegend
+                items={[
+                  { kind: "event", label: "社員の予定" },
+                  { kind: "reservation", label: "部署の予約（お客様名は出しません）" },
+                  { kind: "block", label: "部署の予定（会議・研修など）" },
+                  {
+                    kind: "google",
+                    label: "本人がつないだGoogleカレンダーの予定（件名を出すかは本人が アカウント情報 で選びます。反映は最大10分遅れます）",
+                  },
+                ]}
+              />
+              <p>私用にした予定は、本人以外には「予定あり」とだけ表示されます。</p>
+              <p>ここで入れた予定は、その人がいる全部署の予約受付で「空いていない時間」になります。</p>
+            </SidebarHelp>
+          </>
+        }
+      >
         {session.tenantId !== null && (
           <Link
             href={`/calendar?date=${date}`}
@@ -150,29 +203,7 @@ export default async function TeamPage({
       />
       <GoogleBrokenNotice employeeId={viewer.employeeId} />
 
-      <ScheduleNav basePath={PATH} view={view} date={date} today={today} extra={extra}>
-        {view !== "day" && employees.length > 0 && (
-          // 週・月で見る人を選ぶ。選んだらすぐ切り替わる
-          <form method="get" action={PATH} className="flex items-center gap-1.5">
-            <input type="hidden" name="view" value={view} />
-            <input type="hidden" name="date" value={date} />
-            <span className="text-sm text-neutral-600">見る人</span>
-            <AutoSubmitSelect
-              key={person ?? ""}
-              name="person"
-              defaultValue={person ?? undefined}
-              aria-label="予定を見る人"
-              className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
-            >
-              {employees.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.id === viewer.employeeId ? `${e.name}（自分）` : e.name}
-                </option>
-              ))}
-            </AutoSubmitSelect>
-          </form>
-        )}
-      </ScheduleNav>
+      <ScheduleNav basePath={PATH} view={view} date={date} today={today} extra={extra} />
 
       {canAdd ? (
         <AddEntryPanel>
@@ -231,10 +262,6 @@ export default async function TeamPage({
             >
               予定を追加
             </SubmitButton>
-            {!viewer.isAdmin && person !== null && person !== viewer.employeeId && (
-              // ほかの人の週・月を見ていても、入るのは自分の予定
-              <p className="w-full text-xs text-neutral-500">ここで追加する予定は、自分の予定として入ります。</p>
-            )}
           </form>
         </AddEntryPanel>
       ) : (
@@ -285,13 +312,12 @@ export default async function TeamPage({
         />
       ) : (
         <>
-          <p className="mb-2 text-sm text-neutral-600">
-            <span className="font-medium text-neutral-900">{personName}</span> さんの予定
-            {view === "month" &&
-              (canTapAdd(person)
-                ? "（マスを押すとその日の予定を入力できます。日付の数字を押すと、その日の全員の予定が出ます）"
-                : "（日付を押すと、その日の全員の予定が出ます）")}
-          </p>
+          {person !== viewer.employeeId && (
+            // ふだんは自分を見るので、ほかの人を見ているときだけ誰の予定かを出す
+            <p className="mb-2 text-sm text-neutral-600">
+              <span className="font-medium text-neutral-900">{personName}</span> さんの予定
+            </p>
+          )}
           {view === "week" ? (
             <TimelineGrid
               columnClassName="min-w-[88px] flex-1"
@@ -316,13 +342,6 @@ export default async function TeamPage({
           )}
         </>
       )}
-
-      <p className="mt-3 text-xs text-neutral-500">
-        緑は社員の予定、青は部署の予約（お客様名は出しません）、破線は部署の予定（会議・研修など）、
-        紫は本人がつないだGoogleカレンダーの予定（件名を出すかは本人が アカウント情報 で選びます。反映は最大10分遅れます）。
-        私用にした予定は、本人以外には「予定あり」とだけ表示されます。
-        ここで入れた予定は、その人がいる全部署の予約受付で「空いていない時間」になります。
-      </p>
     </main>
   );
 }
