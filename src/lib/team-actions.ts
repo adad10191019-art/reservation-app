@@ -16,10 +16,14 @@ import { getTeamViewer } from "./team";
 
 const PATH = "/team";
 
-/** 元の表示（日・週・月、選んだ人）に戻る。returnTo はフォームの隠し欄から来る */
-function back(date: string, returnTo: unknown, message?: string): never {
+/**
+ * 元の表示（日・週・月、選んだ人）に戻る。returnTo はフォームの隠し欄から来る。
+ * added は今足した予定。戻った画面の「保存しました」に「取り消す」を出すのに使う
+ */
+function back(date: string, returnTo: unknown, message?: string, added?: string): never {
   const path = safeReturnPath(returnTo, PATH, date);
-  redirect(message ? `${path}&error=${encodeURIComponent(message)}` : `${path}&done=1`);
+  if (message) redirect(`${path}&error=${encodeURIComponent(message)}`);
+  redirect(added ? `${path}&done=1&added=${encodeURIComponent(added)}` : `${path}&done=1`);
 }
 
 /** 予定を変えると、ひも付いた部署の空き枠・カレンダーも変わる */
@@ -60,7 +64,7 @@ export async function createEmployeeEvent(formData: FormData) {
   if (result.intervals.length !== 1) back(date, returnTo, "開始・終了の時刻を入力してください");
   const interval = result.intervals[0];
 
-  await prisma.employeeEvent.create({
+  const created = await prisma.employeeEvent.create({
     data: {
       employeeId,
       date,
@@ -73,7 +77,7 @@ export async function createEmployeeEvent(formData: FormData) {
   });
 
   revalidateAll();
-  back(date, returnTo);
+  back(date, returnTo, undefined, created.id);
 }
 
 export async function deleteEmployeeEvent(formData: FormData) {

@@ -22,7 +22,7 @@ import { getDaySchedule, getTenant } from "@/lib/schedule";
 import { monthWeeks, parseView, viewDates } from "@/lib/schedule-range";
 import { createOwnBlock, deleteOwnBlock } from "@/lib/staff-schedule-actions";
 import { isAllDay, timeRangeText } from "@/lib/team-view";
-import { sanitizeDate, toHm, todayString } from "@/lib/time";
+import { formatDateLabel, sanitizeDate, toHm, todayString } from "@/lib/time";
 import { defaultStart } from "@/lib/time-choices";
 
 const PATH = "/my-schedule";
@@ -36,7 +36,7 @@ type AgendaItem =
 export default async function MySchedulePage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string; view?: string; error?: string; done?: string }>;
+  searchParams: Promise<{ date?: string; view?: string; error?: string; done?: string; added?: string }>;
 }) {
   const sp = await searchParams;
   const date = sanitizeDate(sp.date);
@@ -45,6 +45,34 @@ export default async function MySchedulePage({
   const returnTo = scheduleHref(PATH, view, date);
   const session = await requireSession();
   const tenant = await getTenant(session.tenantId);
+
+  // 今足した自分のブロック枠（まだあるものだけ）。「保存しました」の横に「取り消す」を出し、間違えてもすぐ消せるようにする
+  const added =
+    sp.done && sp.added && session.staffId
+      ? await prisma.block.findFirst({ where: { id: sp.added, tenantId: session.tenantId, staffId: session.staffId } })
+      : null;
+  const banner = (
+    <Banner
+      error={sp.error}
+      done={sp.done}
+      doneText={added ? `${formatDateLabel(added.date)}「${added.reason}」（${timeRangeText(added)}）を追加しました。` : undefined}
+      doneAction={
+        added && (
+          <form action={deleteOwnBlock}>
+            <input type="hidden" name="id" value={added.id} />
+            <input type="hidden" name="date" value={added.date} />
+            <input type="hidden" name="returnTo" value={returnTo} />
+            <SubmitButton
+              pendingText="取り消し中…"
+              className="rounded-md border border-emerald-300 bg-white px-3 py-1 text-sm font-medium text-emerald-800 hover:bg-emerald-100"
+            >
+              取り消す
+            </SubmitButton>
+          </form>
+        )
+      }
+    />
+  );
 
   if (!session.staffId) {
     return (
@@ -78,7 +106,7 @@ export default async function MySchedulePage({
     return (
       <main className="mx-auto w-full max-w-5xl p-4 sm:p-6">
         <MyScheduleHeader tenantName={tenant.name} session={session} date={date} />
-        <Banner error={sp.error} done={sp.done} />
+        {banner}
         <GoogleBrokenNotice employeeId={myEmployeeId} />
         <ScheduleNav basePath={PATH} view={view} date={date} today={today} />
 
@@ -181,7 +209,7 @@ export default async function MySchedulePage({
     <main className="mx-auto w-full max-w-2xl p-4 sm:p-6">
       <MyScheduleHeader tenantName={tenant.name} session={session} date={date} />
 
-      <Banner error={sp.error} done={sp.done} />
+      {banner}
       <GoogleBrokenNotice employeeId={myEmployeeId} />
 
       <ScheduleNav basePath={PATH} view={view} date={date} today={today} />

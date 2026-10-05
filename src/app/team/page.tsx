@@ -22,7 +22,7 @@ import { monthWeeks, parseView, viewDates } from "@/lib/schedule-range";
 import { getTeamDays, getTeamViewer } from "@/lib/team";
 import { createEmployeeEvent, deleteEmployeeEvent } from "@/lib/team-actions";
 import { type TeamColumn, type TeamItem, timeRangeText } from "@/lib/team-view";
-import { sanitizeDate, todayString } from "@/lib/time";
+import { formatDateLabel, sanitizeDate, todayString } from "@/lib/time";
 import { defaultStart } from "@/lib/time-choices";
 
 const PATH = "/team";
@@ -35,7 +35,14 @@ const PATH = "/team";
 export default async function TeamPage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string; view?: string; person?: string; error?: string; done?: string }>;
+  searchParams: Promise<{
+    date?: string;
+    view?: string;
+    person?: string;
+    error?: string;
+    done?: string;
+    added?: string;
+  }>;
 }) {
   const sp = await searchParams;
   const date = sanitizeDate(sp.date);
@@ -61,6 +68,14 @@ export default async function TeamPage({
       : (employees.find((e) => e.id === sp.person)?.id ?? viewer.employeeId ?? employees[0]?.id ?? null);
   const extra: Record<string, string> = person ? { person } : {};
   const returnTo = scheduleHref(PATH, view, date, extra);
+
+  // 今足した予定（まだあって、消せるものだけ）。「保存しました」の横に「取り消す」を出し、間違えてもすぐ消せるようにする
+  const added =
+    sp.done && sp.added
+      ? await prisma.employeeEvent.findUnique({ where: { id: sp.added } }).then((e) =>
+          e && (e.employeeId === viewer.employeeId || viewer.isAdmin) ? e : null,
+        )
+      : null;
 
   const dates = viewDates(view, date);
   const byDate =
@@ -113,7 +128,26 @@ export default async function TeamPage({
         )}
       </AppHeader>
 
-      <Banner error={sp.error} done={sp.done} />
+      <Banner
+        error={sp.error}
+        done={sp.done}
+        doneText={added ? `${formatDateLabel(added.date)}「${added.title}」（${timeRangeText(added)}）を追加しました。` : undefined}
+        doneAction={
+          added && (
+            <form action={deleteEmployeeEvent}>
+              <input type="hidden" name="id" value={added.id} />
+              <input type="hidden" name="date" value={added.date} />
+              <input type="hidden" name="returnTo" value={returnTo} />
+              <SubmitButton
+                pendingText="取り消し中…"
+                className="rounded-md border border-emerald-300 bg-white px-3 py-1 text-sm font-medium text-emerald-800 hover:bg-emerald-100"
+              >
+                取り消す
+              </SubmitButton>
+            </form>
+          )
+        }
+      />
       <GoogleBrokenNotice employeeId={viewer.employeeId} />
 
       <ScheduleNav basePath={PATH} view={view} date={date} today={today} extra={extra}>

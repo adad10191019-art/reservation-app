@@ -99,6 +99,7 @@ export function safeReturnPath(value: unknown, basePath: string, date: string): 
   // 戻り先にもう付いている結果の知らせは外して、付け直す
   params.delete("error");
   params.delete("done");
+  params.delete("added");
   params.set("date", date);
   return `${basePath}?${params.toString()}`;
 }

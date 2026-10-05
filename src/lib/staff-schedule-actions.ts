@@ -24,13 +24,23 @@ import { formatDateLabel, hm, toHm } from "./time";
 const PATH = "/my-schedule";
 const SETTINGS_PATH = "/my-schedule/settings";
 
-/** returnTo（フォームの隠し欄）があれば、元の表示（日・週・月）に戻る */
-function back(date: string, message?: string, basePath: string = PATH, returnTo?: unknown): never {
+/**
+ * returnTo（フォームの隠し欄）があれば、元の表示（日・週・月）に戻る。
+ * added は今足したブロック枠。戻った画面の「保存しました」に「取り消す」を出すのに使う
+ */
+function back(
+  date: string,
+  message?: string,
+  basePath: string = PATH,
+  returnTo?: unknown,
+  added?: string,
+): never {
   const path =
     returnTo === undefined
       ? `${basePath}?date=${encodeURIComponent(date)}`
       : safeReturnPath(returnTo, basePath, date);
-  redirect(message ? `${path}&error=${encodeURIComponent(message)}` : `${path}&done=1`);
+  if (message) redirect(`${path}&error=${encodeURIComponent(message)}`);
+  redirect(added ? `${path}&done=1&added=${encodeURIComponent(added)}` : `${path}&done=1`);
 }
 
 async function requireOwnStaffId(): Promise<{ tenantId: string; staffId: string; name: string }> {
@@ -142,7 +152,7 @@ export async function createOwnBlock(formData: FormData) {
     },
   });
 
-  await prisma.block.create({
+  const created = await prisma.block.create({
     data: { tenantId, staffId, date, startMinutes: interval.start, endMinutes: interval.end, reason },
   });
 
@@ -167,7 +177,7 @@ export async function createOwnBlock(formData: FormData) {
       returnTo,
     );
   }
-  back(date, undefined, PATH, returnTo);
+  back(date, undefined, PATH, returnTo, created.id);
 }
 
 /**
