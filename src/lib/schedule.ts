@@ -4,6 +4,7 @@
 import { prisma } from "./prisma";
 import { resolveWorkingIntervals } from "./availability-core";
 import { fetchPersonBusy } from "./person-busy";
+import { isAllDay } from "./team-view";
 import { addDays, type Interval, dayOfWeekOf, normalize } from "./time";
 
 export type ScheduledReservation = {
@@ -121,12 +122,14 @@ export async function getDaySchedule(params: {
     otherBusy: normalize(personBusy.get(staff.id)?.get(date) ?? []),
   }));
 
-  // 勤務時間と予約が全部収まるように表示範囲を決める
+  // 勤務時間と予約が全部収まるように表示範囲を決める（終日の予定・休みでは広げない。表示は範囲に収める）
   const points = columns.flatMap((c) => [
     ...c.working.flatMap((w) => [w.start, w.end]),
     ...c.reservations.flatMap((r) => [r.startMinutes, r.endMinutes]),
-    ...c.blocks.flatMap((b) => [b.startMinutes, b.endMinutes]),
-    ...c.otherBusy.flatMap((b) => [b.start, b.end]),
+    ...c.blocks.filter((b) => !isAllDay(b)).flatMap((b) => [b.startMinutes, b.endMinutes]),
+    ...c.otherBusy
+      .filter((b) => !isAllDay({ startMinutes: b.start, endMinutes: b.end }))
+      .flatMap((b) => [b.start, b.end]),
   ]);
 
   const viewStart =

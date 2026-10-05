@@ -13,6 +13,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { moveReservationByDrag } from "@/lib/calendar-actions";
 import { canManageStaffReservation, type Actor } from "@/lib/permissions";
+import { timeRangeText } from "@/lib/team-view";
 import { subtract, toHm, type Interval } from "@/lib/time";
 
 type Reservation = {
@@ -78,6 +79,12 @@ export function DayCalendarGrid({
   const hours: number[] = [];
   for (let m = viewStart; m <= viewEnd; m += 60) hours.push(m);
   const top = (minutes: number) => (minutes - viewStart) * PX_PER_MIN;
+  // 終日の予定・休みは表示している時間の範囲に収める
+  const placement = (start: number, end: number) => {
+    const from = Math.max(start, viewStart);
+    const to = Math.min(end, viewEnd);
+    return { top: top(from), height: Math.max((to - from) * PX_PER_MIN - 2, 14) };
+  };
 
   function handleDragStart(
     e: React.DragEvent<HTMLAnchorElement>,
@@ -222,13 +229,12 @@ export function DayCalendarGrid({
                     title="兼任先の部署やご本人の予定があります（内容は全体スケジュールで確認できます）"
                     className="absolute inset-x-1 overflow-hidden rounded border border-dashed border-neutral-400 bg-neutral-200/70 px-1.5 py-1 text-xs leading-tight text-neutral-600"
                     style={{
-                      top: top(b.start),
-                      height: (b.end - b.start) * PX_PER_MIN - 2,
+                      ...placement(b.start, b.end),
                     }}
                   >
                     <div className="truncate font-medium">別の予定</div>
                     <div className="tabular-nums text-neutral-500">
-                      {toHm(b.start)}–{toHm(b.end)}
+                      {timeRangeText({ startMinutes: b.start, endMinutes: b.end })}
                     </div>
                   </div>
                 ))}
@@ -238,14 +244,11 @@ export function DayCalendarGrid({
                     key={b.id}
                     className="absolute inset-x-1 overflow-hidden rounded border border-dashed border-amber-400 bg-amber-50 px-1.5 py-1 text-xs leading-tight text-amber-900"
                     style={{
-                      top: top(b.startMinutes),
-                      height: (b.endMinutes - b.startMinutes) * PX_PER_MIN - 2,
+                      ...placement(b.startMinutes, b.endMinutes),
                     }}
                   >
                     <div className="truncate font-medium">{b.reason}</div>
-                    <div className="tabular-nums text-amber-700">
-                      {toHm(b.startMinutes)}–{toHm(b.endMinutes)}
-                    </div>
+                    <div className="tabular-nums text-amber-700">{timeRangeText(b)}</div>
                   </div>
                 ))}
 

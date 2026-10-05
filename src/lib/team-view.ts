@@ -10,7 +10,7 @@
  *   ・Google の予定 … 本人が「件名を出す」にしていれば件名、そうでなければ「予定あり」
  *                    （件名を出すかは取ってくる時点で決まっていて、title が null なら出さない）
  */
-import type { Interval } from "./time";
+import { type Interval, toHm } from "./time";
 
 export type TeamViewer = {
   /** 見ている人が名簿のどの社員か。名簿とひも付いていなければ null */
@@ -63,6 +63,11 @@ const DAY_END = 24 * 60;
 /** 終日の予定（0:00〜24:00）。表示の範囲を広げる元にはしない */
 export function isAllDay(item: { startMinutes: number; endMinutes: number }): boolean {
   return item.startMinutes === 0 && item.endMinutes === DAY_END;
+}
+
+/** 時間の表示。終日なら「終日」、それ以外は「9:00–10:00」 */
+export function timeRangeText(item: { startMinutes: number; endMinutes: number }): string {
+  return isAllDay(item) ? "終日" : `${toHm(item.startMinutes)}–${toHm(item.endMinutes)}`;
 }
 
 export function buildTeamColumns(source: TeamSource, viewer: TeamViewer): TeamColumn[] {

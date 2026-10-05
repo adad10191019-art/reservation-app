@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type TeamSource, buildTeamColumns, layoutLanes, teamViewRange } from "./team-view";
+import { type TeamSource, buildTeamColumns, layoutLanes, teamViewRange, timeRangeText } from "./team-view";
 
 const source: TeamSource = {
   employees: [
@@ -107,5 +107,15 @@ describe("Google カレンダーの予定", () => {
     const allDay = columns[1].items.find((i) => i.kind === "google" && i.startMinutes === 0)!;
     expect(allDay.note).toBe("終日（Googleカレンダー）");
     expect(teamViewRange(columns)).toEqual(teamViewRange(buildTeamColumns(source, { employeeId: null, isAdmin: false })));
+  });
+});
+
+describe("timeRangeText", () => {
+  it("0:00〜24:00 は「終日」と出す", () => {
+    expect(timeRangeText({ startMinutes: 0, endMinutes: 24 * 60 })).toBe("終日");
+  });
+
+  it("それ以外は開始–終了", () => {
+    expect(timeRangeText({ startMinutes: 9 * 60, endMinutes: 10 * 60 + 30 })).toBe("09:00–10:30");
   });
 });

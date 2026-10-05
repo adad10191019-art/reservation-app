@@ -12,6 +12,12 @@ const DAY_END = 24 * 60;
 const DEFAULT_START = 9 * 60;
 const DEFAULT_LENGTH = 60;
 
+/** 終日（0:00〜24:00）。表示では「終日」と出し、表の時間の範囲は広げない（team-view.ts の isAllDay） */
+export const ALL_DAY = { start: 0, end: DAY_END } as const;
+
+/** 押すと件名と終日が一度に入るボタンの件名（休日・対応できない日を手早く入れる） */
+export const ALL_DAY_TITLES = ["休み", "対応不可"] as const;
+
 /** 「30分」「1時間」などのボタンで選べる長さ（分） */
 export const LENGTH_CHOICES = [30, 60, 90, 120] as const;
 

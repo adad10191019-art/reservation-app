@@ -14,7 +14,7 @@ import {
   shiftDate,
   viewTitle,
 } from "@/lib/schedule-range";
-import { isAllDay, layoutLanes, timeRangeOf } from "@/lib/team-view";
+import { isAllDay, layoutLanes, timeRangeOf, timeRangeText } from "@/lib/team-view";
 import { TapToAddLayer } from "./tap-to-add-layer";
 
 export { AddEntryPanel } from "./add-entry-panel";
@@ -239,7 +239,7 @@ export function TimelineGrid({
                       {item.action}
                     </div>
                     <div className="truncate tabular-nums opacity-75">
-                      {toHm(item.startMinutes)}–{toHm(item.endMinutes)}
+                      {timeRangeText(item)}
                     </div>
                     {item.note && <div className="truncate opacity-75">{item.note}</div>}
                   </>
@@ -257,7 +257,7 @@ export function TimelineGrid({
                   left: `calc(${(lane / lanes) * 100}% + 2px)`,
                   width: `calc(${100 / lanes}% - 4px)`,
                 };
-                const title = `${toHm(item.startMinutes)}–${toHm(item.endMinutes)} ${item.label}${item.note ? `（${item.note}）` : ""}`;
+                const title = `${timeRangeText(item)} ${item.label}${item.note ? `（${item.note}）` : ""}`;
                 return item.href ? (
                   <Link key={item.key} href={item.href} title={title} className={`${className} hover:brightness-95`} style={style}>
                     {body}
@@ -368,7 +368,7 @@ export function MonthGrid({
                   {entries.slice(0, MAX_PER_DAY).map((e) => (
                     <div
                       key={e.key}
-                      title={`${toHm(e.startMinutes)}–${toHm(e.endMinutes)} ${e.label}`}
+                      title={`${timeRangeText(e)} ${e.label}`}
                       className={`truncate rounded border px-0.5 text-[10px] leading-snug sm:text-[11px] ${ENTRY_STYLE[e.kind]} ${
                         inMonth ? "" : "opacity-60"
                       }`}

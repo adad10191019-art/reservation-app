@@ -21,6 +21,7 @@ import { prisma } from "@/lib/prisma";
 import { getDaySchedule, getTenant } from "@/lib/schedule";
 import { monthWeeks, parseView, viewDates } from "@/lib/schedule-range";
 import { createOwnBlock, deleteOwnBlock } from "@/lib/staff-schedule-actions";
+import { isAllDay, timeRangeText } from "@/lib/team-view";
 import { sanitizeDate, toHm, todayString } from "@/lib/time";
 import { defaultStart } from "@/lib/time-choices";
 
@@ -210,7 +211,7 @@ export default async function MySchedulePage({
                     className="flex items-center gap-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2.5 transition-colors hover:border-sky-300 hover:bg-sky-100"
                   >
                     <span className="w-11 shrink-0 text-sm font-medium tabular-nums text-sky-800">
-                      {toHm(item.startMinutes)}
+                      {isAllDay(item) ? "終日" : toHm(item.startMinutes)}
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium text-sky-900">
@@ -228,7 +229,7 @@ export default async function MySchedulePage({
                   className="flex items-center gap-3 rounded-lg border border-dashed border-amber-300 bg-amber-50 px-3 py-2.5"
                 >
                   <span className="w-11 shrink-0 text-sm font-medium tabular-nums text-amber-800">
-                    {toHm(item.startMinutes)}
+                    {isAllDay(item) ? "終日" : toHm(item.startMinutes)}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium text-amber-900">
@@ -238,7 +239,7 @@ export default async function MySchedulePage({
                       )}
                     </span>
                     <span className="block truncate text-xs text-amber-700">
-                      {item.endMinutes - item.startMinutes}分
+                      {durationText(item)}
                     </span>
                   </span>
                 </li>
@@ -249,7 +250,7 @@ export default async function MySchedulePage({
                   className="flex items-center gap-3 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2.5"
                 >
                   <span className="w-11 shrink-0 text-sm font-medium tabular-nums text-teal-800">
-                    {toHm(item.startMinutes)}
+                    {isAllDay(item) ? "終日" : toHm(item.startMinutes)}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium text-teal-900">
@@ -257,7 +258,7 @@ export default async function MySchedulePage({
                       <span className="ml-1 font-normal text-teal-700">（{item.tenantName}）</span>
                     </span>
                     <span className="block truncate text-xs text-teal-700">
-                      {item.customerName} 様・{item.endMinutes - item.startMinutes}分
+                      {item.customerName} 様・{durationText(item)}
                     </span>
                   </span>
                 </li>
@@ -267,7 +268,7 @@ export default async function MySchedulePage({
                   className="flex items-center gap-3 rounded-lg border border-dashed border-amber-300 bg-amber-50 px-3 py-2.5"
                 >
                   <span className="w-11 shrink-0 text-sm font-medium tabular-nums text-amber-800">
-                    {toHm(item.startMinutes)}
+                    {isAllDay(item) ? "終日" : toHm(item.startMinutes)}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium text-amber-900">
@@ -275,7 +276,7 @@ export default async function MySchedulePage({
                       <span className="ml-1 font-normal text-amber-700">（{item.tenantName}）</span>
                     </span>
                     <span className="block truncate text-xs text-amber-700">
-                      {item.endMinutes - item.startMinutes}分
+                      {durationText(item)}
                     </span>
                   </span>
                 </li>
@@ -286,14 +287,14 @@ export default async function MySchedulePage({
                     className="flex items-center gap-3 rounded-lg border border-dashed border-neutral-300 bg-neutral-100 px-3 py-2.5 hover:bg-neutral-200"
                   >
                     <span className="w-11 shrink-0 text-sm font-medium tabular-nums text-neutral-700">
-                      {toHm(item.startMinutes)}
+                      {isAllDay(item) ? "終日" : toHm(item.startMinutes)}
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium text-neutral-800">
                         {item.title}
                       </span>
                       <span className="block truncate text-xs text-neutral-600">
-                        {item.endMinutes - item.startMinutes}分・全体スケジュールで入れた予定
+                        {durationText(item)}・全体スケジュールで入れた予定
                       </span>
                     </span>
                   </Link>
@@ -304,14 +305,14 @@ export default async function MySchedulePage({
                   className="flex items-center gap-3 rounded-lg border border-dashed border-violet-300 bg-violet-50 px-3 py-2.5"
                 >
                   <span className="w-11 shrink-0 text-sm font-medium tabular-nums text-violet-800">
-                    {toHm(item.startMinutes)}
+                    {isAllDay(item) ? "終日" : toHm(item.startMinutes)}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium text-violet-900">
                       {item.title ?? "予定あり"}
                     </span>
                     <span className="block truncate text-xs text-violet-700">
-                      {item.endMinutes - item.startMinutes}分・Googleカレンダーの予定
+                      {durationText(item)}・Googleカレンダーの予定
                     </span>
                   </span>
                 </li>
@@ -352,7 +353,7 @@ export default async function MySchedulePage({
               >
                 <span className="text-amber-900">
                   <span className="tabular-nums">
-                    {toHm(block.startMinutes)}–{toHm(block.endMinutes)}
+                    {timeRangeText(block)}
                   </span>
                   <span className="mx-2 font-medium">{block.reason}</span>
                 </span>
@@ -362,7 +363,7 @@ export default async function MySchedulePage({
                   <input type="hidden" name="returnTo" value={returnTo} />
                   <SubmitButton
                     pendingText="削除中…"
-                    confirmText={`「${block.reason}」（${toHm(block.startMinutes)}–${toHm(block.endMinutes)}）を消しますか？`}
+                    confirmText={`「${block.reason}」（${timeRangeText(block)}）を消しますか？`}
                     className="rounded-md border border-amber-400 px-2.5 py-1 text-xs text-amber-900 hover:bg-amber-100"
                   >
                     削除
@@ -423,7 +424,7 @@ function AddOwnBlockForm({ date, returnTo }: { date: string; returnTo: string })
         aria-label="日付"
         className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
       />
-      <TimeRangeFields key={date} defaultStart={defaultStart(date, new Date())} />
+      <TimeRangeFields key={date} defaultStart={defaultStart(date, new Date())} titleName="reason" />
       <input
         type="text"
         name="reason"
@@ -439,4 +440,9 @@ function AddOwnBlockForm({ date, returnTo }: { date: string; returnTo: string })
       </SubmitButton>
     </form>
   );
+}
+
+/** 一覧に出す長さ（終日なら「1日まるごと」） */
+function durationText(item: { startMinutes: number; endMinutes: number }): string {
+  return isAllDay(item) ? "1日まるごと" : `${item.endMinutes - item.startMinutes}分`;
 }

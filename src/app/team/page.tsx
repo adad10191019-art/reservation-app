@@ -21,8 +21,8 @@ import { getTenant } from "@/lib/schedule";
 import { monthWeeks, parseView, viewDates } from "@/lib/schedule-range";
 import { getTeamDays, getTeamViewer } from "@/lib/team";
 import { createEmployeeEvent, deleteEmployeeEvent } from "@/lib/team-actions";
-import type { TeamColumn, TeamItem } from "@/lib/team-view";
-import { sanitizeDate, toHm, todayString } from "@/lib/time";
+import { type TeamColumn, type TeamItem, timeRangeText } from "@/lib/team-view";
+import { sanitizeDate, todayString } from "@/lib/time";
 import { defaultStart } from "@/lib/time-choices";
 
 const PATH = "/team";
@@ -82,7 +82,7 @@ export default async function TeamPage({
         <SubmitButton
           pendingText="…"
           ariaLabel={`${item.label} を削除`}
-          confirmText={`「${item.label}」（${toHm(item.startMinutes)}–${toHm(item.endMinutes)}）を消しますか？`}
+          confirmText={`「${item.label}」（${timeRangeText(item)}）を消しますか？`}
           className="rounded px-0.5 text-neutral-500 hover:bg-white hover:text-red-700"
         >
           ×
@@ -175,7 +175,7 @@ export default async function TeamPage({
                 className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
               />
             </label>
-            <TimeRangeFields key={date} defaultStart={defaultStart(date, new Date())} />
+            <TimeRangeFields key={date} defaultStart={defaultStart(date, new Date())} titleName="title" />
             <label className="block min-w-40 flex-1">
               <span className="mb-1 block text-xs font-medium text-neutral-600">件名</span>
               <input
