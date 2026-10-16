@@ -5,7 +5,8 @@
  *
  * 暗号化を入れる前に保存された値の移し替えと、鍵を入れ替えたあとのかけ直しに使う
  * （中身は src/lib/secret-migration.ts）。何度流しても結果は同じ。
- * 本番に流すときは、DATABASE_URL と DATA_ENCRYPTION_KEY を本番のものにする。
+ * 本番では、公開のたびに vercel-build が `--deploy` を付けて自動で流す（手で流す必要はない）。
+ * 手元から本番に流すときは、DATABASE_URL と DATA_ENCRYPTION_KEY を本番のものにする。
  * 鍵が本番の Vercel に登録したものと違うと、本番のアプリが読めなくなるので注意。
  * 鍵そのものや秘密の値は画面に出さない。
  */
@@ -15,6 +16,20 @@ import { prisma } from "../src/lib/prisma";
 import { countUnsealedSecrets, encryptStoredSecrets } from "../src/lib/secret-migration";
 
 async function main() {
+  // Vercel のデプロイ（vercel-build）から呼ばれたとき。本番の公開のときだけ流し、
+  // プレビューの公開では何もしない（プレビューの鍵で本番の値を暗号化しないように）
+  if (process.argv.includes("--deploy")) {
+    if (process.env.VERCEL_ENV !== "production") {
+      console.log("[鍵の暗号化] 本番の公開ではないので、移し替えはしません");
+      return;
+    }
+    if (!process.env.DATA_ENCRYPTION_KEY) {
+      // 鍵が無いまま本番に出すと、LINE・Google の鍵を保存するところで止まるので、公開ごと止める
+      console.error("[鍵の暗号化] Vercel の Production に DATA_ENCRYPTION_KEY がありません。公開を止めました。");
+      process.exit(1);
+    }
+  }
+
   if (!process.env.DATA_ENCRYPTION_KEY) {
     console.error("DATA_ENCRYPTION_KEY が設定されていません。中止しました。");
     process.exit(1);

@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "vercel-build": "prisma migrate deploy && next build",
+    "vercel-build": "prisma migrate deploy && tsx scripts/encrypt-secrets.ts --deploy && next build",
     "start": "next start",
     "lint": "eslint",
     "db:seed": "tsx scripts/guard-not-production.ts && tsx prisma/seed.ts",
