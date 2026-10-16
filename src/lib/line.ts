@@ -10,6 +10,8 @@
  * 切り替わる。仮ログインは本番では動かない（NODE_ENV で止める）。
  */
 
+import { openSecretOrNull } from "./secret-box";
+
 const AUTHORIZE_URL = "https://access.line.me/oauth2/v2.1/authorize";
 const TOKEN_URL = "https://api.line.me/oauth2/v2.1/token";
 const PROFILE_URL = "https://api.line.me/v2/profile";
@@ -37,8 +39,9 @@ function resolveLoginCredentials(tenant: TenantLineLoginConfig): {
 } {
   return {
     channelId: tenant.lineLoginChannelId || process.env.LINE_LOGIN_CHANNEL_ID || null,
+    // DB には暗号化して入れている（secret-box.ts）
     channelSecret:
-      tenant.lineLoginChannelSecret || process.env.LINE_LOGIN_CHANNEL_SECRET || null,
+      openSecretOrNull(tenant.lineLoginChannelSecret) || process.env.LINE_LOGIN_CHANNEL_SECRET || null,
   };
 }
 

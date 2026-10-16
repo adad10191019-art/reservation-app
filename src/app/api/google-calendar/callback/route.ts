@@ -12,6 +12,7 @@ import { GOOGLE_CALENDAR_COOKIE } from "@/lib/constants";
 import { exchangeCodeForTokens } from "@/lib/google-calendar";
 import { clearGoogleEventCache } from "@/lib/google-calendar-cache";
 import { prisma } from "@/lib/prisma";
+import { sealSecret } from "@/lib/secret-box";
 import { getTeamViewer } from "@/lib/team";
 
 const ACCOUNT_PATH = "/account";
@@ -52,13 +53,18 @@ export async function GET(request: Request) {
   try {
     const { refreshToken, email: googleEmail, accessToken, expiresIn, canEdit } =
       await exchangeCodeForTokens(code);
-    const accessTokenExpiresAt = new Date(Date.now() + expiresIn * 1000);
+    // 鍵は暗号化して保存する（secret-box.ts）
+    const tokens = {
+      refreshToken: sealSecret(refreshToken),
+      accessToken: sealSecret(accessToken),
+      accessTokenExpiresAt: new Date(Date.now() + expiresIn * 1000),
+    };
 
     await prisma.googleCalendarConnection.upsert({
       where: { employeeId },
-      create: { employeeId, googleEmail, refreshToken, accessToken, accessTokenExpiresAt, canEdit },
+      create: { employeeId, googleEmail, ...tokens, canEdit },
       // つなぎ直したら、切れていた印も消す
-      update: { googleEmail, refreshToken, accessToken, accessTokenExpiresAt, brokenAt: null, canEdit },
+      update: { googleEmail, ...tokens, brokenAt: null, canEdit },
     });
     // 別の Google アカウントでつなぎ直したときに、前のアカウントの予定を出さないように
     await clearGoogleEventCache(employeeId);

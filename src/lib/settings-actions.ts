@@ -8,6 +8,7 @@ import { SLOT_CHOICES } from "./constants";
 import { isValidHexColor } from "./brand-color";
 import { prisma } from "./prisma";
 import { parseRanges } from "./ranges";
+import { nextSecretValue } from "./secret-field";
 import { deleteTenantCompletely } from "./tenant-offboarding";
 import { formatDateLabel, toHm } from "./time";
 import { validateSlug } from "./slug";
@@ -216,20 +217,46 @@ export async function saveStore(formData: FormData) {
  * 空欄にすると未設定に戻る。未設定の間は、環境変数
  * （システム全体の既定値）が使われる。
  * 複数の公式LINEアカウントを店舗ごとに使い分けたいときに、ここへ入れる。
+ *
+ * シークレットとアクセストークンは暗号化して保存し、画面には出さない。
+ * そのため、この2つは空欄なら今の値を残し、「消す」の印で未設定に戻す（secret-field.ts）。
  */
 export async function saveLineSettings(formData: FormData) {
   const session = await requireOwner();
   const path = "/settings/store";
 
+  const current = await prisma.tenant.findUniqueOrThrow({
+    where: { id: session.tenantId },
+    select: { lineLoginChannelSecret: true, lineMessagingAccessToken: true },
+  });
+
   const channelId = String(formData.get("lineLoginChannelId") ?? "").trim() || null;
-  const channelSecret = String(formData.get("lineLoginChannelSecret") ?? "").trim() || null;
-  const messagingToken =
-    String(formData.get("lineMessagingAccessToken") ?? "").trim() || null;
   const liffId = String(formData.get("liffId") ?? "").trim() || null;
+  let channelSecret: string | null;
+  let messagingToken: string | null;
+  try {
+    channelSecret = nextSecretValue({
+      input: formData.get("lineLoginChannelSecret"),
+      clear: formData.get("clearLineLoginChannelSecret"),
+      current: current.lineLoginChannelSecret,
+    });
+    messagingToken = nextSecretValue({
+      input: formData.get("lineMessagingAccessToken"),
+      clear: formData.get("clearLineMessagingAccessToken"),
+      current: current.lineMessagingAccessToken,
+    });
+  } catch (e) {
+    // 暗号化の鍵が設定されていないとき。平文では保存しない
+    console.error("[LINE連携] 暗号化できませんでした", e);
+    back(path, "暗号化の設定が無いため保存できませんでした。管理者に連絡してください");
+  }
 
   // 片方だけ入れると、戻ってきたときに認証できず気づきにくい事故になる
   if ((channelId === null) !== (channelSecret === null)) {
-    back(path, "LINEログインは、チャネルIDとチャネルシークレットを両方入れてください");
+    back(
+      path,
+      "LINEログインは、チャネルIDとチャネルシークレットを両方入れてください（やめるときは、チャネルIDを空にし、シークレットの「消す」に印を付けます）",
+    );
   }
 
   await prisma.tenant.update({

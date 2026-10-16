@@ -133,6 +133,7 @@ export default async function StoreSettingsPage({
         <p className="mb-4 text-xs leading-relaxed text-neutral-500">
           空欄のままなら、システム全体の既定値を使います。
           複数の公式LINEアカウントを店舗ごとに使い分けたいときだけ、ここに入れてください。
+          シークレットとアクセストークンは暗号化して保存し、保存したあとは画面に出しません。
         </p>
 
         <form action={saveLineSettings} className="space-y-4">
@@ -150,39 +151,22 @@ export default async function StoreSettingsPage({
             />
           </label>
 
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-neutral-600">
-              LINEログイン チャネルシークレット
-              <StatusBadge set={Boolean(tenant.lineLoginChannelSecret)} fallback={Boolean(process.env.LINE_LOGIN_CHANNEL_SECRET)} />
-            </span>
-            <input
-              type="password"
-              name="lineLoginChannelSecret"
-              defaultValue={tenant.lineLoginChannelSecret ?? ""}
-              placeholder="未設定（既定値を使用）"
-              autoComplete="off"
-              className="w-full max-w-sm rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
-            />
-          </label>
+          <SecretField
+            label="LINEログイン チャネルシークレット"
+            name="lineLoginChannelSecret"
+            clearName="clearLineLoginChannelSecret"
+            saved={Boolean(tenant.lineLoginChannelSecret)}
+            fallback={Boolean(process.env.LINE_LOGIN_CHANNEL_SECRET)}
+          />
 
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-neutral-600">
-              公式アカウントの送信用アクセストークン
-              <StatusBadge set={Boolean(tenant.lineMessagingAccessToken)} fallback={Boolean(process.env.LINE_MESSAGING_ACCESS_TOKEN)} />
-            </span>
-            <input
-              type="password"
-              name="lineMessagingAccessToken"
-              defaultValue={tenant.lineMessagingAccessToken ?? ""}
-              placeholder="未設定（既定値を使用）"
-              autoComplete="off"
-              className="w-full max-w-sm rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
-            />
-            <span className="mt-1 block text-xs text-neutral-500">
-              LINEログインのチャネルと、同じプロバイダーの公式アカウントである必要があります。
-              別プロバイダーだと利用者IDが一致せず、通知が届きません。
-            </span>
-          </label>
+          <SecretField
+            label="公式アカウントの送信用アクセストークン"
+            name="lineMessagingAccessToken"
+            clearName="clearLineMessagingAccessToken"
+            saved={Boolean(tenant.lineMessagingAccessToken)}
+            fallback={Boolean(process.env.LINE_MESSAGING_ACCESS_TOKEN)}
+            note="LINEログインのチャネルと、同じプロバイダーの公式アカウントである必要があります。別プロバイダーだと利用者IDが一致せず、通知が届きません。"
+          />
 
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-neutral-600">
@@ -387,6 +371,51 @@ export default async function StoreSettingsPage({
           新しく取る予約だけが、新しい刻みに揃うようになります。
         </p>
       </section>
+    </div>
+  );
+}
+
+/**
+ * 秘密の鍵の入力欄。保存した値は DB で暗号化していて、画面にも送らない（伏せ字の欄でも
+ * ページのデータには入ってしまうため）。空欄のまま保存すると今の値を残し、消すときは印を付ける。
+ */
+function SecretField({
+  label,
+  name,
+  clearName,
+  saved,
+  fallback,
+  note,
+}: {
+  label: string;
+  name: string;
+  clearName: string;
+  saved: boolean;
+  fallback: boolean;
+  note?: string;
+}) {
+  return (
+    <div>
+      <label className="block">
+        <span className="mb-1 block text-xs font-medium text-neutral-600">
+          {label}
+          <StatusBadge set={saved} fallback={fallback} />
+        </span>
+        <input
+          type="password"
+          name={name}
+          placeholder={saved ? "設定済み（変えるときだけ入れる）" : "未設定（既定値を使用）"}
+          autoComplete="off"
+          className="w-full max-w-sm rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+        />
+      </label>
+      {saved && (
+        <label className="mt-1 flex items-center gap-1.5 text-xs text-neutral-600">
+          <input type="checkbox" name={clearName} />
+          保存してある値を消す（共通の既定値に戻す）
+        </label>
+      )}
+      {note && <span className="mt-1 block text-xs text-neutral-500">{note}</span>}
     </div>
   );
 }

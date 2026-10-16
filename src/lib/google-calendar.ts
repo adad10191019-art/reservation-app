@@ -12,6 +12,7 @@
 import { prisma } from "./prisma";
 import { type GoogleEvent, type GoogleEventItem, splitGoogleEventsByDate } from "./google-event-split";
 import { GoogleGrantRevokedError, isRevokedGrantResponse } from "./google-grant";
+import { openSecret, openSecretOrNull, sealSecret } from "./secret-box";
 import { addDays, dateMinutesToUtcIso } from "./time";
 
 export type { GoogleEventItem } from "./google-event-split";
@@ -140,8 +141,10 @@ async function refreshAccessToken(
  * 失敗しても（すでに失効済み、Google側が一時的に不調、など）呼び出し側の
  * 処理は止めない。DB上の削除さえ済めば、このアプリからは二度と使われない。
  */
-export async function revokeGoogleToken(refreshToken: string): Promise<void> {
+export async function revokeGoogleToken(storedRefreshToken: string): Promise<void> {
   try {
+    // DB に入っている（暗号化した）値をそのまま受け取り、ここで元に戻す
+    const refreshToken = openSecret(storedRefreshToken);
     await fetch(REVOKE_URL, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -199,11 +202,12 @@ async function getValidAccessToken(connection: ConnectionRow): Promise<string> {
     connection.accessToken &&
     connection.accessTokenExpiresAt &&
     connection.accessTokenExpiresAt.getTime() - Date.now() > 60_000;
-  if (stillValid) return connection.accessToken as string;
+  // DB には暗号化して入れている（secret-box.ts）
+  if (stillValid) return openSecretOrNull(connection.accessToken) as string;
 
   let refreshed: { accessToken: string; expiresIn: number };
   try {
-    refreshed = await refreshAccessToken(connection.refreshToken);
+    refreshed = await refreshAccessToken(openSecret(connection.refreshToken));
   } catch (e) {
     if (e instanceof GoogleGrantRevokedError) await markBroken(connection.employeeId);
     throw e;
@@ -211,7 +215,7 @@ async function getValidAccessToken(connection: ConnectionRow): Promise<string> {
   await prisma.googleCalendarConnection.update({
     where: { employeeId: connection.employeeId },
     data: {
-      accessToken: refreshed.accessToken,
+      accessToken: sealSecret(refreshed.accessToken),
       accessTokenExpiresAt: new Date(Date.now() + refreshed.expiresIn * 1000),
     },
   });

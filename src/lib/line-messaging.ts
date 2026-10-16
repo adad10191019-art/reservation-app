@@ -11,6 +11,8 @@
  * 通知が無くても予約そのものは成立させたいので、失敗しても例外は投げない。
  */
 
+import { openSecretOrNull } from "./secret-box";
+
 const PUSH_URL = "https://api.line.me/v2/bot/message/push";
 
 export type PushResult =
@@ -23,7 +25,10 @@ export type TenantMessagingConfig = {
 };
 
 function resolveMessagingToken(tenant: TenantMessagingConfig): string | null {
-  return tenant.lineMessagingAccessToken || process.env.LINE_MESSAGING_ACCESS_TOKEN || null;
+  // DB には暗号化して入れている（secret-box.ts）
+  return (
+    openSecretOrNull(tenant.lineMessagingAccessToken) || process.env.LINE_MESSAGING_ACCESS_TOKEN || null
+  );
 }
 
 export function isMessagingConfigured(tenant: TenantMessagingConfig): boolean {
