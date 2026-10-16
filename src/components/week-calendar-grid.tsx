@@ -108,7 +108,9 @@ export function WeekCalendarGrid({
         <table className="w-full min-w-[720px] border-collapse text-sm">
           <thead>
             <tr className="border-b border-neutral-200 bg-neutral-50">
-              <th className="w-28 shrink-0 border-r border-neutral-200 px-3 py-2 text-left font-medium text-neutral-600">
+              {/* スタッフ名の列。スマホで押しつぶされて1文字ずつ縦に並ばないよう折り返さず、
+                  横にスクロールしても見えるよう左に固定する */}
+              <th className="sticky left-0 z-10 whitespace-nowrap border-r border-neutral-200 bg-neutral-50 px-2 py-2 text-left font-medium text-neutral-600 sm:px-3">
                 スタッフ
               </th>
               {dates.map((date) => {
@@ -117,7 +119,7 @@ export function WeekCalendarGrid({
                 return (
                   <th
                     key={date}
-                    className={`min-w-32 border-l border-neutral-200 px-2 py-2 text-center font-medium ${
+                    className={`min-w-24 border-l sm:min-w-32 border-neutral-200 px-2 py-2 text-center font-medium ${
                       isToday ? "bg-sky-50 text-sky-800" : "text-neutral-600"
                     }`}
                   >
@@ -132,7 +134,7 @@ export function WeekCalendarGrid({
           <tbody>
             {staffRows.map((row) => (
               <tr key={row.staffId} className="border-b border-neutral-100 last:border-b-0">
-                <td className="border-r border-neutral-200 px-3 py-2 align-top font-medium">
+                <td className="sticky left-0 z-10 whitespace-nowrap border-r border-neutral-200 bg-white px-2 py-2 align-top font-medium sm:px-3">
                   {row.staffName}
                 </td>
                 {row.days.map((day) => {
