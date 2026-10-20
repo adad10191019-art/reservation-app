@@ -32,6 +32,8 @@ export type ScheduledBlock = {
 export type StaffColumn = {
   staffId: string;
   staffName: string;
+  /** 対応メニューがあるか（無ければお客様から予約を受けない。カレンダーの表示の判断に使う） */
+  takesBookings: boolean;
   working: Interval[];
   reservations: ScheduledReservation[];
   blocks: ScheduledBlock[];
@@ -70,6 +72,7 @@ export async function getDaySchedule(params: {
   const staffs = await prisma.staff.findMany({
     where: { tenantId, isActive: true },
     orderBy: [{ displayOrder: "asc" }, { name: "asc" }],
+    include: { _count: { select: { staffMenus: true } } },
   });
   const staffIds = staffs.map((s) => s.id);
 
@@ -95,6 +98,7 @@ export async function getDaySchedule(params: {
   const columns: StaffColumn[] = staffs.map((staff) => ({
     staffId: staff.id,
     staffName: staff.name,
+    takesBookings: staff._count.staffMenus > 0,
     working: resolveWorkingIntervals({ staffId: staff.id, businessHours, dateOverrides }),
     reservations: reservations
       .filter((r) => r.staffId === staff.id)
@@ -152,6 +156,8 @@ export type WeekDayCell = {
 export type WeekStaffRow = {
   staffId: string;
   staffName: string;
+  /** 対応メニューがあるか（無ければお客様から予約を受けない。カレンダーの表示の判断に使う） */
+  takesBookings: boolean;
   /** 日曜始まりで7日分 */
   days: WeekDayCell[];
 };
@@ -177,6 +183,7 @@ export async function getWeekSchedule(params: {
   const staffs = await prisma.staff.findMany({
     where: { tenantId, isActive: true },
     orderBy: [{ displayOrder: "asc" }, { name: "asc" }],
+    include: { _count: { select: { staffMenus: true } } },
   });
   const staffIds = staffs.map((s) => s.id);
 
@@ -202,6 +209,7 @@ export async function getWeekSchedule(params: {
   const staffRows: WeekStaffRow[] = staffs.map((staff) => ({
     staffId: staff.id,
     staffName: staff.name,
+    takesBookings: staff._count.staffMenus > 0,
     days: dates.map((date) => {
       const working = resolveWorkingIntervals({
         staffId: staff.id,

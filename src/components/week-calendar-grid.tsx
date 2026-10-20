@@ -47,11 +47,14 @@ export function WeekCalendarGrid({
   staffRows,
   today,
   actor,
+  dayQuery = "",
 }: {
   dates: string[];
   staffRows: WeekStaffRow[];
   today: string;
   actor: Actor;
+  /** 日付の見出しから日表示へ移るときに引き継ぐ表示の範囲（例：&all=1） */
+  dayQuery?: string;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -123,7 +126,7 @@ export function WeekCalendarGrid({
                       isToday ? "bg-sky-50 text-sky-800" : "text-neutral-600"
                     }`}
                   >
-                    <Link href={`/calendar?date=${date}`} className="hover:underline">
+                    <Link href={`/calendar?date=${date}${dayQuery}`} className="hover:underline">
                       {Number(d)}日({WEEKDAY_JA[dayOfWeekOf(date)]})
                     </Link>
                   </th>
