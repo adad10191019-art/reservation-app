@@ -19,9 +19,27 @@ const source: TeamSource = {
   googleEvents: [],
 };
 
+/** 並び順に関係なく、その人の列を取り出す */
+function columnOf(columns: ReturnType<typeof buildTeamColumns>, employeeId: string) {
+  return columns.find((c) => c.employeeId === employeeId)!;
+}
+
 describe("buildTeamColumns", () => {
+  it("自分の列を一番左に出し、ほかの人は名簿の並び順のまま", () => {
+    const three: TeamSource = {
+      ...source,
+      employees: [...source.employees, { id: "e3", name: "営業の人" }],
+    };
+    const ids = (employeeId: string | null) =>
+      buildTeamColumns(three, { employeeId, isAdmin: false }).map((c) => c.employeeId);
+    expect(ids("e2")).toEqual(["e2", "e1", "e3"]);
+    expect(ids("e3")).toEqual(["e3", "e1", "e2"]);
+    // 名簿にいない全社管理者は名簿の並び順のまま
+    expect(ids(null)).toEqual(["e1", "e2", "e3"]);
+  });
+
   it("私用の予定は、本人以外には件名を隠す", () => {
-    const [takeuchi] = buildTeamColumns(source, { employeeId: "e2", isAdmin: false });
+    const takeuchi = columnOf(buildTeamColumns(source, { employeeId: "e2", isAdmin: false }), "e1");
     const event = takeuchi.items.find((i) => i.kind === "event")!;
     expect(event.label).toBe("予定あり");
     expect(JSON.stringify(takeuchi)).not.toContain("通院");
@@ -44,7 +62,9 @@ describe("buildTeamColumns", () => {
   });
 
   it("予約は部署名だけを出し、ブロック枠は件名と部署名を出す。兼任の部署はまとめて並ぶ", () => {
-    const [takeuchi, jimu] = buildTeamColumns(source, { employeeId: "e2", isAdmin: false });
+    const columns = buildTeamColumns(source, { employeeId: "e2", isAdmin: false });
+    const takeuchi = columnOf(columns, "e1");
+    const jimu = columnOf(columns, "e2");
     expect(takeuchi.departments).toEqual(["イロハ", "就活支援"]);
     expect(takeuchi.items.map((i) => [i.kind, i.label, i.note])).toEqual([
       ["event", "予定あり", null],

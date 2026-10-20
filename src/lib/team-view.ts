@@ -81,10 +81,15 @@ export function timeRangeText(item: { startMinutes: number; endMinutes: number }
   return isAllDay(item) ? "終日" : `${toHm(item.startMinutes)}–${toHm(item.endMinutes)}`;
 }
 
+/** 列は名簿の並び順のまま、自分の列だけを一番左に出す */
 export function buildTeamColumns(source: TeamSource, viewer: TeamViewer): TeamColumn[] {
   const staffById = new Map(source.staffs.map((s) => [s.id, s]));
+  const employees = [
+    ...source.employees.filter((e) => e.id === viewer.employeeId),
+    ...source.employees.filter((e) => e.id !== viewer.employeeId),
+  ];
 
-  return source.employees.map((employee) => {
+  return employees.map((employee) => {
     const isMe = viewer.employeeId === employee.id;
     const departments = [
       ...new Set(source.staffs.filter((s) => s.employeeId === employee.id).map((s) => s.tenantName)),
