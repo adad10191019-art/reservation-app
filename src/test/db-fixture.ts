@@ -71,6 +71,8 @@ export async function createTestShop(label: string) {
 /** 店舗に属する行を、参照される側が後になる順ですべて消す */
 export async function deleteTestShop(tenantId: string) {
   await prisma.reservation.deleteMany({ where: { tenantId } });
+  await prisma.eventEntry.deleteMany({ where: { tenantId } });
+  await prisma.event.deleteMany({ where: { tenantId } });
   await prisma.customer.deleteMany({ where: { tenantId } });
   await prisma.block.deleteMany({ where: { tenantId } });
   await prisma.dateOverride.deleteMany({ where: { tenantId } });

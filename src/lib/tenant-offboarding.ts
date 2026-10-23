@@ -110,6 +110,8 @@ export async function deleteTenantCompletely(tenantId: string): Promise<void> {
 
   await prisma.$transaction([
     prisma.reservation.deleteMany({ where: { tenantId } }),
+    prisma.eventEntry.deleteMany({ where: { tenantId } }),
+    prisma.event.deleteMany({ where: { tenantId } }),
     prisma.staffMenu.deleteMany({ where: { tenantId } }),
     prisma.businessHour.deleteMany({ where: { tenantId } }),
     prisma.dateOverride.deleteMany({ where: { tenantId } }),

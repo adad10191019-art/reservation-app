@@ -18,6 +18,7 @@ export type NavItem = {
 export const SETTINGS_ITEMS: NavItem[] = [
   { href: "/settings/onboarding", label: "セットアップ", match: ["/settings/onboarding"] },
   { href: "/settings/menus", label: "メニュー", match: ["/settings/menus"] },
+  { href: "/settings/events", label: "イベント", match: ["/settings/events"] },
   { href: "/settings/members", label: "メンバー", match: ["/settings/members"] },
   { href: "/settings/hours", label: "営業時間", match: ["/settings/hours"] },
   { href: "/settings/days", label: "日付ごと", match: ["/settings/days"] },

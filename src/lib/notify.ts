@@ -11,7 +11,14 @@
 import { sendNotificationEmail } from "./email";
 import { pushTextMessage, type PushResult } from "./line-messaging";
 import {
+  type EventSummary,
   type ReservationSummary,
+  eventEntryCanceledSubject,
+  eventEntryCanceledText,
+  eventEntryCreatedSubject,
+  eventEntryCreatedText,
+  eventReminderSubject,
+  eventReminderText,
   reservationCanceledSubject,
   reservationCanceledText,
   reservationCreatedSubject,
@@ -183,6 +190,109 @@ export async function sendRemindersFor(date: string): Promise<ReminderOutcome[]>
     });
   }
 
+  return outcomes;
+}
+
+// ── イベントの申し込み（お客様へ） ──────────
+
+/** 申し込み1件から、文面に必要な情報と送り先を集める */
+async function loadEventTarget(entryId: string) {
+  const entry = await prisma.eventEntry.findUnique({
+    where: { id: entryId },
+    include: { tenant: true, event: true, customer: true },
+  });
+  if (!entry) return null;
+  const channel = customerChannel(entry.customer);
+  if (!channel) return null;
+
+  const base = process.env.APP_URL?.replace(/\/$/, "");
+  const summary: EventSummary = {
+    shopName: entry.tenant.name,
+    customerName: entry.customer.name,
+    title: entry.event.title,
+    date: entry.event.date,
+    startMinutes: entry.event.startMinutes,
+    endMinutes: entry.event.endMinutes,
+    venue: entry.event.venue,
+    myPageUrl: base ? `${base}/book/${tenantHandle(entry.tenant)}/mine` : undefined,
+  };
+  return { channel, summary, tenant: entry.tenant };
+}
+
+type EventTarget = NonNullable<Awaited<ReturnType<typeof loadEventTarget>>>;
+
+/** お客様に1通送る（予約の sendToCustomer と同じく、LINE を優先し、メールの差出人名は店舗名） */
+function sendEventMessage(
+  target: EventTarget,
+  build: (summary: EventSummary) => string,
+  buildSubject: (summary: EventSummary) => string,
+): Promise<PushResult> {
+  const text = build(target.summary);
+  if (target.channel.kind === "line") {
+    return pushTextMessage({ tenant: target.tenant, to: target.channel.to, text });
+  }
+  return sendNotificationEmail({
+    to: target.channel.to,
+    subject: buildSubject(target.summary),
+    text: withSendOnlyNotice(text, target.summary.shopName),
+    fromName: target.summary.shopName,
+  });
+}
+
+export async function notifyEventEntryCreated(entryId: string): Promise<PushResult> {
+  const target = await loadEventTarget(entryId);
+  if (!target) return NO_CHANNEL;
+  return sendEventMessage(target, eventEntryCreatedText, eventEntryCreatedSubject);
+}
+
+export async function notifyEventEntryCanceled(entryId: string): Promise<PushResult> {
+  const target = await loadEventTarget(entryId);
+  if (!target) return NO_CHANNEL;
+  return sendEventMessage(target, eventEntryCanceledText, eventEntryCanceledSubject);
+}
+
+export type EventReminderOutcome = { entryId: string; sent: boolean; reason?: string };
+
+/**
+ * 指定日のイベントの前日リマインドを送る。
+ * 予約の sendRemindersFor と同じく、送る前に「送信済み」の印を取り合い、
+ * 送れなかったら印を外して次回に回す。受付を止めたイベントでも、申し込み済みの人には送る
+ */
+export async function sendEventRemindersFor(date: string): Promise<EventReminderOutcome[]> {
+  const entries = await prisma.eventEntry.findMany({
+    where: {
+      status: "booked",
+      reminderSentAt: null,
+      event: { date },
+      customer: { OR: [{ lineUserId: { not: null } }, { email: { not: null } }] },
+    },
+    select: { id: true, tenantId: true },
+    orderBy: { createdAt: "asc" },
+  });
+
+  const outcomes: EventReminderOutcome[] = [];
+  for (const entry of entries) {
+    const target = await loadEventTarget(entry.id);
+    if (!target) {
+      outcomes.push({ entryId: entry.id, sent: false, reason: "送り先がありません" });
+      continue;
+    }
+
+    const claimed = await prisma.eventEntry.updateMany({
+      where: { id: entry.id, tenantId: entry.tenantId, reminderSentAt: null },
+      data: { reminderSentAt: new Date() },
+    });
+    if (claimed.count === 0) continue;
+
+    const result = await sendEventMessage(target, eventReminderText, eventReminderSubject);
+    if (!(result.ok && result.sent)) {
+      await prisma.eventEntry.updateMany({
+        where: { id: entry.id, tenantId: entry.tenantId },
+        data: { reminderSentAt: null },
+      });
+    }
+    outcomes.push({ entryId: entry.id, sent: result.ok && result.sent, reason: result.reason });
+  }
   return outcomes;
 }
 

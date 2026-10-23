@@ -133,3 +133,61 @@ export function withSendOnlyNotice(text: string, shopName: string): string {
     `お問い合わせは ${shopName} へ直接ご連絡ください。`,
   ].join("\n");
 }
+
+// ── イベント（定員つきの集まり）のお客様向け ──
+
+export type EventSummary = {
+  shopName: string;
+  customerName: string;
+  title: string;
+  date: string; // "YYYY-MM-DD"
+  startMinutes: number;
+  endMinutes: number;
+  venue: string;
+  /** ご自分の申し込みを確認できるURL。未設定なら案内文を省く */
+  myPageUrl?: string;
+};
+
+function eventLines(e: EventSummary): string[] {
+  return [
+    e.title,
+    `${formatDateLabel(e.date)} ${toHm(e.startMinutes)}〜${toHm(e.endMinutes)}`,
+    ...(e.venue ? [`会場：${e.venue}`] : []),
+  ];
+}
+
+export function eventEntryCreatedText(e: EventSummary): string {
+  return withMyPage(
+    [`${e.customerName} 様`, "", `${e.shopName} へのお申し込みを承りました。`, "", ...eventLines(e)],
+    e.myPageUrl,
+  );
+}
+
+export function eventReminderText(e: EventSummary): string {
+  return withMyPage(
+    [`${e.customerName} 様`, "", `明日は ${e.shopName} のイベントです。お待ちしております。`, "", ...eventLines(e)],
+    e.myPageUrl,
+  );
+}
+
+export function eventEntryCanceledText(e: EventSummary): string {
+  return [`${e.customerName} 様`, "", `${e.shopName} の下記のお申し込みをキャンセルしました。`, "", ...eventLines(e)].join(
+    "\n",
+  );
+}
+
+function eventWhen(e: EventSummary): string {
+  return `${formatDateLabel(e.date)} ${toHm(e.startMinutes)}`;
+}
+
+export function eventEntryCreatedSubject(e: EventSummary): string {
+  return `【${e.shopName}】お申し込みを承りました（${e.title} ${eventWhen(e)}）`;
+}
+
+export function eventReminderSubject(e: EventSummary): string {
+  return `【${e.shopName}】明日のイベントのお知らせ（${e.title} ${eventWhen(e)}）`;
+}
+
+export function eventEntryCanceledSubject(e: EventSummary): string {
+  return `【${e.shopName}】お申し込みのキャンセルを承りました（${e.title} ${eventWhen(e)}）`;
+}

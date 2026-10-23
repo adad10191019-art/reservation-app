@@ -7,7 +7,13 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { sendNotificationEmail } from "./email";
 import { pushTextMessage } from "./line-messaging";
-import { notifyReservationCreated, notifyStaffNewReservation, sendRemindersFor } from "./notify";
+import {
+  notifyEventEntryCreated,
+  notifyReservationCreated,
+  notifyStaffNewReservation,
+  sendEventRemindersFor,
+  sendRemindersFor,
+} from "./notify";
 import { prisma } from "./prisma";
 import {
   OPEN,
@@ -237,6 +243,55 @@ describe("メールのお客様への通知", () => {
     expect(result).toMatchObject({ ok: true, sent: false });
     expect(push).not.toHaveBeenCalled();
     expect(mail).not.toHaveBeenCalled();
+  });
+});
+
+describe("イベントの申し込みの通知", () => {
+  afterEach(async () => {
+    await prisma.eventEntry.deleteMany({ where: { tenantId: shop.tenantId } });
+    await prisma.event.deleteMany({ where: { tenantId: shop.tenantId } });
+  });
+
+  async function enter(customer: { lineUserId?: string; email?: string }, canceled = false) {
+    const event = await prisma.event.create({
+      data: {
+        tenantId: shop.tenantId,
+        title: "就活支援説明会",
+        date: TEST_DATE,
+        startMinutes: OPEN,
+        endMinutes: OPEN + 90,
+        capacity: 10,
+        venue: "〇〇会議室",
+      },
+    });
+    const c = await prisma.customer.create({
+      data: { tenantId: shop.tenantId, name: `参加者${++seq}`, lineUserId: customer.lineUserId ?? null, email: customer.email ?? null },
+    });
+    return prisma.eventEntry.create({
+      data: { tenantId: shop.tenantId, eventId: event.id, customerId: c.id, status: canceled ? "canceled" : "booked" },
+    });
+  }
+
+  it("申し込み完了は会場つきで送り、メールの人にはメールで送る", async () => {
+    const entry = await enter({ email: "guest@example.com" });
+
+    expect(await notifyEventEntryCreated(entry.id)).toEqual({ ok: true, sent: true });
+    const sent = mail.mock.calls[0][0];
+    expect(sent.subject).toContain("お申し込みを承りました");
+    expect(sent.text).toContain("会場：〇〇会議室");
+  });
+
+  it("前日リマインドは申し込み済みの人にだけ1回送る", async () => {
+    await enter({ lineUserId: "U-event" });
+    await enter({ lineUserId: "U-canceled" }, true);
+
+    const first = await sendEventRemindersFor(TEST_DATE);
+    const second = await sendEventRemindersFor(TEST_DATE);
+
+    expect(first.map((o) => o.sent)).toEqual([true]);
+    expect(second).toEqual([]);
+    expect(push.mock.calls.map(([p]) => p.to)).toEqual(["U-event"]);
+    expect(push.mock.calls[0][0].text).toContain("明日は");
   });
 });
 

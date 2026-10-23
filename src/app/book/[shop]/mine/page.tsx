@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { STATUS_LABEL, type ReservationStatus } from "@/lib/booking";
-import { cancelCustomerReservation } from "@/lib/customer-actions";
+import { cancelCustomerReservation, cancelEventEntryAction } from "@/lib/customer-actions";
 import { getActiveCustomer } from "@/lib/customer-store";
 import { priceLabel } from "@/lib/price";
 import { prisma } from "@/lib/prisma";
@@ -13,7 +13,7 @@ export default async function MyReservationsPage({
   searchParams,
 }: {
   params: Promise<{ shop: string }>;
-  searchParams: Promise<{ done?: string; canceled?: string; error?: string }>;
+  searchParams: Promise<{ done?: string; entered?: string; canceled?: string; error?: string }>;
 }) {
   const { shop } = await params;
   const sp = await searchParams;
@@ -33,6 +33,12 @@ export default async function MyReservationsPage({
     orderBy: [{ date: "desc" }, { startMinutes: "desc" }],
     include: { staff: true },
     take: 50,
+  });
+
+  const eventEntries = await prisma.eventEntry.findMany({
+    where: { tenantId, customerId: session.customerId, status: "booked", event: { date: { gte: today } } },
+    include: { event: true },
+    orderBy: [{ event: { date: "asc" } }, { event: { startMinutes: "asc" } }],
   });
 
   const upcoming = reservations.filter((r) => r.date >= today && r.status === "booked");
@@ -71,10 +77,46 @@ export default async function MyReservationsPage({
           </p>
         </div>
       )}
+      {sp.entered && (
+        <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          <p>お申し込みを承りました。</p>
+          <p className="mt-1 text-xs text-emerald-700">
+            通知が届かない場合がございます。念のため、この画面のスクリーンショットを保存しておくことをおすすめします。
+          </p>
+        </div>
+      )}
       {sp.canceled && (
         <p className="mb-4 rounded-md border border-neutral-300 bg-neutral-50 px-3 py-2 text-sm text-neutral-700">
           ご予約をキャンセルしました。
         </p>
+      )}
+
+      {eventEntries.length > 0 && (
+        <section className="mb-6">
+          <h2 className="mb-3 font-semibold">お申し込み中のイベント（{eventEntries.length}件）</h2>
+          <ul className="space-y-3">
+            {eventEntries.map((entry) => (
+              <li key={entry.id} className="rounded-lg border border-sky-200 bg-sky-50 p-4">
+                <div className="mb-1 font-medium text-sky-900">{entry.event.title}</div>
+                <div className="mb-3 text-sm tabular-nums text-sky-800">
+                  {formatDateLabel(entry.event.date)} {toHm(entry.event.startMinutes)}〜
+                  {toHm(entry.event.endMinutes)}
+                  {entry.event.venue ? ` ／ ${entry.event.venue}` : ""}
+                </div>
+                <form action={cancelEventEntryAction}>
+                  <input type="hidden" name="tenantId" value={tenantId} />
+                  <input type="hidden" name="entryId" value={entry.id} />
+                  <button
+                    type="submit"
+                    className="rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
+                  >
+                    キャンセルする
+                  </button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       <section className="mb-6">

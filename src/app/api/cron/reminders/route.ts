@@ -12,7 +12,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isAuthorizedCronRequest } from "@/lib/cron-auth";
 import { deleteStaleLoginAttempts } from "@/lib/login-attempts";
-import { sendRemindersFor } from "@/lib/notify";
+import { sendEventRemindersFor, sendRemindersFor } from "@/lib/notify";
 import { addDays, todayString } from "@/lib/time";
 
 export async function GET(request: Request) {
@@ -32,6 +32,19 @@ export async function GET(request: Request) {
   console.log(`[前日リマインド] ${date} 送信 ${sent} 件 / 対象 ${outcomes.length} 件`);
   for (const o of failed) {
     console.log(`[前日リマインド] 未送信 予約ID=${o.reservationId} ${o.reason ?? ""}`);
+  }
+
+  // イベントの申し込みにも同じ日の前日リマインドを送る。失敗しても予約の結果は返す
+  let eventSent: number | null = null;
+  try {
+    const eventOutcomes = await sendEventRemindersFor(date);
+    eventSent = eventOutcomes.filter((o) => o.sent).length;
+    console.log(`[イベントの前日リマインド] ${date} 送信 ${eventSent} 件 / 対象 ${eventOutcomes.length} 件`);
+    for (const o of eventOutcomes.filter((o) => !o.sent)) {
+      console.log(`[イベントの前日リマインド] 未送信 申し込みID=${o.entryId} ${o.reason ?? ""}`);
+    }
+  } catch (e) {
+    console.error("[イベントの前日リマインド] 失敗", e);
   }
 
   // 掃除に失敗してもリマインドの結果は返す（次の日にまた消せばよい）
@@ -60,6 +73,7 @@ export async function GET(request: Request) {
     total: outcomes.length,
     sent,
     failed: failed.length,
+    eventSent,
     deletedLoginAttempts,
     deletedGoogleCaches,
   });

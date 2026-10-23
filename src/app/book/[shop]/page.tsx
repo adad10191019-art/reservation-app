@@ -4,20 +4,14 @@ import { notFound } from "next/navigation";
 import { findAvailabilityForDates } from "@/lib/availability";
 import { resolveBrandPalette } from "@/lib/brand-color";
 import { filterBookableStarts } from "@/lib/booking-window";
-import {
-  customerLogout,
-  devLogin,
-  resetEmailLogin,
-  startEmailLogin,
-  startLineLogin,
-  verifyEmailLogin,
-} from "@/lib/customer-actions";
+import { customerLogout } from "@/lib/customer-actions";
 import { getActiveCustomer, getEmailLoginPending } from "@/lib/customer-store";
-import { resolveCustomerLoginMethods } from "@/lib/email-login";
-import { isDevFallbackAllowed, resolveLiffId } from "@/lib/line";
+import { listOpenEvents } from "@/lib/event-list";
+import { resolveLiffId } from "@/lib/line";
 import { priceLabel } from "@/lib/price";
 import { prisma } from "@/lib/prisma";
 import { LiffAutoLogin } from "@/components/liff-auto-login";
+import { LoginBox } from "@/components/customer-login-box";
 import { SubmitButton } from "@/components/submit-button";
 import { parseStaffSelection } from "@/lib/staff-assignment";
 import { findTenantByHandle, tenantHandle } from "@/lib/tenant";
@@ -65,6 +59,7 @@ export default async function PublicBookingPage({
     orderBy: { durationMinutes: "asc" },
   });
   const menu = menus.find((m) => m.id === sp.menuId) ?? menus[0];
+  const events = await listOpenEvents(tenantId, tenant.bookingLeadMinutes);
 
   const staffNames = new Map(
     (
@@ -183,6 +178,37 @@ export default async function PublicBookingPage({
         >
           {sp.error}
         </p>
+      )}
+
+      {events.length > 0 && (
+        <section className="mb-8">
+          <h2 className="mb-2.5 text-xs font-semibold tracking-wide text-neutral-500">
+            受付中のイベント
+          </h2>
+          <ul className="space-y-2">
+            {events.map((e) => (
+              <li key={e.id}>
+                <Link
+                  href={`/book/${handle}/events/${e.id}`}
+                  className="block rounded-lg border border-neutral-200 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.04)] transition-colors hover:border-[var(--brand)]"
+                >
+                  <span className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="font-medium text-neutral-900">{e.title}</span>
+                    <span
+                      className={`text-xs ${e.remaining > 0 ? "text-emerald-700" : "text-neutral-400"}`}
+                    >
+                      {e.remaining > 0 ? `残り${e.remaining}席` : "満席"}
+                    </span>
+                  </span>
+                  <span className="mt-1 block text-sm tabular-nums text-neutral-600">
+                    {formatDateLabel(e.date)} {toHm(e.startMinutes)}〜{toHm(e.endMinutes)}
+                    {e.venue ? ` ／ ${e.venue}` : ""}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {/* 条件を選ぶ */}
@@ -381,9 +407,7 @@ export default async function PublicBookingPage({
 
               <LoginBox
                 tenant={tenant}
-                handle={handle}
-                date={date}
-                menuId={menu.id}
+                next={`/book/${handle}?date=${date}&menuId=${menu.id}`}
                 emailPending={await getEmailLoginPending(tenantId)}
                 showCodeStep={sp.emailStep === "code"}
               />
@@ -409,180 +433,5 @@ export default async function PublicBookingPage({
         </Link>
       </p>
     </main>
-  );
-}
-
-function LoginBox({
-  tenant,
-  handle,
-  date,
-  menuId,
-  emailPending,
-  showCodeStep,
-}: {
-  tenant: {
-    id: string;
-    lineLoginChannelId: string | null;
-    lineLoginChannelSecret: string | null;
-    customerLoginMethod: string | null;
-  };
-  handle: string;
-  date: string;
-  menuId: string;
-  emailPending: { tenantId: string; email: string; name: string } | null;
-  showCodeStep: boolean;
-}) {
-  const tenantId = tenant.id;
-  const next = `/book/${handle}?date=${date}&menuId=${menuId}`;
-  const methods = resolveCustomerLoginMethods(tenant);
-
-  // メールでコードを送った直後：コード入力を待つ
-  if (methods.email && emailPending && showCodeStep) {
-    return (
-      <div className="space-y-3">
-        <form action={verifyEmailLogin} className="rounded-md bg-neutral-50 p-4 text-center">
-          <p className="mb-3 text-sm text-neutral-600">
-            <strong>{emailPending.email}</strong> 宛に確認コードを送りました。
-            <br />
-            10分以内に、届いた6桁のコードを入力してください。
-          </p>
-          <input type="hidden" name="tenantId" value={tenantId} />
-          <div className="flex flex-wrap items-center justify-center gap-2">
-            <input
-              type="text"
-              name="code"
-              inputMode="numeric"
-              pattern="[0-9]{6}"
-              maxLength={6}
-              required
-              autoFocus
-              placeholder="123456"
-              className="w-32 rounded-md border border-neutral-300 px-2 py-1.5 text-center text-lg tracking-[0.3em] focus:border-[var(--brand)] focus:outline-none focus:ring-1 focus:ring-[var(--brand)]"
-            />
-            <SubmitButton
-              pendingText="確認しています…"
-              className="rounded-md bg-[var(--brand)] px-5 py-1.5 text-sm font-medium text-[var(--brand-on)] hover:bg-[var(--brand-hover)]"
-            >
-              ログイン
-            </SubmitButton>
-          </div>
-        </form>
-        <form action={resetEmailLogin} className="text-center">
-          <input type="hidden" name="tenantId" value={tenantId} />
-          <button
-            type="submit"
-            className="text-xs text-neutral-500 underline hover:text-[var(--brand)]"
-          >
-            メールアドレスを入力し直す
-          </button>
-        </form>
-      </div>
-    );
-  }
-
-  const showDevFallback = !methods.line && !methods.email && isDevFallbackAllowed(tenant);
-
-  if (!methods.line && !methods.email && !showDevFallback) {
-    return (
-      <p className="rounded-md bg-neutral-50 px-3 py-6 text-center text-sm text-neutral-500">
-        ただいまネット予約を受け付けていません。
-      </p>
-    );
-  }
-
-  return (
-    <div className="space-y-3">
-      {methods.line && (
-        <form action={startLineLogin} className="rounded-md bg-neutral-50 p-4 text-center">
-          <p className="mb-3 text-sm text-neutral-600">
-            ご予約にはLINEでのログインが必要です。
-            <br />
-            新しく登録する必要はありません。
-          </p>
-          <input type="hidden" name="tenantId" value={tenantId} />
-          <input type="hidden" name="next" value={next} />
-          <button
-            type="submit"
-            className="rounded-md bg-[#06C755] px-5 py-2.5 text-sm font-medium text-white hover:brightness-95"
-          >
-            LINEでログイン
-          </button>
-        </form>
-      )}
-
-      {methods.email && (
-        <form action={startEmailLogin} className="rounded-md border border-neutral-200 bg-white p-4">
-          <p className="mb-3 text-sm text-neutral-600">
-            {methods.line
-              ? "LINEをお使いでない方は、メールアドレスでもログインできます。"
-              : "メールアドレスでログインします。新しく登録する必要はありません。"}
-          </p>
-          <input type="hidden" name="tenantId" value={tenantId} />
-          <input type="hidden" name="next" value={next} />
-          <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
-            <label className="block">
-              <span className="mb-1 block text-xs font-medium text-neutral-500">お名前</span>
-              <input
-                type="text"
-                name="name"
-                required
-                placeholder="山田 花子"
-                className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-[var(--brand)] focus:outline-none focus:ring-1 focus:ring-[var(--brand)]"
-              />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-xs font-medium text-neutral-500">
-                メールアドレス
-              </span>
-              <input
-                type="email"
-                name="email"
-                required
-                placeholder="you@example.com"
-                className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-[var(--brand)] focus:outline-none focus:ring-1 focus:ring-[var(--brand)]"
-              />
-            </label>
-            <SubmitButton
-              pendingText="送信しています…"
-              className="self-end rounded-md bg-[var(--brand)] px-4 py-2 text-sm font-medium text-[var(--brand-on)] hover:bg-[var(--brand-hover)]"
-            >
-              コードを送る
-            </SubmitButton>
-          </div>
-        </form>
-      )}
-
-      {showDevFallback && (
-        <form action={devLogin} className="rounded-md border border-dashed border-amber-400 bg-amber-50 p-4">
-          <p className="mb-3 text-xs leading-relaxed text-amber-900">
-            <strong>開発用の仮ログインです。</strong>
-            LINEの認証情報を設定画面（または{" "}
-            <code>LINE_LOGIN_CHANNEL_ID</code> / <code>LINE_LOGIN_CHANNEL_SECRET</code>）に、
-            もしくはメール送信（<code>RESEND_API_KEY</code>）を設定すると切り替わります。
-            本番では動きません。
-          </p>
-          <input type="hidden" name="tenantId" value={tenantId} />
-          <input type="hidden" name="next" value={next} />
-          <div className="flex flex-wrap items-end gap-2">
-            <label className="block">
-              <span className="mb-1 block text-xs font-medium text-amber-900">お名前</span>
-              <input
-                type="text"
-                name="name"
-                required
-                placeholder="山田 花子"
-                className="rounded-md border border-amber-300 px-2 py-1.5 text-sm"
-              />
-            </label>
-            <button
-              type="submit"
-              className="rounded-md bg-amber-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-amber-700"
-            >
-              仮ログイン
-            </button>
-          </div>
-        </form>
-      )}
-    </div>
   );
 }

@@ -20,8 +20,11 @@ import {
   upsertLineCustomer,
 } from "./customer-store";
 import { startEmailLoginCode, verifyEmailLoginCode } from "./email-login";
+import { applyToEvent, cancelOwnEntry } from "./event-booking";
 import { buildAuthorizeUrl, isDevFallbackAllowed, isLineConfigured } from "./line";
 import {
+  notifyEventEntryCanceled,
+  notifyEventEntryCreated,
   notifyReservationCanceled,
   notifyReservationCreated,
   notifyStaffCanceled,
@@ -144,7 +147,10 @@ export async function startEmailLogin(formData: FormData) {
     maxAge: 600, // 10分で切れる（コードの有効期限と揃える）
   });
 
-  redirect(bookPath(handle, { emailStep: "code" }));
+  // コードの入力欄は、ログインを始めた画面（予約画面・イベントの画面）で出す
+  const back = new URL(safeNextPath(next, bookPath(handle)), "http://localhost");
+  back.searchParams.set("emailStep", "code");
+  redirect(`${back.pathname}${back.search}`);
 }
 
 /** 送られてきたコードを確かめ、合っていればログインさせる */
@@ -289,6 +295,63 @@ export async function cancelCustomerReservation(formData: FormData) {
   }
 
   revalidatePath("/calendar");
+  if (!result.ok) {
+    redirect(`${bookPath(handle)}/mine?error=${encodeURIComponent(result.message)}`);
+  }
+  redirect(`${bookPath(handle)}/mine?canceled=1`);
+}
+
+// ── イベントに申し込む ────────────────────
+
+export async function applyToEventAction(formData: FormData) {
+  const tenantId = String(formData.get("tenantId") ?? "");
+  const eventId = String(formData.get("eventId") ?? "");
+
+  const handle = await handleOf(tenantId);
+  const eventPath = `${bookPath(handle)}/events/${encodeURIComponent(eventId)}`;
+  const back: (message: string) => never = (message) =>
+    redirect(`${eventPath}?error=${encodeURIComponent(message)}`);
+
+  const session = await getActiveCustomer(tenantId);
+  if (!session) back("ログインし直してください");
+
+  // 入力した値は URL に載せない（予約の確認画面と同じ）
+  const profile = validateCustomerProfile({
+    name: String(formData.get("name") ?? ""),
+    phone: String(formData.get("phone") ?? ""),
+  });
+  if (!profile.ok) back(profile.message);
+
+  // 申し込みより先に保存する（通知に、入力された名前を使うため）
+  await saveCustomerProfile({
+    tenantId,
+    customerId: session.customerId,
+    name: profile.value.name,
+    phone: profile.value.phone,
+  });
+
+  const result = await applyToEvent({ tenantId, customerId: session.customerId, eventId });
+  if (!result.ok) back(result.message);
+
+  // 通知は送れなくても申し込みは成立させる
+  await notifyEventEntryCreated(result.entryId);
+
+  revalidatePath("/settings/events");
+  redirect(`${bookPath(handle)}/mine?entered=1`);
+}
+
+export async function cancelEventEntryAction(formData: FormData) {
+  const tenantId = String(formData.get("tenantId") ?? "");
+  const entryId = String(formData.get("entryId") ?? "");
+
+  const handle = await handleOf(tenantId);
+  const session = await getActiveCustomer(tenantId);
+  if (!session) redirect(bookPath(handle, { error: "ログインし直してください" }));
+
+  const result = await cancelOwnEntry({ tenantId, customerId: session.customerId, entryId });
+  if (result.ok && result.changed) await notifyEventEntryCanceled(entryId);
+
+  revalidatePath("/settings/events");
   if (!result.ok) {
     redirect(`${bookPath(handle)}/mine?error=${encodeURIComponent(result.message)}`);
   }

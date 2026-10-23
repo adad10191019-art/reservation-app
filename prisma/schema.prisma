@@ -68,6 +68,8 @@ model Tenant {
   blocks             Block[]
   changeLogs         ChangeLog[]
   customerLoginCodes CustomerLoginCode[]
+  events             Event[]
+  eventEntries       EventEntry[]
 }
 
 // ── ログインする人 ─────────────────────
@@ -400,6 +402,7 @@ model Customer {
 
   tenant       Tenant        @relation(fields: [tenantId], references: [id])
   reservations Reservation[]
+  eventEntries EventEntry[]
 
   // 同じ人が同じ店舗で二重に作られないようにする
   @@unique([tenantId, lineUserId])
@@ -443,4 +446,51 @@ model Reservation {
   @@index([tenantId, date, staffId])
   @@index([tenantId, customerId])
   @@index([staffId, date])
+}
+
+// ── イベント（定員つきの集まり：説明会・講演会・セミナーなど） ──
+// 担当者の空き枠とは別に、日時と定員を決めて申し込みを受ける。
+// 予約と同じお客様（Customer）・ログイン・通知の仕組みを使う。
+model Event {
+  id           String  @id @default(uuid())
+  tenantId     String
+  title        String
+  /// お客様の画面に出す説明（内容・持ち物など）
+  description  String  @default("")
+  date         String // "YYYY-MM-DD"
+  startMinutes Int
+  endMinutes   Int
+  capacity     Int
+  /// 会場名・住所
+  venue        String  @default("")
+  /// false のあいだはお客様の画面に出さず、申し込みも受けない（準備中・受付終了）
+  isOpen       Boolean @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant  Tenant       @relation(fields: [tenantId], references: [id])
+  entries EventEntry[]
+
+  @@index([tenantId, date])
+}
+
+/// イベントへの申し込み。キャンセルしたあとにもう一度申し込んだら、同じ行を戻して使う
+model EventEntry {
+  id             String    @id @default(uuid())
+  tenantId       String
+  eventId        String
+  customerId     String
+  status         String    @default("booked") // "booked" | "canceled"
+  canceledAt     DateTime?
+  /// 前日リマインドを送った日時。二重送信を防ぐために使う
+  reminderSentAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+  event    Event    @relation(fields: [eventId], references: [id])
+  customer Customer @relation(fields: [customerId], references: [id])
+
+  @@unique([eventId, customerId])
+  @@index([tenantId, customerId])
 }
