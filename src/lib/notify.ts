@@ -198,6 +198,7 @@ export async function sendRemindersFor(date: string): Promise<ReminderOutcome[]>
  *
  * LINEを紐づけている人にはLINEで、まだの人にはログイン用のメールアドレス宛に
  * メールで送る（どちらも設定が無ければ、送らずに内容をログへ出すだけになる）。
+ * 「受け取らない」を選んだ人（notifyOff）には送らない。
  */
 async function notifyStaff(
   reservationId: string,
@@ -214,6 +215,7 @@ async function notifyStaff(
     await prisma.membership.findMany({
       where: {
         tenantId: reservation.tenantId,
+        notifyOff: false,
         OR: [{ role: "owner" }, { staffId: reservation.staffId }],
       },
       select: { lineUserId: true, user: { select: { email: true } } },

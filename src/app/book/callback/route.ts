@@ -93,10 +93,11 @@ export async function GET(request: Request) {
       return NextResponse.redirect(destination);
     }
 
-    // LINE の利用者IDは部署のLINEチャネルごとに違うので、この部署の担当に持たせる
+    // LINE の利用者IDは部署のLINEチャネルごとに違うので、この部署の担当に持たせる。
+    // 紐づけたのは受け取るためなので、「受け取らない」にしていたら戻す
     const linked = await prisma.membership.updateMany({
       where: { userId: session.userId, tenantId },
-      data: { lineUserId: profile.userId },
+      data: { lineUserId: profile.userId, notifyOff: false },
     });
     if (linked.count === 0) {
       destination.searchParams.set("error", "この部署の担当になっていないため、通知を受け取れません");

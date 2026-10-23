@@ -104,6 +104,9 @@ model Membership {
   staffId    String?  @unique
   /// 通知の受け取りに使うLINE利用者ID。LINE のIDは部署のLINEチャネルごとに違うので、部署ごとに持つ
   lineUserId String?
+  /// true なら予約・キャンセルの知らせを受け取らない（予約を受けないオーナーなど）。
+  /// false のときは LINE を紐づけていれば LINE、無ければログイン用のメールに届く
+  notifyOff  Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 

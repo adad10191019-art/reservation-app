@@ -7,7 +7,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { sendNotificationEmail } from "./email";
 import { pushTextMessage } from "./line-messaging";
-import { notifyReservationCreated, sendRemindersFor } from "./notify";
+import { notifyReservationCreated, notifyStaffNewReservation, sendRemindersFor } from "./notify";
 import { prisma } from "./prisma";
 import {
   OPEN,
@@ -235,6 +235,66 @@ describe("メールのお客様への通知", () => {
     const result = await notifyReservationCreated(r.id);
 
     expect(result).toMatchObject({ ok: true, sent: false });
+    expect(push).not.toHaveBeenCalled();
+    expect(mail).not.toHaveBeenCalled();
+  });
+});
+
+describe("店舗側への通知", () => {
+  /** この店舗の担当を1人作る。staffId を渡すとその予約担当にする */
+  async function addMember(opts: {
+    email: string;
+    role: "owner" | "staff";
+    staffId?: string;
+    lineUserId?: string;
+    notifyOff?: boolean;
+  }) {
+    await prisma.user.create({
+      data: {
+        email: opts.email,
+        passwordHash: "x",
+        memberships: {
+          create: {
+            tenantId: shop.tenantId,
+            role: opts.role,
+            staffId: opts.staffId ?? null,
+            lineUserId: opts.lineUserId ?? null,
+            notifyOff: opts.notifyOff ?? false,
+          },
+        },
+      },
+    });
+  }
+
+  afterEach(async () => {
+    await prisma.user.deleteMany({ where: { memberships: { some: { tenantId: shop.tenantId } } } });
+  });
+
+  it("オーナーと担当に、LINE なら LINE、無ければメールで送る。「受け取らない」の人と他の担当には送らない", async () => {
+    await addMember({ email: "notify-owner-mail@example.com", role: "owner" });
+    await addMember({ email: "notify-owner-off@example.com", role: "owner", notifyOff: true });
+    await addMember({ email: "notify-a@example.com", role: "staff", staffId: shop.staffA.id, lineUserId: "U-staff-a" });
+    await addMember({ email: "notify-b@example.com", role: "staff", staffId: shop.staffB.id });
+    const r = await insert({});
+
+    const result = await notifyStaffNewReservation(r.id);
+
+    expect(result).toEqual({ sent: 2, skipped: 0 });
+    expect(push.mock.calls.map(([p]) => p.to)).toEqual(["U-staff-a"]);
+    expect(mail.mock.calls.map(([m]) => m.to)).toEqual(["notify-owner-mail@example.com"]);
+  });
+
+  it("LINE を紐づけていても「受け取らない」なら送らない", async () => {
+    await addMember({
+      email: "notify-a@example.com",
+      role: "staff",
+      staffId: shop.staffA.id,
+      lineUserId: "U-staff-a",
+      notifyOff: true,
+    });
+    const r = await insert({});
+
+    expect(await notifyStaffNewReservation(r.id)).toEqual({ sent: 0, skipped: 0 });
     expect(push).not.toHaveBeenCalled();
     expect(mail).not.toHaveBeenCalled();
   });

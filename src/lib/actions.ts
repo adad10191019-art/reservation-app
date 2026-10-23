@@ -309,14 +309,29 @@ export async function startStaffLineLink() {
   redirect(buildAuthorizeUrl(tenant, { state: nonce }));
 }
 
-export async function unlinkStaffLine() {
+/**
+ * 予約の知らせの受け取り方を選ぶ（この部署の分だけ）。
+ *   email：LINE の紐づけを外し、ログイン用のメールで受け取る
+ *   line ：紐づけ済みなら受け取りを再開し、まだなら LINE の紐づけへ進む
+ *   none ：受け取らない（LINE の紐づけは残すので、LINE に戻すときにやり直さなくてよい）
+ */
+export async function chooseStaffNotify(formData: FormData) {
   const session = await requireSession();
+  const choice = String(formData.get("choice") ?? "");
+  const where = { userId: session.userId, tenantId: session.tenantId };
 
-  // LINE の利用者IDは部署のLINEチャネルごとに違うので、この部署の担当分だけ外す
-  await prisma.membership.updateMany({
-    where: { userId: session.userId, tenantId: session.tenantId },
-    data: { lineUserId: null },
-  });
+  if (choice === "line") {
+    const membership = await prisma.membership.findFirst({ where, select: { lineUserId: true } });
+    if (!membership?.lineUserId) return startStaffLineLink();
+    await prisma.membership.updateMany({ where, data: { notifyOff: false } });
+  } else if (choice === "email") {
+    // LINE の利用者IDは部署のLINEチャネルごとに違うので、この部署の担当分だけ外す
+    await prisma.membership.updateMany({ where, data: { lineUserId: null, notifyOff: false } });
+  } else if (choice === "none") {
+    await prisma.membership.updateMany({ where, data: { notifyOff: true } });
+  } else {
+    redirect(`/notify?error=${encodeURIComponent("受け取り方を選んでください")}`);
+  }
 
   revalidatePath("/notify");
   redirect("/notify?done=1");
